@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 const INTEGRATIONS = [
   {
@@ -60,6 +61,10 @@ export default async function IntegrationsPage() {
 
   const connMap = new Map(connections.map((c) => [c.sourceApp, c]));
 
+  const visibleIntegrations = INTEGRATIONS.filter(
+    (i) => i.key !== "bettywhyt" || isBettywhytOrg(orgId),
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -70,7 +75,7 @@ export default async function IntegrationsPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {INTEGRATIONS.map((integration) => {
+        {visibleIntegrations.map((integration) => {
           const conn = connMap.get(integration.key);
           const isConnected = conn && conn.status !== "DISCONNECTED";
 

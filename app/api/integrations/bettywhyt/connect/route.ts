@@ -14,6 +14,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encrypt } from "@/lib/encryption";
 import { startSync } from "@/lib/integrations/sync-engine";
+import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -23,6 +24,10 @@ export async function POST(req: Request) {
 
   const orgId  = session.user.organizationId;
   const userId = session.user.id ?? "system";
+
+  if (!isBettywhytOrg(orgId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => null);
   const apiKey  = typeof body?.apiKey  === "string" ? body.apiKey.trim()  : null;

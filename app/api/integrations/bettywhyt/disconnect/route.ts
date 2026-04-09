@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 export async function DELETE(req: Request) {
   const session = await auth();
@@ -13,6 +14,10 @@ export async function DELETE(req: Request) {
   }
 
   const orgId = session.user.organizationId;
+
+  if (!isBettywhytOrg(orgId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   await prisma.integrationConnection.updateMany({
     where: { organizationId: orgId, sourceApp: "bettywhyt" },
