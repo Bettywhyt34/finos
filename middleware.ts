@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Public routes — no auth required
-const PUBLIC_ROUTES = ["/login", "/register", "/api/auth"];
+const PUBLIC_ROUTES = ["/login", "/signup", "/register", "/api/auth"];
 
 export default auth(function middleware(req) {
   const { nextUrl, auth: session } = req as NextRequest & { auth: typeof req.auth };
