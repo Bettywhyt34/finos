@@ -17,8 +17,8 @@ import { Label } from "@/components/ui/label";
 
 export default function RegisterPage() {
   const { update } = useSession();
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const router     = useRouter();
+  const [error,   setError]   = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -26,19 +26,33 @@ export default function RegisterPage() {
     setLoading(true);
     setError(null);
 
-    const formData = new FormData(e.currentTarget);
-    const result = await createOrganization(formData);
+    try {
+      const formData = new FormData(e.currentTarget);
+      const result   = await createOrganization(formData);
 
-    if (result?.error) {
-      setError(result.error);
+      if (!result || result.error) {
+        setError(result?.error ?? "Something went wrong. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Refresh JWT to pick up new organizationId + role.
+      // Falls back to hard redirect if the update call fails.
+      try {
+        await update();
+      } catch {
+        // update() failed — hard reload so the browser fetches a fresh session
+        window.location.href = "/";
+        return;
+      }
+
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      console.error("[register] unexpected error:", err);
+      setError("Something went wrong. Please try again.");
       setLoading(false);
-      return;
     }
-
-    // Refresh the JWT so it picks up the new organizationId + role
-    await update();
-    router.push("/");
-    router.refresh();
   }
 
   return (
