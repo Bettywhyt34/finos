@@ -20,10 +20,10 @@ export type SyncType = (typeof SYNC_TYPES)[number];
 // ─── Queue names ──────────────────────────────────────────────────────────────
 
 export const QUEUE_NAMES = {
-  revflow:     "finos:sync:revflow",
-  xpenxflow:   "finos:sync:xpenxflow",
-  earnmark360: "finos:sync:earnmark360",
-  bettywhyt:   "finos:sync:bettywhyt",
+  revflow:     "finos-sync-revflow",
+  xpenxflow:   "finos-sync-xpenxflow",
+  earnmark360: "finos-sync-earnmark360",
+  bettywhyt:   "finos-sync-bettywhyt",
 } as const satisfies Record<SourceApp, string>;
 
 // ─── Job payload (serialised into Redis) ─────────────────────────────────────
