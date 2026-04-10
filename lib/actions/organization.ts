@@ -45,7 +45,8 @@ export async function createOrganization(formData: FormData) {
 
     return { success: true };
   } catch (err) {
-    console.error("[createOrganization] error:", err);
-    return { error: "Failed to create workspace. Please try again." };
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[createOrganization] error:", msg);
+    return { error: `DB error: ${msg}` };
   }
 }
