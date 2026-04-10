@@ -72,14 +72,6 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-6xl">
-      {/* DEBUG STRIP — remove after fix */}
-      <div className="bg-yellow-300 border-2 border-yellow-500 rounded-lg p-3 text-xs font-mono">
-        <span className="font-bold">DEBUG session:</span>{" "}
-        org_id=&quot;{session?.user?.organizationId}&quot; &nbsp;|&nbsp;
-        org_name=&quot;{(session?.user as Record<string, unknown>)?.org_name as string}&quot; &nbsp;|&nbsp;
-        email=&quot;{session?.user?.email}&quot;
-      </div>
-
       {/* Welcome */}
       <div className="flex items-start justify-between">
         <div>
