@@ -13,7 +13,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encrypt } from "@/lib/encryption";
-import { startSync } from "@/lib/integrations/sync-engine";
 import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 export async function POST(req: Request) {
@@ -81,14 +80,6 @@ export async function POST(req: Request) {
       connectedByUserId: userId,
     },
   });
-
-  // Kick off full sync
-  try {
-    await startSync(orgId, "bettywhyt", "full", userId);
-  } catch (err) {
-    // Connection saved; log but don't fail the connect
-    console.error("[bettywhyt-connect] Failed to start initial sync:", err);
-  }
 
   return NextResponse.json({ ok: true });
 }
