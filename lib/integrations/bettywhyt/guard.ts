@@ -7,7 +7,7 @@
  */
 
 export function isBettywhytOrg(orgId: string): boolean {
-  const allowed = process.env.BETTYWHYT_ORG_ID;
+  const allowed = process.env.BETTYWHYT_ORG_ID?.trim();
   if (!allowed) return false;
-  return orgId === allowed;
+  return orgId.trim() === allowed;
 }
