@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
+import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 export default async function DashboardLayout({
   children,
@@ -12,9 +13,14 @@ export default async function DashboardLayout({
   if (!session) redirect("/login");
   if (!session.user?.organizationId) redirect("/register");
 
+  const showBettywhyt = isBettywhytOrg(session.user.organizationId);
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar orgName={session.user.organizationName ?? "Your workspace"} />
+      <Sidebar
+        orgName={session.user.organizationName ?? "Your workspace"}
+        showBettywhyt={showBettywhyt}
+      />
 
       <div className="flex flex-col flex-1 min-w-0">
         <Header

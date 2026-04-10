@@ -169,20 +169,34 @@ const NAV: NavSection[] = [
 
 interface SidebarProps {
   orgName: string;
+  showBettywhyt?: boolean;
 }
 
-export function Sidebar({ orgName }: SidebarProps) {
+export function Sidebar({ orgName, showBettywhyt }: SidebarProps) {
   const pathname = usePathname();
 
+  const nav = NAV.map((section) => {
+    if (section.key === "integrations" && showBettywhyt) {
+      return {
+        ...section,
+        children: [
+          ...(section.children ?? []),
+          { label: "BettyWhyt", href: "/integrations/bettywhyt/status" },
+        ],
+      };
+    }
+    return section;
+  });
+
   // Open accordion sections where a child route is active
-  const defaultOpen = NAV.filter((s) =>
+  const defaultOpen = nav.filter((s) =>
     s.children?.some(
       (c) => pathname === c.href || pathname.startsWith(c.href + "/")
     )
   ).map((s) => s.key);
 
-  const simpleLinks = NAV.filter((s) => !s.children);
-  const expandable = NAV.filter((s) => s.children);
+  const simpleLinks = nav.filter((s) => !s.children);
+  const expandable = nav.filter((s) => s.children);
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col h-screen overflow-y-auto shrink-0">
