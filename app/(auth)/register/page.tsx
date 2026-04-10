@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { createOrganization } from "@/lib/actions/organization";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +16,6 @@ import { Label } from "@/components/ui/label";
 
 export default function RegisterPage() {
   const { update } = useSession();
-  const router     = useRouter();
   const [error,   setError]   = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -36,18 +34,18 @@ export default function RegisterPage() {
         return;
       }
 
-      // Refresh JWT to pick up new organizationId + role.
-      // Falls back to hard redirect if the update call fails.
+      // update({}) triggers a POST to /api/auth/session which re-runs the
+      // jwt callback (trigger === "update") so it re-fetches the new membership.
+      // Passing no args would do a GET and skip the callback entirely.
       try {
-        await update();
+        await update({});
       } catch {
-        // update() failed — hard reload so the browser fetches a fresh session
-        window.location.href = "/";
-        return;
+        // swallow — hard reload below will still pick up the new cookie
       }
 
-      router.push("/");
-      router.refresh();
+      // Hard reload so Next.js middleware re-reads the updated JWT cookie
+      // from scratch rather than using any client-side navigation cache.
+      window.location.href = "/";
     } catch (err) {
       console.error("[register] unexpected error:", err);
       setError("Something went wrong. Please try again.");
