@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
+export const dynamic = "force-dynamic";
+
 const INTEGRATIONS = [
   {
     key:         "revflow" as const,
@@ -60,6 +62,10 @@ export default async function IntegrationsPage() {
   });
 
   const connMap = new Map(connections.map((c) => [c.sourceApp, c]));
+
+  console.log("[integrations] orgId:", orgId);
+  console.log("[integrations] BETTYWHYT_ORG_ID:", process.env.BETTYWHYT_ORG_ID);
+  console.log("[integrations] isBettywhytOrg:", isBettywhytOrg(orgId));
 
   const visibleIntegrations = INTEGRATIONS.filter(
     (i) => i.key !== "bettywhyt" || isBettywhytOrg(orgId),
