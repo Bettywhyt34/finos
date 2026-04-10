@@ -63,9 +63,18 @@ export default async function IntegrationsPage() {
 
   const connMap = new Map(connections.map((c) => [c.sourceApp, c]));
 
-  console.log("[integrations] orgId:", orgId);
-  console.log("[integrations] BETTYWHYT_ORG_ID:", process.env.BETTYWHYT_ORG_ID);
-  console.log("[integrations] isBettywhytOrg:", isBettywhytOrg(orgId));
+  const bettyWhytId = process.env.BETTYWHYT_ORG_ID;
+  const debug = {
+    orgId,
+    orgIdType: typeof orgId,
+    orgIdLength: orgId?.length,
+    bettyWhytId,
+    bettyWhytIdType: typeof bettyWhytId,
+    bettyWhytIdLength: bettyWhytId?.length,
+    strictMatch: orgId === bettyWhytId,
+    trimmedMatch: orgId?.trim() === bettyWhytId?.trim(),
+    envKeys: Object.keys(process.env).filter((k) => k.includes("BETTY") || k.includes("ORG")),
+  };
 
   const visibleIntegrations = INTEGRATIONS.filter(
     (i) => i.key !== "bettywhyt" || isBettywhytOrg(orgId),
@@ -73,6 +82,13 @@ export default async function IntegrationsPage() {
 
   return (
     <div className="space-y-6">
+      {/* DEBUG PANEL — remove after fix */}
+      <div className="bg-yellow-300 border-2 border-yellow-500 rounded-lg p-4">
+        <h3 className="font-bold text-base mb-2">DEBUG: BettyWhyt Detection</h3>
+        <pre className="text-xs bg-white p-3 rounded overflow-auto whitespace-pre-wrap">
+          {JSON.stringify(debug, null, 2)}
+        </pre>
+      </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Integrations</h1>
         <p className="text-sm text-slate-500 mt-1">
