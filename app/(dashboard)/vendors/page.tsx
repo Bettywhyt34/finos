@@ -9,10 +9,10 @@ import { formatCurrency, cn } from "@/lib/utils";
 
 export default async function VendorsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const vendors = await prisma.vendor.findMany({
-    where: { organizationId, isActive: true },
+    where: { tenantId, isActive: true },
     include: {
       bills: { select: { totalAmount: true, amountPaid: true } },
     },

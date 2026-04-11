@@ -5,21 +5,21 @@ import Link from "next/link";
 
 export default async function BudgetSettingsPage() {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const [totalBudgets, activeBudgets, overrideLogs] = await Promise.all([
-    prisma.budget.count({ where: { organizationId: orgId } }),
+    prisma.budget.count({ where: { tenantId: orgId } }),
     prisma.budget.count({
-      where: { organizationId: orgId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] } },
+      where: { tenantId: orgId, status: { in: ["DRAFT", "SUBMITTED", "APPROVED"] } },
     }),
     prisma.budgetOverrideLog.count({
-      where: { budget: { organizationId: orgId } },
+      where: { budget: { tenantId: orgId } },
     }),
   ]);
 
   const recentOverrides = await prisma.budgetOverrideLog.findMany({
-    where: { budget: { organizationId: orgId } },
+    where: { budget: { tenantId: orgId } },
     orderBy: { createdAt: "desc" },
     take: 5,
     include: { budget: { select: { name: true, fiscalYear: true } } },

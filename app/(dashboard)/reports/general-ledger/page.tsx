@@ -26,14 +26,14 @@ export default async function GeneralLedgerPage({
   };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const { accountId, dateFrom, dateTo, period } = searchParams;
 
   // All accounts for selector
   const accounts = await prisma.chartOfAccounts.findMany({
-    where: { organizationId: orgId, isActive: true },
+    where: { tenantId: orgId, isActive: true },
     select: { id: true, code: true, name: true, type: true },
     orderBy: { code: "asc" },
   });
@@ -57,7 +57,7 @@ export default async function GeneralLedgerPage({
       where: {
         accountId,
         entry: {
-          organizationId: orgId,
+          tenantId: orgId,
           isLocked: true,
           ...(period ? { recognitionPeriod: period } : {}),
           ...(dateFrom || dateTo

@@ -64,7 +64,7 @@ type Counts = {
 export async function processRevflow(
   payload: SyncJobPayload
 ): Promise<Counts & { nextCursor?: string }> {
-  const { organizationId, connectionId, syncLogId, cursor } = payload;
+  const { tenantId, connectionId, syncLogId, cursor } = payload;
 
   const connection = await prisma.integrationConnection.findUniqueOrThrow({
     where:  { id: connectionId },
@@ -92,13 +92,13 @@ export async function processRevflow(
   };
 
   // 1. Validate account mappings (no quarantine — throw to abort sync on missing maps)
-  await validateAccountMappings(client, organizationId, since);
+  await validateAccountMappings(client, tenantId, since);
 
   // 2-5. Sync entities in dependency order
-  add(await syncCampaigns(client, organizationId, syncLogId, since));
-  add(await syncInvoices(client, organizationId, syncLogId, since));
-  add(await syncPayments(client, organizationId, syncLogId, since));
-  add(await syncJournalEntries(client, organizationId, syncLogId, since));
+  add(await syncCampaigns(client, tenantId, syncLogId, since));
+  add(await syncInvoices(client, tenantId, syncLogId, since));
+  add(await syncPayments(client, tenantId, syncLogId, since));
+  add(await syncJournalEntries(client, tenantId, syncLogId, since));
 
   return { ...totals, nextCursor: stringifyRFCursor({ since: newTs }) };
 }
@@ -121,7 +121,7 @@ async function validateAccountMappings(
   const missingCodes: string[] = [];
   for (const xfAcc of parse.data) {
     const exists = await prisma.chartOfAccounts.findFirst({
-      where: { organizationId: orgId, code: xfAcc.code },
+      where: { tenantId: orgId, code: xfAcc.code },
       select: { id: true },
     });
     if (!exists) missingCodes.push(xfAcc.code);
@@ -182,7 +182,7 @@ async function upsertCampaign(
   };
 
   const existing = await prisma.revflowCampaign.findUnique({
-    where: { organizationId_revflowId: { organizationId: orgId, revflowId: xf.id } },
+    where: { tenantId_revflowId: { tenantId: orgId, revflowId: xf.id } },
     select: { id: true },
   });
 
@@ -192,7 +192,7 @@ async function upsertCampaign(
   }
 
   await prisma.revflowCampaign.create({
-    data: { ...data, organizationId: orgId, revflowId: xf.id },
+    data: { ...data, tenantId: orgId, revflowId: xf.id },
   });
   return "created";
 }
@@ -239,7 +239,7 @@ async function upsertInvoice(
   let campaignId: string | null = null;
   if (xf.campaignId) {
     const camp = await prisma.revflowCampaign.findUnique({
-      where: { organizationId_revflowId: { organizationId: orgId, revflowId: xf.campaignId } },
+      where: { tenantId_revflowId: { tenantId: orgId, revflowId: xf.campaignId } },
       select: { id: true },
     });
     campaignId = camp?.id ?? null;
@@ -263,7 +263,7 @@ async function upsertInvoice(
   };
 
   const existing = await prisma.revflowInvoice.findUnique({
-    where:  { organizationId_revflowId: { organizationId: orgId, revflowId: xf.id } },
+    where:  { tenantId_revflowId: { tenantId: orgId, revflowId: xf.id } },
     select: { id: true, finosJournalId: true },
   });
 
@@ -281,7 +281,7 @@ async function upsertInvoice(
   }
 
   const created = await prisma.revflowInvoice.create({
-    data: { ...invoiceData, organizationId: orgId, revflowId: xf.id },
+    data: { ...invoiceData, tenantId: orgId, revflowId: xf.id },
   });
 
   if (shouldPostInvoiceGL(xf.status)) {
@@ -303,7 +303,7 @@ async function postInvoiceGL(
   const ngn         = xf.totalAmount * xf.exchangeRate;
 
   const jeId = await postJournalEntry({
-    organizationId:    orgId,
+    tenantId:    orgId,
     createdBy:         "revflow-sync",
     entryDate:         new Date(xf.issueDate),
     reference:         xf.invoiceNumber,
@@ -359,7 +359,7 @@ async function upsertPayment(
   // Check if we already cached this payment
   const cached = await prisma.unifiedTransactionsCache.findFirst({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       sourceApp:   SOURCE,
       sourceTable: "payments",
       sourceId:    xf.id,
@@ -369,7 +369,7 @@ async function upsertPayment(
 
   // Lookup by revflowId stored on the RevflowInvoice row
   const revInvoice = await prisma.revflowInvoice.findUnique({
-    where: { organizationId_revflowId: { organizationId: orgId, revflowId: xf.invoiceId } },
+    where: { tenantId_revflowId: { tenantId: orgId, revflowId: xf.invoiceId } },
     select: { id: true, recognitionPeriod: true, invoiceNumber: true, totalAmount: true, paidAmount: true },
   });
 
@@ -425,7 +425,7 @@ async function postPaymentGL(
   if (lines.length === 0) return;
 
   await postJournalEntry({
-    organizationId:    orgId,
+    tenantId:    orgId,
     createdBy:         "revflow-sync",
     entryDate:         new Date(xf.paymentDate),
     reference:         xf.reference ?? invoiceNumber,

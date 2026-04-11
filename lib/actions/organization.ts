@@ -25,12 +25,12 @@ export async function createOrganization(formData: FormData) {
   try {
     let slug = generateSlug(name);
 
-    const existing = await prisma.organization.findUnique({ where: { slug } });
+    const existing = await prisma.tenant.findUnique({ where: { slug } });
     if (existing) {
       slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
     }
 
-    await prisma.organization.create({
+    await prisma.tenant.create({
       data: {
         name,
         slug,

@@ -9,7 +9,7 @@ import { RevflowClient } from "@/lib/integrations/revflow/client";
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

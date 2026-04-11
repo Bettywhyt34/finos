@@ -23,7 +23,7 @@ export default async function BudgetsPage({
   searchParams: { year?: string; type?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const year = searchParams.year ? parseInt(searchParams.year) : new Date().getFullYear();
@@ -31,7 +31,7 @@ export default async function BudgetsPage({
 
   const budgets = await prisma.budget.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       fiscalYear: year,
       ...(typeFilter ? { type: typeFilter } : {}),
     },

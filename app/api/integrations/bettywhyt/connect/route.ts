@@ -17,11 +17,11 @@ import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const orgId  = session.user.organizationId;
+  const orgId  = session.user.tenantId;
   const userId = session.user.id ?? "system";
 
   if (!isBettywhytOrg(orgId)) {
@@ -61,9 +61,9 @@ export async function POST(req: Request) {
   const apiKeyEncrypted = encrypt(apiKey);
 
   await prisma.integrationConnection.upsert({
-    where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "bettywhyt" } },
+    where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "bettywhyt" } },
     create: {
-      organizationId:   orgId,
+      tenantId:   orgId,
       sourceApp:        "bettywhyt",
       apiKeyEncrypted,
       apiUrl:           baseUrl,

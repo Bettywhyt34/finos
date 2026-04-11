@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function createCustomer(formData: FormData) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
 
   const customerCode = String(formData.get("customerCode") || "").trim();
@@ -17,7 +17,7 @@ export async function createCustomer(formData: FormData) {
   try {
     await prisma.customer.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         customerCode,
         companyName,
         contactName: String(formData.get("contactName") || "") || null,
@@ -39,12 +39,12 @@ export async function createCustomer(formData: FormData) {
 
 export async function updateCustomer(id: string, formData: FormData) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
 
   try {
     await prisma.customer.update({
-      where: { id, organizationId: orgId },
+      where: { id, tenantId: orgId },
       data: {
         companyName: String(formData.get("companyName") || ""),
         contactName: String(formData.get("contactName") || "") || null,
@@ -65,11 +65,11 @@ export async function updateCustomer(id: string, formData: FormData) {
 
 export async function deactivateCustomer(id: string) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
 
   await prisma.customer.update({
-    where: { id, organizationId: orgId },
+    where: { id, tenantId: orgId },
     data: { isActive: false },
   });
   revalidatePath("/customers");

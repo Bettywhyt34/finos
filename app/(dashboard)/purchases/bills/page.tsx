@@ -15,10 +15,10 @@ const statusColors: Record<string, string> = {
 
 export default async function BillsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const bills = await prisma.bill.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: { vendor: { select: { companyName: true, vendorCode: true } } },
     orderBy: { createdAt: "desc" },
   });

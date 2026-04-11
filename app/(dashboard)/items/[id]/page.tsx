@@ -15,10 +15,10 @@ const typeColors: Record<string, string> = {
 export default async function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const item = await prisma.item.findFirst({
-    where: { id, organizationId },
+    where: { id, tenantId },
     include: {
       category: true,
       invoiceLines: {

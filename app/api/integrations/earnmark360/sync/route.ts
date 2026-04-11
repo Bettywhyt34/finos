@@ -9,7 +9,7 @@ import { startSync } from "@/lib/integrations/sync-engine";
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   const userId   = session.user.id ?? "system";
 
   const { syncLogId, jobId } = await startSync(
-    session.user.organizationId,
+    session.user.tenantId,
     "earnmark360",
     syncType,
     userId,

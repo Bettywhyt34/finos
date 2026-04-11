@@ -38,7 +38,7 @@ export interface RecentBill {
 }
 
 export async function getDashboardKpis(
-  organizationId: string
+  tenantId: string
 ): Promise<KpiData> {
   const currentPeriod = getRecognitionPeriod();
 
@@ -46,7 +46,7 @@ export async function getDashboardKpis(
     // Total revenue this month (posted invoices)
     prisma.invoice.aggregate({
       where: {
-        organizationId,
+        tenantId,
         recognitionPeriod: currentPeriod,
         status: { notIn: ["DRAFT"] },
       },
@@ -56,7 +56,7 @@ export async function getDashboardKpis(
     // Outstanding AR (unpaid invoices)
     prisma.invoice.aggregate({
       where: {
-        organizationId,
+        tenantId,
         status: { in: ["SENT", "PARTIAL", "OVERDUE"] },
       },
       _sum: { balanceDue: true },
@@ -65,7 +65,7 @@ export async function getDashboardKpis(
     // Outstanding AP (unpaid bills — need totalAmount and amountPaid)
     prisma.bill.aggregate({
       where: {
-        organizationId,
+        tenantId,
         status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
       },
       _sum: { totalAmount: true, amountPaid: true },
@@ -73,7 +73,7 @@ export async function getDashboardKpis(
 
     // Total bank balance
     prisma.bankAccount.aggregate({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       _sum: { currentBalance: true },
     }),
   ]);
@@ -97,10 +97,10 @@ export async function getDashboardKpis(
 }
 
 export async function getRecentInvoices(
-  organizationId: string
+  tenantId: string
 ): Promise<RecentInvoice[]> {
   const invoices = await prisma.invoice.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: { customer: { select: { companyName: true } } },
     orderBy: { createdAt: "desc" },
     take: 5,
@@ -117,10 +117,10 @@ export async function getRecentInvoices(
 }
 
 export async function getRecentBills(
-  organizationId: string
+  tenantId: string
 ): Promise<RecentBill[]> {
   const bills = await prisma.bill.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: { vendor: { select: { companyName: true } } },
     orderBy: { createdAt: "desc" },
     take: 5,

@@ -36,14 +36,14 @@ export interface SyncResult {
  * Safe to call from server actions or API routes.
  */
 export async function startSync(
-  organizationId: string,
+  tenantId: string,
   sourceApp: SourceApp,
   syncType: SyncType = "incremental",
   triggeredBy = "system"
 ): Promise<{ syncLogId: string; jobId: string }> {
   // 1. Verify the connection exists and is eligible for sync
   const connection = await prisma.integrationConnection.findUnique({
-    where: { organizationId_sourceApp: { organizationId, sourceApp } },
+    where: { tenantId_sourceApp: { tenantId, sourceApp } },
   });
 
   if (!connection) {
@@ -69,7 +69,7 @@ export async function startSync(
 
   const syncLog = await prisma.syncLog.create({
     data: {
-      organizationId,
+      tenantId,
       connectionId: connection.id,
       sourceApp,
       syncType,
@@ -88,7 +88,7 @@ export async function startSync(
   // 4. Enqueue the BullMQ job
   const payload: SyncJobPayload = {
     syncLogId: syncLog.id,
-    organizationId,
+    tenantId,
     sourceApp,
     syncType,
     connectionId: connection.id,
@@ -151,7 +151,7 @@ export async function completeSyncJob(
  * Always call this instead of throwing — it keeps the batch moving.
  */
 export async function quarantineRecord(
-  organizationId: string,
+  tenantId: string,
   syncLogId: string,
   sourceApp: SourceApp,
   sourceTable: string,
@@ -161,7 +161,7 @@ export async function quarantineRecord(
 ): Promise<void> {
   await prisma.syncQuarantine.create({
     data: {
-      organizationId,
+      tenantId,
       syncLogId,
       sourceApp,
       sourceTable,
@@ -179,7 +179,7 @@ export async function quarantineRecord(
  * Called by each source-specific sync handler after parsing a valid record.
  */
 export async function upsertCache(
-  organizationId: string,
+  tenantId: string,
   sourceApp: SourceApp,
   sourceTable: string,
   sourceId: string,
@@ -188,15 +188,15 @@ export async function upsertCache(
 ): Promise<void> {
   await prisma.unifiedTransactionsCache.upsert({
     where: {
-      organizationId_sourceApp_sourceTable_sourceId: {
-        organizationId,
+      tenantId_sourceApp_sourceTable_sourceId: {
+        tenantId,
         sourceApp,
         sourceTable,
         sourceId,
       },
     },
     create: {
-      organizationId,
+      tenantId,
       sourceApp,
       sourceTable,
       sourceId,
@@ -216,14 +216,14 @@ export async function upsertCache(
 
 /** Resolves a source account code to a FINOS ChartOfAccounts ID. */
 export async function resolveAccountMapping(
-  organizationId: string,
+  tenantId: string,
   sourceApp: SourceApp,
   sourceAccountCode: string
 ): Promise<string | null> {
   const mapping = await prisma.accountMapping.findUnique({
     where: {
-      organizationId_sourceApp_sourceAccountCode: {
-        organizationId,
+      tenantId_sourceApp_sourceAccountCode: {
+        tenantId,
         sourceApp,
         sourceAccountCode,
       },
@@ -237,13 +237,13 @@ export async function resolveAccountMapping(
 
 /** Bulk-resolves multiple source account codes in one DB query. */
 export async function resolveAccountMappings(
-  organizationId: string,
+  tenantId: string,
   sourceApp: SourceApp,
   sourceAccountCodes: string[]
 ): Promise<Map<string, string>> {
   const mappings = await prisma.accountMapping.findMany({
     where: {
-      organizationId,
+      tenantId,
       sourceApp,
       sourceAccountCode: { in: sourceAccountCodes },
       isActive: true,
@@ -257,19 +257,19 @@ export async function resolveAccountMappings(
 // ─── Integration status queries ───────────────────────────────────────────────
 
 /** Returns connection status + recent sync logs for the integration dashboard. */
-export async function getIntegrationStatus(organizationId: string) {
+export async function getIntegrationStatus(tenantId: string) {
   const [connections, recentLogs, quarantineCount] = await Promise.all([
     prisma.integrationConnection.findMany({
-      where: { organizationId },
+      where: { tenantId },
       orderBy: { sourceApp: "asc" },
     }),
     prisma.syncLog.findMany({
-      where: { organizationId },
+      where: { tenantId },
       orderBy: { startedAt: "desc" },
       take: 30,
     }),
     prisma.syncQuarantine.count({
-      where: { organizationId, resolved: false },
+      where: { tenantId, resolved: false },
     }),
   ]);
 
@@ -278,13 +278,13 @@ export async function getIntegrationStatus(organizationId: string) {
 
 /** Returns unresolved quarantine records, optionally filtered by source. */
 export async function getQuarantineRecords(
-  organizationId: string,
+  tenantId: string,
   sourceApp?: SourceApp,
   page = 1,
   pageSize = 50
 ) {
   const where = {
-    organizationId,
+    tenantId,
     resolved: false,
     ...(sourceApp ? { sourceApp } : {}),
   };
@@ -309,7 +309,7 @@ export async function getQuarantineRecords(
  * for the source app. The worker will re-attempt these records.
  */
 export async function retryQuarantine(
-  organizationId: string,
+  tenantId: string,
   sourceApp: SourceApp,
   quarantineIds: string[],
   userId: string
@@ -317,24 +317,24 @@ export async function retryQuarantine(
   await prisma.syncQuarantine.updateMany({
     where: {
       id: { in: quarantineIds },
-      organizationId,
+      tenantId,
       sourceApp,
       resolved: false,
     },
     data: { retryCount: { increment: 1 } },
   });
 
-  await startSync(organizationId, sourceApp, "manual", userId);
+  await startSync(tenantId, sourceApp, "manual", userId);
 }
 
 // ─── Mark quarantine records resolved ────────────────────────────────────────
 
 export async function resolveQuarantine(
-  organizationId: string,
+  tenantId: string,
   quarantineIds: string[]
 ): Promise<void> {
   await prisma.syncQuarantine.updateMany({
-    where: { id: { in: quarantineIds }, organizationId },
+    where: { id: { in: quarantineIds }, tenantId },
     data: { resolved: true, resolvedAt: new Date() },
   });
 }

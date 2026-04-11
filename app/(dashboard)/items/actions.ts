@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function createItem(formData: FormData) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
 
   const itemCode = String(formData.get("itemCode") || "").trim();
@@ -18,7 +18,7 @@ export async function createItem(formData: FormData) {
   try {
     await prisma.item.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         itemCode,
         name,
         description: String(formData.get("description") || "") || null,
@@ -43,7 +43,7 @@ export async function createItem(formData: FormData) {
 
 export async function createItemCategory(formData: FormData) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
 
   const name = String(formData.get("name") || "").trim();
@@ -51,7 +51,7 @@ export async function createItemCategory(formData: FormData) {
 
   await prisma.itemCategory.create({
     data: {
-      organizationId: orgId,
+      tenantId: orgId,
       name,
       parentId: String(formData.get("parentId") || "") || null,
     },

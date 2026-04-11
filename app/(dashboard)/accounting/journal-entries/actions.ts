@@ -6,21 +6,21 @@ import { revalidatePath } from "next/cache";
 
 async function getOrgAndUser() {
   const session = await auth();
-  if (!session?.user?.organizationId) throw new Error("Unauthorized");
+  if (!session?.user?.tenantId) throw new Error("Unauthorized");
   return {
-    orgId: session.user.organizationId,
+    orgId: session.user.tenantId,
     userId: (session.user as { id?: string }).id ?? "system",
   };
 }
 
 async function getNextEntryNumber(orgId: string): Promise<string> {
-  const count = await prisma.journalEntry.count({ where: { organizationId: orgId } });
+  const count = await prisma.journalEntry.count({ where: { tenantId: orgId } });
   return "MJE-" + String(count + 1).padStart(5, "0");
 }
 
 async function checkPeriodLocked(orgId: string, period: string) {
   const ap = await prisma.accountingPeriod.findUnique({
-    where: { organizationId_period: { organizationId: orgId, period } },
+    where: { tenantId_period: { tenantId: orgId, period } },
   });
   if (ap?.isClosed) throw new Error("Period " + period + " is closed. Reopen it before posting.");
 }
@@ -55,7 +55,7 @@ export async function createManualJournalEntry(data: {
 
     const entry = await prisma.journalEntry.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         entryNumber,
         entryDate: new Date(data.entryDate),
         reference: data.reference ?? null,
@@ -91,7 +91,7 @@ export async function postJournalEntry(entryId: string) {
   try {
     const { orgId } = await getOrgAndUser();
     const entry = await prisma.journalEntry.findFirst({
-      where: { id: entryId, organizationId: orgId },
+      where: { id: entryId, tenantId: orgId },
       include: { lines: true },
     });
     if (!entry) return { error: "Entry not found" };
@@ -122,14 +122,14 @@ export async function reverseJournalEntry(entryId: string, reason: string) {
   try {
     const { orgId, userId } = await getOrgAndUser();
     const original = await prisma.journalEntry.findFirst({
-      where: { id: entryId, organizationId: orgId, isLocked: true },
+      where: { id: entryId, tenantId: orgId, isLocked: true },
       include: { lines: { include: { account: { select: { id: true, code: true } } } } },
     });
     if (!original) return { error: "Entry not found or not posted" };
 
     // Check not already reversed
     const existingReversal = await prisma.journalEntry.findFirst({
-      where: { organizationId: orgId, reversedById: entryId },
+      where: { tenantId: orgId, reversedById: entryId },
     });
     if (existingReversal) return { error: "Entry has already been reversed" };
 
@@ -141,7 +141,7 @@ export async function reverseJournalEntry(entryId: string, reason: string) {
 
     const reversal = await prisma.journalEntry.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         entryNumber,
         entryDate: today,
         reference: "REV-" + original.entryNumber,
@@ -187,7 +187,7 @@ export async function updateJournalEntry(
   try {
     const { orgId } = await getOrgAndUser();
     const entry = await prisma.journalEntry.findFirst({
-      where: { id: entryId, organizationId: orgId },
+      where: { id: entryId, tenantId: orgId },
     });
     if (!entry) return { error: "Entry not found" };
     if (entry.isLocked) return { error: "Cannot edit a posted entry" };

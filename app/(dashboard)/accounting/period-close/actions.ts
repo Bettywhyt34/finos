@@ -6,9 +6,9 @@ import { revalidatePath } from "next/cache";
 
 async function getOrgAndUser() {
   const session = await auth();
-  if (!session?.user?.organizationId) throw new Error("Unauthorized");
+  if (!session?.user?.tenantId) throw new Error("Unauthorized");
   return {
-    orgId: session.user.organizationId,
+    orgId: session.user.tenantId,
     userId: (session.user as { id?: string }).id ?? "system",
   };
 }
@@ -19,8 +19,8 @@ export async function ensurePeriodsExist(year: number) {
   for (let m = 1; m <= 12; m++) {
     const period = year + "-" + String(m).padStart(2, "0");
     await prisma.accountingPeriod.upsert({
-      where: { organizationId_period: { organizationId: orgId, period } },
-      create: { organizationId: orgId, year, month: m, period, isClosed: false },
+      where: { tenantId_period: { tenantId: orgId, period } },
+      create: { tenantId: orgId, year, month: m, period, isClosed: false },
       update: {},
     });
   }
@@ -34,7 +34,7 @@ export async function closePeriod(period: string) {
 
     // Check for unposted (draft) entries in this period
     const draftCount = await prisma.journalEntry.count({
-      where: { organizationId: orgId, recognitionPeriod: period, isLocked: false },
+      where: { tenantId: orgId, recognitionPeriod: period, isLocked: false },
     });
     if (draftCount > 0) {
       return {
@@ -47,7 +47,7 @@ export async function closePeriod(period: string) {
     // Validate trial balance (total debits = total credits)
     const agg = await prisma.journalEntryLine.aggregate({
       where: {
-        entry: { organizationId: orgId, isLocked: true, recognitionPeriod: { lte: period } },
+        entry: { tenantId: orgId, isLocked: true, recognitionPeriod: { lte: period } },
       },
       _sum: { debit: true, credit: true },
     });
@@ -61,9 +61,9 @@ export async function closePeriod(period: string) {
     }
 
     await prisma.accountingPeriod.upsert({
-      where: { organizationId_period: { organizationId: orgId, period } },
+      where: { tenantId_period: { tenantId: orgId, period } },
       create: {
-        organizationId: orgId,
+        tenantId: orgId,
         year: parseInt(period.slice(0, 4)),
         month: parseInt(period.slice(5, 7)),
         period,
@@ -85,7 +85,7 @@ export async function reopenPeriod(period: string) {
   try {
     const { orgId } = await getOrgAndUser();
     await prisma.accountingPeriod.update({
-      where: { organizationId_period: { organizationId: orgId, period } },
+      where: { tenantId_period: { tenantId: orgId, period } },
       data: { isClosed: false, closedBy: null, closedAt: null },
     });
     revalidatePath("/accounting/period-close");
@@ -102,7 +102,7 @@ export async function yearEndClose(year: number, retainedEarningsAccountId: stri
 
     // Check all 12 periods of the year are closed
     const periods = await prisma.accountingPeriod.findMany({
-      where: { organizationId: orgId, year },
+      where: { tenantId: orgId, year },
     });
     const openPeriods = periods.filter((p) => !p.isClosed);
     if (openPeriods.length > 0) {
@@ -116,7 +116,7 @@ export async function yearEndClose(year: number, retainedEarningsAccountId: stri
       by: ["accountId"],
       where: {
         entry: {
-          organizationId: orgId,
+          tenantId: orgId,
           isLocked: true,
           recognitionPeriod: { gte: year + "-01", lte: year + "-12" },
         },
@@ -180,12 +180,12 @@ export async function yearEndClose(year: number, retainedEarningsAccountId: stri
     });
 
     // Create closing journal entry
-    const count = await prisma.journalEntry.count({ where: { organizationId: orgId } });
+    const count = await prisma.journalEntry.count({ where: { tenantId: orgId } });
     const entryNumber = "YEC-" + year + "-" + String(count + 1).padStart(4, "0");
 
     await prisma.journalEntry.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         entryNumber,
         entryDate: new Date(year + "-12-31"),
         reference: "YEC-" + year,

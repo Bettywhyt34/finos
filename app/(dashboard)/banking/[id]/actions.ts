@@ -7,18 +7,18 @@ import type { TransactionType } from "@prisma/client";
 
 async function getOrgId() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) throw new Error("Unauthorized");
   return orgId;
 }
 
 export async function createTransaction(bankAccountId: string, formData: FormData) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
 
     // Verify the bank account belongs to this org
     const account = await prisma.bankAccount.findFirst({
-      where: { id: bankAccountId, organizationId },
+      where: { id: bankAccountId, tenantId },
     });
     if (!account) return { error: "Account not found" };
 

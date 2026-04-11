@@ -9,14 +9,14 @@ const PATH = "/accounting/chart-of-accounts";
 
 async function getOrgId() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) throw new Error("Unauthorized");
   return orgId;
 }
 
 export async function createAccount(formData: FormData) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
     const code = (formData.get("code") as string).trim();
     const name = (formData.get("name") as string).trim();
     const type = formData.get("type") as AccountType;
@@ -26,7 +26,7 @@ export async function createAccount(formData: FormData) {
     if (!code || !name || !type) return { error: "Code, name and type are required" };
 
     await prisma.chartOfAccounts.create({
-      data: { organizationId, code, name, type, subtype, parentId: parentId || null },
+      data: { tenantId, code, name, type, subtype, parentId: parentId || null },
     });
 
     revalidatePath(PATH);
@@ -40,7 +40,7 @@ export async function createAccount(formData: FormData) {
 
 export async function updateAccount(id: string, formData: FormData) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
     const code = (formData.get("code") as string).trim();
     const name = (formData.get("name") as string).trim();
     const type = formData.get("type") as AccountType;
@@ -50,7 +50,7 @@ export async function updateAccount(id: string, formData: FormData) {
     if (!code || !name || !type) return { error: "Code, name and type are required" };
 
     await prisma.chartOfAccounts.update({
-      where: { id, organizationId },
+      where: { id, tenantId },
       data: { code, name, type, subtype, parentId: parentId || null },
     });
 
@@ -65,9 +65,9 @@ export async function updateAccount(id: string, formData: FormData) {
 
 export async function toggleAccountStatus(id: string, isActive: boolean) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
     await prisma.chartOfAccounts.update({
-      where: { id, organizationId },
+      where: { id, tenantId },
       data: { isActive },
     });
     revalidatePath(PATH);

@@ -52,7 +52,7 @@ function zero(): Counts {
 export async function processBettywhyt(
   payload: SyncJobPayload
 ): Promise<Counts & { nextCursor?: string }> {
-  const { organizationId, connectionId, syncLogId, cursor } = payload;
+  const { tenantId, connectionId, syncLogId, cursor } = payload;
 
   const connection = await prisma.integrationConnection.findUniqueOrThrow({
     where:  { id: connectionId },
@@ -78,8 +78,8 @@ export async function processBettywhyt(
   };
 
   try {
-    add(await syncProducts(client, organizationId, syncLogId, since));
-    add(await syncOrders(client, organizationId, syncLogId, since));
+    add(await syncProducts(client, tenantId, syncLogId, since));
+    add(await syncOrders(client, tenantId, syncLogId, since));
   } catch (err) {
     if (err instanceof Error && err.message === BETTYWHYT_API_KEY_INVALID) {
       await prisma.integrationConnection.update({
@@ -138,7 +138,7 @@ async function upsertProduct(orgId: string, raw: BWPProduct): Promise<"created" 
   };
 
   const existing = await prisma.item.findUnique({
-    where:  { organizationId_itemCode: { organizationId: orgId, itemCode: raw.sku } },
+    where:  { tenantId_itemCode: { tenantId: orgId, itemCode: raw.sku } },
     select: { id: true },
   });
 
@@ -150,7 +150,7 @@ async function upsertProduct(orgId: string, raw: BWPProduct): Promise<"created" 
   await prisma.item.create({
     data: {
       ...data,
-      organizationId: orgId,
+      tenantId: orgId,
       itemCode:       raw.sku,
       type:           "INVENTORY",
     },
@@ -195,7 +195,7 @@ async function syncOrders(
 async function upsertOrder(orgId: string, order: BWPOrder): Promise<"created" | "updated"> {
   // Check idempotency via invoiceNumber = orderNumber
   const existing = await prisma.invoice.findFirst({
-    where:  { organizationId: orgId, invoiceNumber: order.orderNumber },
+    where:  { tenantId: orgId, invoiceNumber: order.orderNumber },
     select: { id: true },
   });
   if (existing) return "updated"; // already synced, skip re-posting
@@ -211,7 +211,7 @@ async function upsertOrder(orgId: string, order: BWPOrder): Promise<"created" | 
   await prisma.$transaction(async (tx) => {
     const invoice = await tx.invoice.create({
       data: {
-        organizationId:    orgId,
+        tenantId:    orgId,
         invoiceNumber:     order.orderNumber,
         customerId,
         issueDate:         orderDate,
@@ -233,7 +233,7 @@ async function upsertOrder(orgId: string, order: BWPOrder): Promise<"created" | 
     for (const item of order.items) {
       // Best-effort: resolve FINOS item by SKU
       const finosItem = await tx.item.findUnique({
-        where:  { organizationId_itemCode: { organizationId: orgId, itemCode: item.sku } },
+        where:  { tenantId_itemCode: { tenantId: orgId, itemCode: item.sku } },
         select: { id: true },
       });
 
@@ -253,7 +253,7 @@ async function upsertOrder(orgId: string, order: BWPOrder): Promise<"created" | 
     const totalCost = order.items.reduce((s, i) => s + i.quantity * i.costPrice, 0);
 
     await postJournalEntry({
-      organizationId:    orgId,
+      tenantId:    orgId,
       createdBy:         "bettywhyt-sync",
       entryDate:         orderDate,
       reference:         order.orderNumber,
@@ -273,14 +273,14 @@ async function upsertOrder(orgId: string, order: BWPOrder): Promise<"created" | 
     // Log InventoryMovements per line item
     for (const item of order.items) {
       const finosItem = await tx.item.findUnique({
-        where:  { organizationId_itemCode: { organizationId: orgId, itemCode: item.sku } },
+        where:  { tenantId_itemCode: { tenantId: orgId, itemCode: item.sku } },
         select: { id: true },
       });
       if (!finosItem) continue;
 
       await tx.inventoryMovement.create({
         data: {
-          organizationId: orgId,
+          tenantId: orgId,
           itemId:         finosItem.id,
           movementType:   "SALE_ONLINE",
           channel:        "ONLINE",
@@ -311,17 +311,17 @@ async function resolveOrCreateCustomer(
   customer: { email: string; name: string; phone?: string }
 ): Promise<string> {
   const existing = await prisma.customer.findFirst({
-    where:  { organizationId: orgId, email: customer.email },
+    where:  { tenantId: orgId, email: customer.email },
     select: { id: true },
   });
   if (existing) return existing.id;
 
-  const count = await prisma.customer.count({ where: { organizationId: orgId } });
+  const count = await prisma.customer.count({ where: { tenantId: orgId } });
   const code  = `BWP-${String(count + 1).padStart(4, "0")}`;
 
   const created = await prisma.customer.create({
     data: {
-      organizationId: orgId,
+      tenantId: orgId,
       customerCode:   code,
       companyName:    customer.name,
       contactName:    customer.name,

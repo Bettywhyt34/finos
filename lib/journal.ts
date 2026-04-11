@@ -12,7 +12,7 @@ interface JournalLine {
 }
 
 interface PostJournalOptions {
-  organizationId: string;
+  tenantId: string;
   createdBy: string;
   entryDate: Date;
   reference: string;
@@ -23,17 +23,17 @@ interface PostJournalOptions {
   lines: JournalLine[];
 }
 
-async function getNextEntryNumber(organizationId: string): Promise<string> {
-  const count = await prisma.journalEntry.count({ where: { organizationId } });
+async function getNextEntryNumber(tenantId: string): Promise<string> {
+  const count = await prisma.journalEntry.count({ where: { tenantId } });
   return `JE-${String(count + 1).padStart(5, "0")}`;
 }
 
 export async function postJournalEntry(opts: PostJournalOptions): Promise<string> {
-  const { organizationId, createdBy, entryDate, reference, description, recognitionPeriod, source, sourceId, lines } = opts;
+  const { tenantId, createdBy, entryDate, reference, description, recognitionPeriod, source, sourceId, lines } = opts;
 
   // Check period is not locked
   const period = await prisma.accountingPeriod.findUnique({
-    where: { organizationId_period: { organizationId, period: recognitionPeriod } },
+    where: { tenantId_period: { tenantId, period: recognitionPeriod } },
   });
   if (period?.isClosed) {
     throw new Error(`Period ${recognitionPeriod} is closed. Reopen it before posting.`);
@@ -49,16 +49,16 @@ export async function postJournalEntry(opts: PostJournalOptions): Promise<string
   // Resolve account IDs
   const codes = lines.map((l) => l.accountCode);
   const accounts = await prisma.chartOfAccounts.findMany({
-    where: { organizationId, code: { in: codes } },
+    where: { tenantId, code: { in: codes } },
     select: { id: true, code: true },
   });
   const codeToId = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
 
-  const entryNumber = await getNextEntryNumber(organizationId);
+  const entryNumber = await getNextEntryNumber(tenantId);
 
   const entry = await prisma.journalEntry.create({
     data: {
-      organizationId,
+      tenantId,
       entryNumber,
       entryDate,
       reference,

@@ -25,7 +25,7 @@ const VALID_SOURCES = new Set<string>(["revflow", "xpenxflow", "earnmark360"]);
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.email || !session?.user?.organizationId) {
+  if (!session?.user?.email || !session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   }
 
   const sourceApp = body.source as SourceApp;
-  const orgId     = session.user.organizationId;
+  const orgId     = session.user.tenantId;
   const userId    = session.user.id ?? "system";
   const email     = session.user.email;
 
@@ -51,8 +51,8 @@ export async function POST(req: Request) {
   const apiUrl = discovered.apiUrl ?? cfg.defaultApiUrl;
 
   await prisma.integrationConnection.upsert({
-    where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp } },
-    create: { organizationId: orgId, sourceApp, apiUrl, syncEnabled: false, status: "CONNECTING" },
+    where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp } },
+    create: { tenantId: orgId, sourceApp, apiUrl, syncEnabled: false, status: "CONNECTING" },
     update: { apiUrl, status: "CONNECTING", lastError: null, syncEnabled: false },
   });
 

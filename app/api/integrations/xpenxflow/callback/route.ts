@@ -27,10 +27,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    const { organizationId, userId } = await consumeOAuthState(state, "xpenxflow");
+    const { tenantId, userId } = await consumeOAuthState(state, "xpenxflow");
 
     const connection = await prisma.integrationConnection.findUniqueOrThrow({
-      where:  { organizationId_sourceApp: { organizationId, sourceApp: "xpenxflow" } },
+      where:  { tenantId_sourceApp: { tenantId, sourceApp: "xpenxflow" } },
       select: { id: true },
     });
 
@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       },
     });
 
-    await startSync(organizationId, "xpenxflow", "full", userId);
+    await startSync(tenantId, "xpenxflow", "full", userId);
 
     return NextResponse.redirect(new URL("/integrations/xpenxflow/status", url.origin));
   } catch (err) {

@@ -22,11 +22,11 @@ export default async function JournalEntryDetailPage({
   params: { id: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const entry = await prisma.journalEntry.findFirst({
-    where: { id: params.id, organizationId: orgId },
+    where: { id: params.id, tenantId: orgId },
     include: {
       lines: {
         include: {
@@ -41,7 +41,7 @@ export default async function JournalEntryDetailPage({
 
   // Check if already reversed
   const reversal = await prisma.journalEntry.findFirst({
-    where: { organizationId: orgId, reversedById: entry.id },
+    where: { tenantId: orgId, reversedById: entry.id },
     select: { id: true, entryNumber: true },
   });
 
@@ -49,7 +49,7 @@ export default async function JournalEntryDetailPage({
   const sourceEntry =
     entry.reversedById
       ? await prisma.journalEntry.findFirst({
-          where: { id: entry.reversedById, organizationId: orgId },
+          where: { id: entry.reversedById, tenantId: orgId },
           select: { id: true, entryNumber: true },
         })
       : null;

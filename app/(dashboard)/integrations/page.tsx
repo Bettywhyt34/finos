@@ -53,11 +53,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default async function IntegrationsPage() {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const connections = await prisma.integrationConnection.findMany({
-    where:  { organizationId: orgId },
+    where:  { tenantId: orgId },
     select: { sourceApp: true, status: true, lastSyncAt: true, sourceOrgName: true },
   });
 

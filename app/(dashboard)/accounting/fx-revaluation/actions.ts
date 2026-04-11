@@ -7,9 +7,9 @@ import { getRecognitionPeriod } from "@/lib/utils";
 
 async function getOrgAndUser() {
   const session = await auth();
-  if (!session?.user?.organizationId) throw new Error("Unauthorized");
+  if (!session?.user?.tenantId) throw new Error("Unauthorized");
   return {
-    orgId: session.user.organizationId,
+    orgId: session.user.tenantId,
     userId: (session.user as { id?: string }).id ?? "system",
   };
 }
@@ -55,7 +55,7 @@ export async function calculateFXExposure(
 ): Promise<FXExposureResult> {
   const invoices = await prisma.invoice.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       currency,
       status: { in: ["SENT", "PARTIAL", "OVERDUE"] },
     },
@@ -70,7 +70,7 @@ export async function calculateFXExposure(
 
   const bills = await prisma.bill.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       currency,
       status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
     },
@@ -167,8 +167,8 @@ export async function postFXRevaluation(data: {
 
     const existing = await prisma.fxRevaluation.findUnique({
       where: {
-        organizationId_period_currency: {
-          organizationId: orgId,
+        tenantId_period_currency: {
+          tenantId: orgId,
           period: data.period,
           currency: data.currency,
         },
@@ -249,7 +249,7 @@ export async function postFXRevaluation(data: {
 
     const ref = "FXR-" + data.period + "-" + data.currency;
     const journalEntryId = await postJournalEntry({
-      organizationId: orgId,
+      tenantId: orgId,
       entryDate: new Date(data.revaluationDate),
       reference: ref,
       description:
@@ -270,14 +270,14 @@ export async function postFXRevaluation(data: {
 
     const reval = await prisma.fxRevaluation.upsert({
       where: {
-        organizationId_period_currency: {
-          organizationId: orgId,
+        tenantId_period_currency: {
+          tenantId: orgId,
           period: data.period,
           currency: data.currency,
         },
       },
       create: {
-        organizationId: orgId,
+        tenantId: orgId,
         revaluationDate: new Date(data.revaluationDate),
         period: data.period,
         currency: data.currency,
@@ -333,7 +333,7 @@ export async function reverseFXRevaluation(revalId: string) {
     const { orgId, userId } = await getOrgAndUser();
 
     const reval = await prisma.fxRevaluation.findFirst({
-      where: { id: revalId, organizationId: orgId, status: "POSTED" },
+      where: { id: revalId, tenantId: orgId, status: "POSTED" },
       include: {
         journalEntry: {
           include: { lines: { include: { account: true } } },
@@ -357,7 +357,7 @@ export async function reverseFXRevaluation(revalId: string) {
     const refRev = "FXR-REV-" + reval.period + "-" + reval.currency;
 
     await postJournalEntry({
-      organizationId: orgId,
+      tenantId: orgId,
       entryDate: today,
       reference: refRev,
       description:

@@ -19,11 +19,11 @@ export default async function FxRevaluationDetailPage({
   params: { id: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const reval = await prisma.fxRevaluation.findFirst({
-    where: { id: params.id, organizationId: orgId },
+    where: { id: params.id, tenantId: orgId },
     include: {
       journalEntry: {
         include: {

@@ -22,10 +22,10 @@ export default async function BankAccountDetailPage({
   params: { id: string };
 }) {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const account = await prisma.bankAccount.findFirst({
-    where: { id: params.id, organizationId },
+    where: { id: params.id, tenantId },
     include: {
       transactions: {
         orderBy: { transactionDate: "desc" },

@@ -108,7 +108,7 @@ type Counts = {
 export async function processEarnmark360(payload: SyncJobPayload): Promise<
   Counts & { nextCursor?: string }
 > {
-  const { organizationId, connectionId, syncLogId, cursor } = payload;
+  const { tenantId, connectionId, syncLogId, cursor } = payload;
 
   const connection = await prisma.integrationConnection.findUniqueOrThrow({
     where:  { id: connectionId },
@@ -144,11 +144,11 @@ export async function processEarnmark360(payload: SyncJobPayload): Promise<
 
   try {
     // Employees must come before payroll lines, attendance, and deductions
-    add(await syncEmployees(emk, organizationId, syncLogId, since));
-    add(await syncPayrollRuns(emk, organizationId, syncLogId, since));
-    add(await syncPayrollLines(emk, organizationId, syncLogId, since));
-    add(await syncAttendance(emk, organizationId, syncLogId, since));
-    add(await syncDeductions(emk, organizationId, syncLogId, since));
+    add(await syncEmployees(emk, tenantId, syncLogId, since));
+    add(await syncPayrollRuns(emk, tenantId, syncLogId, since));
+    add(await syncPayrollLines(emk, tenantId, syncLogId, since));
+    add(await syncAttendance(emk, tenantId, syncLogId, since));
+    add(await syncDeductions(emk, tenantId, syncLogId, since));
   } catch (err) {
     if (err instanceof Error && err.message === EARNMARK360_TOKEN_EXPIRED) {
       await markTokenExpired(connectionId);
@@ -242,7 +242,7 @@ async function syncPayrollLines(
     try {
       // Only post GL for new payroll lines (not yet in cache)
       const existing = await prisma.unifiedTransactionsCache.findFirst({
-        where: { organizationId: orgId, sourceApp: SOURCE, sourceTable: "payroll_lines", sourceId: naira.id },
+        where: { tenantId: orgId, sourceApp: SOURCE, sourceTable: "payroll_lines", sourceId: naira.id },
         select: { id: true },
       });
 
@@ -269,7 +269,7 @@ async function syncPayrollLines(
 async function postPayrollLineGL(orgId: string, line: EMKPayrollLine): Promise<void> {
   // Resolve payroll run for recognition period
   const runCache = await prisma.unifiedTransactionsCache.findFirst({
-    where: { organizationId: orgId, sourceApp: SOURCE, sourceTable: "payroll_runs", sourceId: line.payroll_run_id },
+    where: { tenantId: orgId, sourceApp: SOURCE, sourceTable: "payroll_runs", sourceId: line.payroll_run_id },
     select: { dataJson: true },
   });
 
@@ -305,7 +305,7 @@ async function postPayrollLineGL(orgId: string, line: EMKPayrollLine): Promise<v
   }
 
   await postJournalEntry({
-    organizationId:    orgId,
+    tenantId:    orgId,
     createdBy:         "earnmark360-sync",
     entryDate:         new Date(run.run_date),
     reference:         line.payroll_run_id,

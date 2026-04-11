@@ -9,7 +9,7 @@ export default async function CashFlowPage({
   searchParams: { periodFrom?: string; periodTo?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const today = new Date().toISOString().slice(0, 7);
@@ -53,7 +53,7 @@ export default async function CashFlowPage({
 
   // Bank balances from actual bank account table for reconciliation
   const bankAccounts = await prisma.bankAccount.findMany({
-    where: { organizationId: orgId, isActive: true },
+    where: { tenantId: orgId, isActive: true },
     select: { accountName: true, bankName: true, currentBalance: true },
   });
   const bankTotal = bankAccounts.reduce((s, b) => s + Number(b.currentBalance), 0);

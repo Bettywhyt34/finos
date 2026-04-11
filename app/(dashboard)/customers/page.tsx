@@ -9,10 +9,10 @@ import { formatCurrency, cn } from "@/lib/utils";
 
 export default async function CustomersPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const customers = await prisma.customer.findMany({
-    where: { organizationId, isActive: true },
+    where: { tenantId, isActive: true },
     include: {
       invoices: { select: { totalAmount: true, amountPaid: true } },
     },

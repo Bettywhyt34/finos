@@ -6,14 +6,14 @@ import { auth } from "@/lib/auth";
 
 async function getOrgId() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) throw new Error("Unauthorized");
   return orgId;
 }
 
 export async function createBankAccount(formData: FormData) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
     const accountName = (formData.get("accountName") as string).trim();
     const accountNumber = (formData.get("accountNumber") as string).trim();
     const bankName = (formData.get("bankName") as string).trim();
@@ -26,7 +26,7 @@ export async function createBankAccount(formData: FormData) {
 
     await prisma.bankAccount.create({
       data: {
-        organizationId,
+        tenantId,
         accountName,
         accountNumber,
         bankName,

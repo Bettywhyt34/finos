@@ -9,18 +9,18 @@ import { isBettywhytOrg } from "@/lib/integrations/bettywhyt/guard";
 
 export async function DELETE(req: Request) {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const orgId = session.user.organizationId;
+  const orgId = session.user.tenantId;
 
   if (!isBettywhytOrg(orgId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   await prisma.integrationConnection.updateMany({
-    where: { organizationId: orgId, sourceApp: "bettywhyt" },
+    where: { tenantId: orgId, sourceApp: "bettywhyt" },
     data:  {
       status:           "DISCONNECTED",
       apiKeyEncrypted:  null,

@@ -4,13 +4,13 @@ import { RevaluationForm } from "./revaluation-form";
 
 export default async function NewRevaluationPage() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   // Load FX-eligible account codes for the gain/loss selectors
   const accounts = await prisma.chartOfAccounts.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       isActive: true,
       type: { in: ["INCOME", "EXPENSE"] },
     },

@@ -8,7 +8,7 @@ import { getRecognitionPeriod, toNGN } from "@/lib/utils";
 import { sendToBettywhyt } from "@/lib/integrations/bettywhyt/webhook-sender";
 
 async function getNextBillNumber(orgId: string): Promise<string> {
-  const count = await prisma.bill.count({ where: { organizationId: orgId } });
+  const count = await prisma.bill.count({ where: { tenantId: orgId } });
   return `BILL-${String(count + 1).padStart(5, "0")}`;
 }
 
@@ -31,7 +31,7 @@ export async function createBill(data: {
   lines: BillLineItem[];
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
 
@@ -47,7 +47,7 @@ export async function createBill(data: {
   try {
     const bill = await prisma.bill.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         vendorId: data.vendorId,
         billNumber,
         vendorRef: data.vendorRef || null,
@@ -92,7 +92,7 @@ export async function createBill(data: {
     }
 
     await postJournalEntry({
-      organizationId: orgId,
+      tenantId: orgId,
       createdBy: userId,
       entryDate: new Date(data.billDate),
       reference: billNumber,
@@ -141,11 +141,11 @@ export async function recordBillPayment(data: {
   billAllocations: { billId: string; amount: number }[];
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
 
-  const count = await prisma.vendorPayment.count({ where: { organizationId: orgId } });
+  const count = await prisma.vendorPayment.count({ where: { tenantId: orgId } });
   const paymentNumber = `VPY-${String(count + 1).padStart(5, "0")}`;
   const netAmount = data.amount - data.whtAmount;
 
@@ -153,7 +153,7 @@ export async function recordBillPayment(data: {
     await prisma.$transaction(async (tx) => {
       await tx.vendorPayment.create({
         data: {
-          organizationId: orgId,
+          tenantId: orgId,
           vendorId: data.vendorId,
           paymentNumber,
           paymentDate: new Date(data.paymentDate),
@@ -186,7 +186,7 @@ export async function recordBillPayment(data: {
       jLines.push({ accountCode: "CL-002", description: `WHT payable - ${paymentNumber}`, debit: 0, credit: data.whtAmount });
     }
     await postJournalEntry({
-      organizationId: orgId,
+      tenantId: orgId,
       createdBy: userId,
       entryDate: new Date(data.paymentDate),
       reference: paymentNumber,

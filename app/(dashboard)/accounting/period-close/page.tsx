@@ -13,13 +13,13 @@ export default async function PeriodClosePage({
   searchParams: { year?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const year = parseInt(searchParams.year ?? String(new Date().getFullYear()));
 
   const periods = await prisma.accountingPeriod.findMany({
-    where: { organizationId: orgId, year },
+    where: { tenantId: orgId, year },
     orderBy: { month: "asc" },
   });
 
@@ -27,7 +27,7 @@ export default async function PeriodClosePage({
   const draftCounts = await prisma.journalEntry.groupBy({
     by: ["recognitionPeriod"],
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       isLocked: false,
       recognitionPeriod: { gte: year + "-01", lte: year + "-12" },
     },
@@ -39,7 +39,7 @@ export default async function PeriodClosePage({
   const entryCounts = await prisma.journalEntry.groupBy({
     by: ["recognitionPeriod"],
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       recognitionPeriod: { gte: year + "-01", lte: year + "-12" },
     },
     _count: { id: true },
@@ -48,7 +48,7 @@ export default async function PeriodClosePage({
 
   // Equity accounts for year-end close
   const equityAccounts = await prisma.chartOfAccounts.findMany({
-    where: { organizationId: orgId, type: "EQUITY", isActive: true },
+    where: { tenantId: orgId, type: "EQUITY", isActive: true },
     select: { id: true, code: true, name: true },
     orderBy: { code: "asc" },
   });

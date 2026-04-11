@@ -17,10 +17,10 @@ const statusColors: Record<string, string> = {
 
 export default async function InvoicesPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const invoices = await prisma.invoice.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: { customer: { select: { companyName: true } } },
     orderBy: { createdAt: "desc" },
   });

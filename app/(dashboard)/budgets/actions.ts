@@ -6,9 +6,9 @@ import { revalidatePath } from "next/cache";
 
 async function getOrgAndUser() {
   const session = await auth();
-  if (!session?.user?.organizationId) throw new Error("Unauthorized");
+  if (!session?.user?.tenantId) throw new Error("Unauthorized");
   return {
-    orgId: session.user.organizationId,
+    orgId: session.user.tenantId,
     userId: (session.user as { id?: string }).id ?? "system",
     userName: session.user.name ?? "Unknown",
   };
@@ -26,7 +26,7 @@ export async function createBudget(data: {
 
     const budget = await prisma.budget.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         name: data.name,
         type: data.type,
         fiscalYear: data.fiscalYear,
@@ -96,7 +96,7 @@ export async function saveBudgetLines(
     const { orgId } = await getOrgAndUser();
 
     const budget = await prisma.budget.findFirst({
-      where: { id: budgetId, organizationId: orgId },
+      where: { id: budgetId, tenantId: orgId },
       include: { versions: { where: { id: versionId } } },
     });
     if (!budget) return { error: "Budget not found" };
@@ -156,7 +156,7 @@ export async function submitBudget(budgetId: string, versionId: string) {
     const { orgId, userId, userName } = await getOrgAndUser();
 
     const budget = await prisma.budget.findFirst({
-      where: { id: budgetId, organizationId: orgId },
+      where: { id: budgetId, tenantId: orgId },
     });
     if (!budget) return { error: "Budget not found" };
     if (budget.status === "LOCKED") return { error: "Budget is locked" };
@@ -198,7 +198,7 @@ export async function approveBudget(
     const { orgId, userId } = await getOrgAndUser();
 
     await prisma.budget.findFirstOrThrow({
-      where: { id: budgetId, organizationId: orgId },
+      where: { id: budgetId, tenantId: orgId },
     });
 
     await prisma.$transaction([
@@ -230,7 +230,7 @@ export async function rejectBudget(
 ) {
   try {
     const { orgId } = await getOrgAndUser();
-    await prisma.budget.findFirstOrThrow({ where: { id: budgetId, organizationId: orgId } });
+    await prisma.budget.findFirstOrThrow({ where: { id: budgetId, tenantId: orgId } });
 
     await prisma.$transaction([
       prisma.budgetApproval.update({
@@ -254,7 +254,7 @@ export async function lockBudget(budgetId: string, versionId: string) {
   try {
     const { orgId } = await getOrgAndUser();
     await prisma.budget.findFirstOrThrow({
-      where: { id: budgetId, organizationId: orgId, status: "APPROVED" },
+      where: { id: budgetId, tenantId: orgId, status: "APPROVED" },
     });
 
     await prisma.$transaction([
@@ -284,7 +284,7 @@ export async function recordXpenxFlowOverride(data: {
 }) {
   try {
     const { orgId, userId } = await getOrgAndUser();
-    await prisma.budget.findFirstOrThrow({ where: { id: data.budgetId, organizationId: orgId } });
+    await prisma.budget.findFirstOrThrow({ where: { id: data.budgetId, tenantId: orgId } });
 
     await prisma.budgetOverrideLog.create({
       data: {
@@ -310,7 +310,7 @@ export async function createRevision(budgetId: string, currentVersionId: string,
     const { orgId, userId } = await getOrgAndUser();
 
     const budget = await prisma.budget.findFirst({
-      where: { id: budgetId, organizationId: orgId },
+      where: { id: budgetId, tenantId: orgId },
       include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
     });
     if (!budget) return { error: "Budget not found" };

@@ -23,7 +23,7 @@ export async function getAccountBalances(
   periodFrom?: string
 ): Promise<AccountBalance[]> {
   const accounts = await prisma.chartOfAccounts.findMany({
-    where: { organizationId: orgId, isActive: true },
+    where: { tenantId: orgId, isActive: true },
     select: { id: true, code: true, name: true, type: true, subtype: true },
     orderBy: { code: "asc" },
   });
@@ -32,7 +32,7 @@ export async function getAccountBalances(
     by: ["accountId"],
     where: {
       entry: {
-        organizationId: orgId,
+        tenantId: orgId,
         isLocked: true,
         recognitionPeriod: {
           lte: periodTo,

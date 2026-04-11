@@ -27,10 +27,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    const { organizationId, userId } = await consumeOAuthState(state, "earnmark360");
+    const { tenantId, userId } = await consumeOAuthState(state, "earnmark360");
 
     const connection = await prisma.integrationConnection.findUniqueOrThrow({
-      where:  { organizationId_sourceApp: { organizationId, sourceApp: "earnmark360" } },
+      where:  { tenantId_sourceApp: { tenantId, sourceApp: "earnmark360" } },
       select: { id: true },
     });
 
@@ -50,7 +50,7 @@ export async function GET(req: Request) {
       },
     });
 
-    await startSync(organizationId, "earnmark360", "full", userId);
+    await startSync(tenantId, "earnmark360", "full", userId);
 
     return NextResponse.redirect(new URL("/integrations/earnmark360/status", url.origin));
   } catch (err) {

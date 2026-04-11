@@ -23,7 +23,7 @@ export default async function TrialBalancePage({
   searchParams: { period?: string; activeOnly?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const period = searchParams.period ?? "";
@@ -31,7 +31,7 @@ export default async function TrialBalancePage({
 
   // All active accounts
   const accounts = await prisma.chartOfAccounts.findMany({
-    where: { organizationId: orgId, ...(activeOnly ? { isActive: true } : {}) },
+    where: { tenantId: orgId, ...(activeOnly ? { isActive: true } : {}) },
     select: { id: true, code: true, name: true, type: true },
     orderBy: { code: "asc" },
   });
@@ -41,7 +41,7 @@ export default async function TrialBalancePage({
     by: ["accountId"],
     where: {
       entry: {
-        organizationId: orgId,
+        tenantId: orgId,
         isLocked: true,
         ...(period ? { recognitionPeriod: { lte: period } } : {}),
       },

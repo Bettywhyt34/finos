@@ -23,11 +23,11 @@ import { discoverAccount } from "@/lib/integrations/discovery";
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.organizationId || !session?.user?.email) {
+  if (!session?.user?.tenantId || !session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const orgId  = session.user.organizationId;
+  const orgId  = session.user.tenantId;
   const userId = session.user.id ?? "system";
   const email  = session.user.email;
 
@@ -38,8 +38,8 @@ export async function POST(req: Request) {
 
   // Pre-create the connection row so the callback can find it.
   await prisma.integrationConnection.upsert({
-    where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "revflow" } },
-    create: { organizationId: orgId, sourceApp: "revflow", apiUrl, syncEnabled: false, status: "CONNECTING" },
+    where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "revflow" } },
+    create: { tenantId: orgId, sourceApp: "revflow", apiUrl, syncEnabled: false, status: "CONNECTING" },
     update: { apiUrl, status: "CONNECTING", lastError: null, syncEnabled: false },
   });
 

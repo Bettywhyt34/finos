@@ -7,10 +7,10 @@ import { formatCurrency, formatDate, cn } from "@/lib/utils";
 
 export default async function ReceiptsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const payments = await prisma.customerPayment.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: {
       customer: { select: { companyName: true } },
       allocations: { include: { invoice: { select: { invoiceNumber: true } } } },

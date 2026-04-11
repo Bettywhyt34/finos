@@ -4,21 +4,21 @@ import { InvoiceForm } from "./invoice-form";
 
 export default async function NewInvoicePage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const [customers, items, accounts] = await Promise.all([
     prisma.customer.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       select: { id: true, companyName: true, customerCode: true, paymentTerms: true },
       orderBy: { companyName: "asc" },
     }),
     prisma.item.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       select: { id: true, itemCode: true, name: true, salesPrice: true, type: true },
       orderBy: { name: "asc" },
     }),
     prisma.chartOfAccounts.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     }),

@@ -30,7 +30,7 @@ export const QUEUE_NAMES = {
 
 export interface SyncJobPayload {
   syncLogId: string;
-  organizationId: string;
+  tenantId: string;
   sourceApp: SourceApp;
   syncType: SyncType;
   connectionId: string;
@@ -93,7 +93,7 @@ export async function enqueueSync(payload: SyncJobPayload): Promise<string> {
   const queue = getQueue(payload.sourceApp);
 
   // Use a deterministic jobId so a second enqueue for the same sync-log is a no-op.
-  const jobId = `${payload.organizationId}:${payload.sourceApp}:${payload.syncLogId}`;
+  const jobId = `${payload.tenantId}:${payload.sourceApp}:${payload.syncLogId}`;
 
   const job = await queue.add("sync", payload, { jobId });
   return job.id ?? jobId;

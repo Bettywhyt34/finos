@@ -4,7 +4,7 @@ import { BudgetWizard } from "./budget-wizard";
 
 export default async function NewBudgetPage() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const currentYear = new Date().getFullYear();
@@ -12,7 +12,7 @@ export default async function NewBudgetPage() {
   // Prior year approved/locked budgets for copy option
   const priorBudgets = await prisma.budget.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       fiscalYear: currentYear - 1,
       status: { in: ["APPROVED", "LOCKED"] },
     },

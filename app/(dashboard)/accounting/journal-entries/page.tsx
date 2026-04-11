@@ -26,14 +26,14 @@ export default async function JournalEntriesPage({
   searchParams: { period?: string; source?: string; search?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const { period, source, search } = searchParams;
 
   const entries = await prisma.journalEntry.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       ...(period ? { recognitionPeriod: period } : {}),
       ...(source ? { source } : {}),
       ...(search

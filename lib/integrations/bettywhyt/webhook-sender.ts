@@ -21,7 +21,7 @@ export async function sendToBettywhyt(
 ): Promise<void> {
   try {
     const connection = await prisma.integrationConnection.findUnique({
-      where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "bettywhyt" } },
+      where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "bettywhyt" } },
       select: { status: true, apiKeyEncrypted: true, apiUrl: true },
     });
 

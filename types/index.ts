@@ -1,7 +1,7 @@
-export type { Organization, User, UserRole } from "@prisma/client";
+export type { Tenant, User, UserRole } from "@prisma/client";
 
 export interface TenantContext {
-  organizationId: string;
+  tenantId: string;
   userId: string;
   role: string;
 }

@@ -6,12 +6,12 @@ import { SyncNowButton } from "./sync-now-button";
 
 export default async function RevflowStatusPage() {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const [connection, recentLogs, campaigns, invoices, quarantineCount] = await Promise.all([
     prisma.integrationConnection.findUnique({
-      where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "revflow" } },
+      where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "revflow" } },
       select: {
         status:        true,
         lastSyncAt:    true,
@@ -21,7 +21,7 @@ export default async function RevflowStatusPage() {
       },
     }),
     prisma.syncLog.findMany({
-      where:   { organizationId: orgId, sourceApp: "revflow" },
+      where:   { tenantId: orgId, sourceApp: "revflow" },
       orderBy: { startedAt: "desc" },
       take:    10,
       select: {
@@ -32,10 +32,10 @@ export default async function RevflowStatusPage() {
         errorMessage: true,
       },
     }),
-    prisma.revflowCampaign.count({ where: { organizationId: orgId } }),
-    prisma.revflowInvoice.count({ where: { organizationId: orgId } }),
+    prisma.revflowCampaign.count({ where: { tenantId: orgId } }),
+    prisma.revflowInvoice.count({ where: { tenantId: orgId } }),
     prisma.syncQuarantine.count({
-      where: { organizationId: orgId, sourceApp: "revflow", resolved: false },
+      where: { tenantId: orgId, sourceApp: "revflow", resolved: false },
     }),
   ]);
 

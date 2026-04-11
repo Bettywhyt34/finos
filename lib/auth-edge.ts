@@ -20,15 +20,15 @@ const edgeConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    // Read org fields from the token (written by auth-config.ts on sign-in).
+    // Read tenant fields from the token (written by auth-config.ts on sign-in).
     // Never touch the database here.
     session({ session, token }) {
       if (token && session.user) {
-        session.user.id               = token.id               as string;
-        session.user.organizationId   = token.organizationId   as string | null;
+        session.user.id         = token.id         as string;
+        session.user.tenantId   = token.tenantId   as string | null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        session.user.role             = token.role             as any;
-        session.user.organizationName = token.organizationName as string | null;
+        session.user.role       = token.role       as any;
+        session.user.tenantName = token.tenantName as string | null;
       }
       return session;
     },

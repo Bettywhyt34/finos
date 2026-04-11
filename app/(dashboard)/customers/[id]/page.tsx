@@ -19,10 +19,10 @@ const statusColors: Record<string, string> = {
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const customer = await prisma.customer.findFirst({
-    where: { id, organizationId },
+    where: { id, tenantId },
     include: {
       invoices: {
         orderBy: { issueDate: "desc" },

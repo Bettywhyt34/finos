@@ -28,10 +28,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    const { organizationId, userId } = await consumeOAuthState(state, "revflow");
+    const { tenantId, userId } = await consumeOAuthState(state, "revflow");
 
     const connection = await prisma.integrationConnection.findUniqueOrThrow({
-      where:  { organizationId_sourceApp: { organizationId, sourceApp: "revflow" } },
+      where:  { tenantId_sourceApp: { tenantId, sourceApp: "revflow" } },
       select: { id: true },
     });
 
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
     }
 
     // Kick off initial full sync
-    await startSync(organizationId, "revflow", "full", userId);
+    await startSync(tenantId, "revflow", "full", userId);
 
     return NextResponse.redirect(new URL("/integrations/revflow/status", url.origin));
   } catch (err) {

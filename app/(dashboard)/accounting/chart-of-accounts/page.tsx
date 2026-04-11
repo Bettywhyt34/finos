@@ -18,16 +18,16 @@ function computeBalance(type: AccountType, debit: number, credit: number): numbe
 
 export default async function ChartOfAccountsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const [rawAccounts, balanceRows] = await Promise.all([
     prisma.chartOfAccounts.findMany({
-      where: { organizationId },
+      where: { tenantId },
       orderBy: { code: "asc" },
     }),
     prisma.journalEntryLine.groupBy({
       by: ["accountId"],
-      where: { entry: { organizationId } },
+      where: { entry: { tenantId } },
       _sum: { debit: true, credit: true },
     }),
   ]);

@@ -18,10 +18,10 @@ const statusColors: Record<string, string> = {
 export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const bill = await prisma.bill.findFirst({
-    where: { id, organizationId },
+    where: { id, tenantId },
     include: {
       vendor: true,
       lines: { include: { item: { select: { name: true, itemCode: true } } } },
@@ -32,7 +32,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
 
   const openBills = await prisma.bill.findMany({
     where: {
-      organizationId,
+      tenantId,
       vendorId: bill.vendorId,
       status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
     },

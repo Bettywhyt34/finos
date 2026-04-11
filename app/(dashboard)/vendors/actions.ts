@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function createVendor(formData: FormData) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
 
   const vendorCode = String(formData.get("vendorCode") || "").trim();
@@ -16,7 +16,7 @@ export async function createVendor(formData: FormData) {
   try {
     await prisma.vendor.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         vendorCode,
         companyName,
         contactName: String(formData.get("contactName") || "") || null,
@@ -40,9 +40,9 @@ export async function createVendor(formData: FormData) {
 
 export async function deactivateVendor(id: string) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
-  await prisma.vendor.update({ where: { id, organizationId: orgId }, data: { isActive: false } });
+  await prisma.vendor.update({ where: { id, tenantId: orgId }, data: { isActive: false } });
   revalidatePath("/vendors");
   return { success: true };
 }

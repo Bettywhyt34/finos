@@ -13,11 +13,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default async function FxRevaluationPage() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const revaluations = await prisma.fxRevaluation.findMany({
-    where: { organizationId: orgId },
+    where: { tenantId: orgId },
     orderBy: [{ period: "desc" }, { currency: "asc" }],
   });
 

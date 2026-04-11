@@ -4,21 +4,21 @@ import { BillForm } from "./bill-form";
 
 export default async function NewBillPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const [vendors, items, accounts] = await Promise.all([
     prisma.vendor.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       select: { id: true, companyName: true, vendorCode: true, paymentTerms: true },
       orderBy: { companyName: "asc" },
     }),
     prisma.item.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       select: { id: true, itemCode: true, name: true, costPrice: true },
       orderBy: { name: "asc" },
     }),
     prisma.chartOfAccounts.findMany({
-      where: { organizationId, isActive: true, type: { in: ["EXPENSE", "ASSET"] } },
+      where: { tenantId, isActive: true, type: { in: ["EXPENSE", "ASSET"] } },
       select: { id: true, code: true, name: true, type: true },
       orderBy: { code: "asc" },
     }),

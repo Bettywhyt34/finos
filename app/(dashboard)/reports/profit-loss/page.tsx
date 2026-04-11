@@ -15,7 +15,7 @@ export default async function ProfitLossPage({
   searchParams: { periodFrom?: string; periodTo?: string; compare?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const today = new Date().toISOString().slice(0, 7);

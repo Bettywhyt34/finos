@@ -5,10 +5,10 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 
 export default async function VendorPaymentsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const payments = await prisma.vendorPayment.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: {
       vendor: { select: { companyName: true } },
     },

@@ -20,10 +20,10 @@ const statusColors: Record<string, string> = {
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const invoice = await prisma.invoice.findFirst({
-    where: { id, organizationId },
+    where: { id, tenantId },
     include: {
       customer: true,
       lines: { include: { item: { select: { name: true, itemCode: true } } } },
@@ -35,7 +35,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
 
   const openInvoices = await prisma.invoice.findMany({
     where: {
-      organizationId,
+      tenantId,
       customerId: invoice.customerId,
       status: { in: ["SENT", "PARTIAL", "OVERDUE"] },
     },
@@ -44,7 +44,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   });
 
   const bankAccounts = await prisma.bankAccount.findMany({
-    where: { organizationId, isActive: true },
+    where: { tenantId, isActive: true },
     select: { id: true, accountName: true, bankName: true },
   });
 

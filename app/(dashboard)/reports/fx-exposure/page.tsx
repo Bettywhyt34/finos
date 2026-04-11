@@ -31,13 +31,13 @@ interface CurrencyExposure {
 
 export default async function FxExposureReportPage() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   // All outstanding foreign-currency invoices
   const invoices = await prisma.invoice.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       status: { in: ["SENT", "PARTIAL", "OVERDUE"] },
       NOT: { currency: "NGN" },
     },
@@ -56,7 +56,7 @@ export default async function FxExposureReportPage() {
   // All outstanding foreign-currency bills
   const bills = await prisma.bill.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
       NOT: { currency: "NGN" },
     },

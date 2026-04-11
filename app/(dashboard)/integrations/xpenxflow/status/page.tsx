@@ -6,16 +6,16 @@ import { SyncNowButton } from "./sync-now-button";
 
 export default async function XpenxFlowStatusPage() {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const [connection, recentLogs, quarantineCount] = await Promise.all([
     prisma.integrationConnection.findUnique({
-      where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "xpenxflow" } },
+      where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "xpenxflow" } },
       select: { status: true, lastSyncAt: true, lastError: true, syncEnabled: true, apiUrl: true, sourceOrgName: true },
     }),
     prisma.syncLog.findMany({
-      where:   { organizationId: orgId, sourceApp: "xpenxflow" },
+      where:   { tenantId: orgId, sourceApp: "xpenxflow" },
       orderBy: { startedAt: "desc" },
       take:    10,
       select: {
@@ -27,7 +27,7 @@ export default async function XpenxFlowStatusPage() {
       },
     }),
     prisma.syncQuarantine.count({
-      where: { organizationId: orgId, sourceApp: "xpenxflow", resolved: false },
+      where: { tenantId: orgId, sourceApp: "xpenxflow", resolved: false },
     }),
   ]);
 

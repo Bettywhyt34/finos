@@ -7,16 +7,16 @@ import { DisconnectClientButton } from "./disconnect-button";
 
 export default async function BettyWhytStatusPage() {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const [connection, recentLogs, quarantineCount, topItems] = await Promise.all([
     prisma.integrationConnection.findUnique({
-      where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "bettywhyt" } },
+      where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "bettywhyt" } },
       select: { status: true, lastSyncAt: true, lastError: true, syncEnabled: true, apiUrl: true },
     }),
     prisma.syncLog.findMany({
-      where:   { organizationId: orgId, sourceApp: "bettywhyt" },
+      where:   { tenantId: orgId, sourceApp: "bettywhyt" },
       orderBy: { startedAt: "desc" },
       take:    10,
       select: {
@@ -28,10 +28,10 @@ export default async function BettyWhytStatusPage() {
       },
     }),
     prisma.syncQuarantine.count({
-      where: { organizationId: orgId, sourceApp: "bettywhyt", resolved: false },
+      where: { tenantId: orgId, sourceApp: "bettywhyt", resolved: false },
     }),
     prisma.item.findMany({
-      where:   { organizationId: orgId, isActive: true },
+      where:   { tenantId: orgId, isActive: true },
       orderBy: { qtyOnline: "desc" },
       take:    10,
       select: {

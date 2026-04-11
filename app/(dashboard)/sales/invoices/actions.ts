@@ -8,7 +8,7 @@ import { getRecognitionPeriod, toNGN } from "@/lib/utils";
 import { sendToBettywhyt } from "@/lib/integrations/bettywhyt/webhook-sender";
 
 async function getNextInvoiceNumber(orgId: string): Promise<string> {
-  const count = await prisma.invoice.count({ where: { organizationId: orgId } });
+  const count = await prisma.invoice.count({ where: { tenantId: orgId } });
   return `INV-${String(count + 1).padStart(5, "0")}`;
 }
 
@@ -35,7 +35,7 @@ export async function createInvoice(data: {
   source?: string;
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
 
@@ -54,7 +54,7 @@ export async function createInvoice(data: {
   try {
     const invoice = await prisma.invoice.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         customerId: data.customerId,
         invoiceNumber,
         reference: data.reference || null,
@@ -87,7 +87,7 @@ export async function createInvoice(data: {
     // Auto-post journal in NGN (DR AR / CR Revenue)
     const fxNote = rate !== 1 ? ` (${data.currency} @ ${rate})` : "";
     await postJournalEntry({
-      organizationId: orgId,
+      tenantId: orgId,
       createdBy: userId,
       entryDate: new Date(data.issueDate),
       reference: invoiceNumber,
@@ -124,10 +124,10 @@ export async function createInvoice(data: {
 
 export async function sendInvoice(id: string) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
   await prisma.invoice.update({
-    where: { id, organizationId: orgId },
+    where: { id, tenantId: orgId },
     data: { status: "SENT", sentAt: new Date() },
   });
   revalidatePath(`/sales/invoices/${id}`);
@@ -145,7 +145,7 @@ export async function recordPayment(data: {
   invoiceAllocations: { invoiceId: string; amount: number }[];
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
 
@@ -154,14 +154,14 @@ export async function recordPayment(data: {
     return { error: "Allocated amount must equal payment amount" };
   }
 
-  const count = await prisma.customerPayment.count({ where: { organizationId: orgId } });
+  const count = await prisma.customerPayment.count({ where: { tenantId: orgId } });
   const paymentNumber = `RCP-${String(count + 1).padStart(5, "0")}`;
 
   try {
     const payment = await prisma.$transaction(async (tx) => {
       const pmt = await tx.customerPayment.create({
         data: {
-          organizationId: orgId,
+          tenantId: orgId,
           customerId: data.customerId,
           paymentNumber,
           paymentDate: new Date(data.paymentDate),
@@ -194,7 +194,7 @@ export async function recordPayment(data: {
 
     // Journal: DR Bank (NGN received) / CR AR (NGN equivalent)
     await postJournalEntry({
-      organizationId: orgId,
+      tenantId: orgId,
       createdBy: userId,
       entryDate: new Date(data.paymentDate),
       reference: paymentNumber,

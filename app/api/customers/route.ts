@@ -4,11 +4,11 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const customers = await prisma.customer.findMany({
-    where: { organizationId: orgId, isActive: true },
+    where: { tenantId: orgId, isActive: true },
     include: {
       invoices: { select: { totalAmount: true, amountPaid: true } },
     },

@@ -2,7 +2,7 @@ import type { NextAuthConfig } from "next-auth";
 import { prisma } from "@/lib/prisma";
 
 /**
- * Custom JWT hook — injects tenant_id, role, org_id into every token.
+ * Custom JWT hook — injects tenant_id, role, tenant_name into every token.
  * Called on sign-in and on every session refresh (trigger === "update").
  *
  * Separation of concerns: this file owns the token/session shape;
@@ -12,39 +12,39 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
   /**
    * JWT callback: runs when a token is created or refreshed.
    * With database strategy this still fires for the initial OAuth exchange.
-   * We store org data in the token so the session callback is pure read.
+   * We store tenant data in the token so the session callback is pure read.
    */
   async jwt({ token, user, trigger }) {
     // Initial sign-in: `user` is the DB record
     if (user?.id) {
       token.id = user.id;
 
-      const membership = await prisma.organizationMembership.findFirst({
+      const membership = await prisma.tenantMembership.findFirst({
         where: { userId: user.id },
         include: {
-          organization: { select: { id: true, name: true } },
+          tenant: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "asc" },
       });
 
-      token.organizationId = membership?.organizationId ?? null;
+      token.tenantId = membership?.tenantId ?? null;
       token.role = membership?.role ?? null;
-      token.organizationName = membership?.organization?.name ?? null;
+      token.tenantName = membership?.tenant?.name ?? null;
     }
 
-    // Re-hydrate on `update()` call (e.g. after org creation / switching)
+    // Re-hydrate on `update()` call (e.g. after tenant creation / switching)
     if (trigger === "update" && token.id) {
-      const membership = await prisma.organizationMembership.findFirst({
+      const membership = await prisma.tenantMembership.findFirst({
         where: { userId: token.id as string },
         include: {
-          organization: { select: { id: true, name: true } },
+          tenant: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "asc" },
       });
 
-      token.organizationId = membership?.organizationId ?? null;
+      token.tenantId = membership?.tenantId ?? null;
       token.role = membership?.role ?? null;
-      token.organizationName = membership?.organization?.name ?? null;
+      token.tenantName = membership?.tenant?.name ?? null;
     }
 
     return token;
@@ -57,9 +57,9 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
   async session({ session, token }) {
     if (token && session.user) {
       session.user.id = token.id as string;
-      session.user.organizationId = token.organizationId as string | null;
+      session.user.tenantId = token.tenantId as string | null;
       session.user.role = token.role as import("@prisma/client").UserRole | null;
-      session.user.organizationName = token.organizationName as string | null;
+      session.user.tenantName = token.tenantName as string | null;
     }
     return session;
   },

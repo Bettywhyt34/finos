@@ -4,11 +4,11 @@ import { JournalForm } from "./journal-form";
 
 export default async function NewJournalEntryPage() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const accounts = await prisma.chartOfAccounts.findMany({
-    where: { organizationId: orgId, isActive: true },
+    where: { tenantId: orgId, isActive: true },
     select: { id: true, code: true, name: true, type: true },
     orderBy: { code: "asc" },
   });

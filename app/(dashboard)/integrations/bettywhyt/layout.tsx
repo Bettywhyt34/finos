@@ -8,7 +8,7 @@ export default async function BettywhytLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  if (!isBettywhytOrg(session.user.organizationId)) redirect("/integrations");
+  if (!session?.user?.tenantId) redirect("/login");
+  if (!isBettywhytOrg(session.user.tenantId)) redirect("/integrations");
   return <>{children}</>;
 }

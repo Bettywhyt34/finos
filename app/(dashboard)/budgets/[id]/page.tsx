@@ -16,11 +16,11 @@ export default async function BudgetDetailPage({
   searchParams: { versionId?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const budget = await prisma.budget.findFirst({
-    where: { id: params.id, organizationId: orgId },
+    where: { id: params.id, tenantId: orgId },
     include: {
       versions: {
         orderBy: { versionNumber: "desc" },
@@ -45,7 +45,7 @@ export default async function BudgetDetailPage({
   // Build account list from lines + all relevant accounts for adding rows
   const accounts = await prisma.chartOfAccounts.findMany({
     where: {
-      organizationId: orgId,
+      tenantId: orgId,
       isActive: true,
       type: { in: budget.type === "CAPEX" ? ["ASSET", "EXPENSE"] : ["INCOME", "EXPENSE"] },
     },

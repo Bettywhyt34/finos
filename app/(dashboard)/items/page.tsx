@@ -15,20 +15,20 @@ const typeColors: Record<string, string> = {
 
 export default async function ItemsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const [items, categories, accounts] = await Promise.all([
     prisma.item.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       include: { category: true },
       orderBy: { name: "asc" },
     }),
     prisma.itemCategory.findMany({
-      where: { organizationId },
+      where: { tenantId },
       orderBy: { name: "asc" },
     }),
     prisma.chartOfAccounts.findMany({
-      where: { organizationId, isActive: true },
+      where: { tenantId, isActive: true },
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     }),

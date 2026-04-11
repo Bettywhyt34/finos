@@ -5,16 +5,16 @@ import Link from "next/link";
 
 export default async function Earnmark360StatusPage() {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const [connection, recentLogs] = await Promise.all([
     prisma.integrationConnection.findUnique({
-      where:  { organizationId_sourceApp: { organizationId: orgId, sourceApp: "earnmark360" } },
+      where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "earnmark360" } },
       select: { status: true, lastSyncAt: true, lastError: true, syncEnabled: true, sourceOrgName: true, apiUrl: true },
     }),
     prisma.syncLog.findMany({
-      where:   { organizationId: orgId, sourceApp: "earnmark360" },
+      where:   { tenantId: orgId, sourceApp: "earnmark360" },
       orderBy: { startedAt: "desc" },
       take:    10,
       select: {

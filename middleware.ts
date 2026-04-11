@@ -13,8 +13,8 @@ export default auth(function middleware(req) {
     return NextResponse.redirect(new URL("/login", nextUrl));
   }
 
-  // Redirect authenticated users without an org to onboarding
-  if (session?.user && !session.user.organizationId && !isPublic) {
+  // Redirect authenticated users without a tenant to onboarding
+  if (session?.user && !session.user.tenantId && !isPublic) {
     if (!nextUrl.pathname.startsWith("/register")) {
       return NextResponse.redirect(new URL("/register", nextUrl));
     }

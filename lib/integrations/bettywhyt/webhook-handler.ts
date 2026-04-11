@@ -47,7 +47,7 @@ export async function handleBettywhytWebhook(
 async function handleOrderPlaced(order: BWPOrder, orgId: string): Promise<void> {
   // Idempotency guard
   const exists = await prisma.invoice.findFirst({
-    where:  { organizationId: orgId, invoiceNumber: order.orderNumber },
+    where:  { tenantId: orgId, invoiceNumber: order.orderNumber },
     select: { id: true },
   });
   if (exists) return;
@@ -60,7 +60,7 @@ async function handleOrderPlaced(order: BWPOrder, orgId: string): Promise<void> 
   await prisma.$transaction(async (tx) => {
     const invoice = await tx.invoice.create({
       data: {
-        organizationId:    orgId,
+        tenantId:    orgId,
         invoiceNumber:     order.orderNumber,
         customerId,
         issueDate:         orderDate,
@@ -81,7 +81,7 @@ async function handleOrderPlaced(order: BWPOrder, orgId: string): Promise<void> 
 
     for (const item of order.items) {
       const finosItem = await tx.item.findUnique({
-        where:  { organizationId_itemCode: { organizationId: orgId, itemCode: item.sku } },
+        where:  { tenantId_itemCode: { tenantId: orgId, itemCode: item.sku } },
         select: { id: true },
       });
 
@@ -98,7 +98,7 @@ async function handleOrderPlaced(order: BWPOrder, orgId: string): Promise<void> 
     }
 
     await postJournalEntry({
-      organizationId:    orgId,
+      tenantId:    orgId,
       createdBy:         "bettywhyt-webhook",
       entryDate:         orderDate,
       reference:         order.orderNumber,
@@ -117,14 +117,14 @@ async function handleOrderPlaced(order: BWPOrder, orgId: string): Promise<void> 
 
     for (const item of order.items) {
       const finosItem = await tx.item.findUnique({
-        where:  { organizationId_itemCode: { organizationId: orgId, itemCode: item.sku } },
+        where:  { tenantId_itemCode: { tenantId: orgId, itemCode: item.sku } },
         select: { id: true },
       });
       if (!finosItem) continue;
 
       await tx.inventoryMovement.create({
         data: {
-          organizationId: orgId,
+          tenantId: orgId,
           itemId:         finosItem.id,
           movementType:   "SALE_ONLINE",
           channel:        "ONLINE",
@@ -149,7 +149,7 @@ async function handleOrderPlaced(order: BWPOrder, orgId: string): Promise<void> 
 
 async function handleStockReceipt(update: BWPStockUpdate, orgId: string): Promise<void> {
   const finosItem = await prisma.item.findUnique({
-    where:  { organizationId_itemCode: { organizationId: orgId, itemCode: update.sku } },
+    where:  { tenantId_itemCode: { tenantId: orgId, itemCode: update.sku } },
     select: { id: true },
   });
   if (!finosItem) {
@@ -164,7 +164,7 @@ async function handleStockReceipt(update: BWPStockUpdate, orgId: string): Promis
   await prisma.$transaction(async (tx) => {
     await tx.inventoryMovement.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         itemId:         finosItem.id,
         movementType:   "RECEIPT",
         channel:        update.channel,
@@ -196,7 +196,7 @@ async function handleStockReceipt(update: BWPStockUpdate, orgId: string): Promis
 
 async function handleStockAdjust(update: BWPStockUpdate, orgId: string): Promise<void> {
   const finosItem = await prisma.item.findUnique({
-    where:  { organizationId_itemCode: { organizationId: orgId, itemCode: update.sku } },
+    where:  { tenantId_itemCode: { tenantId: orgId, itemCode: update.sku } },
     select: { id: true },
   });
   if (!finosItem) {
@@ -211,7 +211,7 @@ async function handleStockAdjust(update: BWPStockUpdate, orgId: string): Promise
   await prisma.$transaction(async (tx) => {
     await tx.inventoryMovement.create({
       data: {
-        organizationId: orgId,
+        tenantId: orgId,
         itemId:         finosItem.id,
         movementType:   "ADJUSTMENT",
         channel:        update.channel,
@@ -252,7 +252,7 @@ async function handleProductUpdate(product: BWPProduct, orgId: string): Promise<
   };
 
   const existing = await prisma.item.findUnique({
-    where:  { organizationId_itemCode: { organizationId: orgId, itemCode: product.sku } },
+    where:  { tenantId_itemCode: { tenantId: orgId, itemCode: product.sku } },
     select: { id: true },
   });
 
@@ -260,7 +260,7 @@ async function handleProductUpdate(product: BWPProduct, orgId: string): Promise<
     await prisma.item.update({ where: { id: existing.id }, data });
   } else {
     await prisma.item.create({
-      data: { ...data, organizationId: orgId, itemCode: product.sku, type: "INVENTORY" },
+      data: { ...data, tenantId: orgId, itemCode: product.sku, type: "INVENTORY" },
     });
   }
 }
@@ -272,17 +272,17 @@ async function resolveOrCreateCustomer(
   customer: { email: string; name: string; phone?: string }
 ): Promise<string> {
   const existing = await prisma.customer.findFirst({
-    where:  { organizationId: orgId, email: customer.email },
+    where:  { tenantId: orgId, email: customer.email },
     select: { id: true },
   });
   if (existing) return existing.id;
 
-  const count = await prisma.customer.count({ where: { organizationId: orgId } });
+  const count = await prisma.customer.count({ where: { tenantId: orgId } });
   const code  = `BWP-${String(count + 1).padStart(4, "0")}`;
 
   const created = await prisma.customer.create({
     data: {
-      organizationId: orgId,
+      tenantId: orgId,
       customerCode:   code,
       companyName:    customer.name,
       contactName:    customer.name,

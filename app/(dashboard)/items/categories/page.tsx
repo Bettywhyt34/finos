@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils";
 
 export default async function CategoriesPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const categories = await prisma.itemCategory.findMany({
-    where: { organizationId },
+    where: { tenantId },
     include: {
       parent: true,
       children: true,

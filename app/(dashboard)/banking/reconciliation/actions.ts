@@ -6,20 +6,20 @@ import { auth } from "@/lib/auth";
 
 async function getOrgId() {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) throw new Error("Unauthorized");
   return orgId;
 }
 
 export async function markTransactionsReconciled(transactionIds: string[]) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
 
     // Verify all transactions belong to this org
     const count = await prisma.bankTransaction.count({
       where: {
         id: { in: transactionIds },
-        bankAccount: { organizationId },
+        bankAccount: { tenantId },
       },
     });
     if (count !== transactionIds.length) return { error: "Unauthorized" };
@@ -42,10 +42,10 @@ export async function fetchUnreconciledTransactions(
   to: string
 ) {
   try {
-    const organizationId = await getOrgId();
+    const tenantId = await getOrgId();
 
     const account = await prisma.bankAccount.findFirst({
-      where: { id: bankAccountId, organizationId },
+      where: { id: bankAccountId, tenantId },
     });
     if (!account) return { error: "Account not found" };
 

@@ -9,10 +9,10 @@ import { formatCurrency, cn } from "@/lib/utils";
 
 export default async function BankAccountsPage() {
   const session = await auth();
-  const organizationId = session!.user.organizationId!;
+  const tenantId = session!.user.tenantId!;
 
   const accounts = await prisma.bankAccount.findMany({
-    where: { organizationId },
+    where: { tenantId },
     orderBy: { createdAt: "asc" },
   });
 

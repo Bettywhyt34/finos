@@ -15,11 +15,11 @@ export const maxDuration = 300; // Vercel Pro max; capped at plan limit automati
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.organizationId) {
+  if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const orgId = session.user.organizationId;
+  const orgId = session.user.tenantId;
 
   if (!isBettywhytOrg(orgId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   const userId   = session.user.id ?? "system";
 
   const connection = await prisma.integrationConnection.findUnique({
-    where: { organizationId_sourceApp: { organizationId: orgId, sourceApp: "bettywhyt" } },
+    where: { tenantId_sourceApp: { tenantId: orgId, sourceApp: "bettywhyt" } },
   });
 
   if (!connection) {
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   // Create sync log
   const syncLog = await prisma.syncLog.create({
     data: {
-      organizationId: orgId,
+      tenantId: orgId,
       connectionId:   connection.id,
       sourceApp:      "bettywhyt",
       syncType,
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   try {
     const result = await processBettywhyt({
       syncLogId:      syncLog.id,
-      organizationId: orgId,
+      tenantId: orgId,
       sourceApp:      "bettywhyt",
       syncType,
       connectionId:   connection.id,

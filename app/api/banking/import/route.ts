@@ -14,14 +14,14 @@ interface ImportRow {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { accountId, transactions }: { accountId: string; transactions: ImportRow[] } =
     await req.json();
 
   const account = await prisma.bankAccount.findFirst({
-    where: { id: accountId, organizationId: orgId },
+    where: { id: accountId, tenantId: orgId },
   });
   if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 

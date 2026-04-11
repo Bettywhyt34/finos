@@ -30,7 +30,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default async function DashboardPage() {
   const session = await auth();
-  const orgId = session!.user.organizationId!;
+  const orgId = session!.user.tenantId!;
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
 
   const [kpis, recentInvoices, recentBills] = await Promise.all([

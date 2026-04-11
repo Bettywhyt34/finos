@@ -9,7 +9,7 @@ export default async function BalanceSheetPage({
   searchParams: { asOf?: string; compareAsOf?: string };
 }) {
   const session = await auth();
-  const orgId = session?.user?.organizationId;
+  const orgId = session?.user?.tenantId;
   if (!orgId) return null;
 
   const today = new Date().toISOString().slice(0, 7);

@@ -15,8 +15,8 @@ export default async function BettyWhytReconcilePage({
   searchParams: SearchParams;
 }) {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const showDiscrepancy = searchParams.discrepancy === "1";
   const page = Math.max(1, Number(searchParams.page ?? "1"));
@@ -26,7 +26,7 @@ export default async function BettyWhytReconcilePage({
   const [items, totalCount, lastMovements] = await Promise.all([
     prisma.item.findMany({
       where: {
-        organizationId: orgId,
+        tenantId: orgId,
         isActive:       true,
         ...(showDiscrepancy
           ? {
@@ -47,14 +47,14 @@ export default async function BettyWhytReconcilePage({
     }),
     prisma.item.count({
       where: {
-        organizationId: orgId,
+        tenantId: orgId,
         isActive:       true,
         ...(showDiscrepancy ? { OR: [{ qtyOnline: { lt: 0 } }, { qtyPos: { lt: 0 } }] } : {}),
       },
     }),
     // Last movement per item (most recent)
     prisma.inventoryMovement.findMany({
-      where:   { organizationId: orgId },
+      where:   { tenantId: orgId },
       orderBy: { createdAt: "desc" },
       take:    200,
       select:  { itemId: true, movementType: true, channel: true, createdAt: true, sourceApp: true },

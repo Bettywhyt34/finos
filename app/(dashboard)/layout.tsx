@@ -11,14 +11,14 @@ export default async function DashboardLayout({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
-  if (!session.user?.organizationId) redirect("/register");
+  if (!session.user?.tenantId) redirect("/register");
 
-  const showBettywhyt = isBettywhytOrg(session.user.organizationId);
+  const showBettywhyt = isBettywhytOrg(session.user.tenantId);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <Sidebar
-        orgName={session.user.organizationName ?? "Your workspace"}
+        orgName={session.user.tenantName ?? "Your workspace"}
         showBettywhyt={showBettywhyt}
       />
 
@@ -26,7 +26,7 @@ export default async function DashboardLayout({
         <Header
           userName={session.user.name}
           userImage={session.user.image}
-          orgName={session.user.organizationName}
+          orgName={session.user.tenantName}
         />
         <main className="flex-1 overflow-auto">
           <div className="p-6">{children}</div>

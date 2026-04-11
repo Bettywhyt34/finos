@@ -7,7 +7,7 @@ const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** Generate a cryptographically random state string and persist it. */
 export async function createOAuthState(
-  organizationId: string,
+  tenantId: string,
   userId:         string,
   sourceApp:      SourceApp,
 ): Promise<string> {
@@ -15,14 +15,14 @@ export async function createOAuthState(
   const expiresAt = new Date(Date.now() + STATE_TTL_MS);
 
   await prisma.oAuthState.create({
-    data: { state, organizationId, userId, sourceApp, expiresAt },
+    data: { state, tenantId, userId, sourceApp, expiresAt },
   });
 
   return state;
 }
 
 export interface ConsumedState {
-  organizationId: string;
+  tenantId: string;
   userId:         string;
   sourceApp:      SourceApp;
 }
@@ -45,7 +45,7 @@ export async function consumeOAuthState(
   await prisma.oAuthState.delete({ where: { state } });
 
   return {
-    organizationId: row.organizationId,
+    tenantId: row.tenantId,
     userId:         row.userId,
     sourceApp:      row.sourceApp as SourceApp,
   };

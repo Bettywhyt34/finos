@@ -32,11 +32,11 @@ export default async function BvaPage({
   searchParams: { budgetId?: string; versionId?: string; periodFrom?: string; periodTo?: string };
 }) {
   const session = await auth();
-  if (!session?.user?.organizationId) redirect("/login");
-  const orgId = session.user.organizationId;
+  if (!session?.user?.tenantId) redirect("/login");
+  const orgId = session.user.tenantId;
 
   const budgets = await prisma.budget.findMany({
-    where: { organizationId: orgId },
+    where: { tenantId: orgId },
     include: { versions: { orderBy: { versionNumber: "asc" } } },
     orderBy: [{ fiscalYear: "desc" }, { name: "asc" }],
   });
@@ -86,7 +86,7 @@ export default async function BvaPage({
       by: ["accountId"],
       where: {
         entry: {
-          organizationId: orgId,
+          tenantId: orgId,
           isLocked: true,
           recognitionPeriod: { gte: periodFrom, lte: periodTo },
         },
@@ -98,7 +98,7 @@ export default async function BvaPage({
     const actualAccounts =
       actualAccountIds.length > 0
         ? await prisma.chartOfAccounts.findMany({
-            where: { id: { in: actualAccountIds }, organizationId: orgId },
+            where: { id: { in: actualAccountIds }, tenantId: orgId },
             select: { id: true, type: true },
           })
         : [];
