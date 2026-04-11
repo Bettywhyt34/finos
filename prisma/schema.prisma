@@ -93,6 +93,7 @@ model Tenant {
   memberships            TenantMembership[]
   vendors                Vendor[]
   vendorPayments         VendorPayment[]
+  reportConfig           TenantReportConfig?
 
   // Phase 2 integrations
   integrationConnections IntegrationConnection[]
@@ -124,21 +125,23 @@ model TenantMembership {
 }
 
 model ChartOfAccounts {
-  id              String             @id @default(uuid())
-  tenantId        String             @map("tenant_id")
-  code            String
-  name            String
-  type            AccountType
-  subtype         String?
-  parentId        String?            @map("parent_id")
-  isActive        Boolean            @default(true) @map("is_active")
-  createdAt       DateTime           @default(now()) @map("created_at")
-  tenant          Tenant             @relation(fields: [tenantId], references: [id])
-  parent          ChartOfAccounts?   @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children        ChartOfAccounts[]  @relation("AccountHierarchy")
-  journalLines    JournalEntryLine[]
-  budgetLines     BudgetLine[]
-  accountMappings AccountMapping[]
+  id                String             @id @default(uuid())
+  tenantId          String             @map("tenant_id")
+  code              String
+  name              String
+  type              AccountType
+  subtype           String?
+  parentId          String?            @map("parent_id")
+  isActive          Boolean            @default(true) @map("is_active")
+  financialCategory FinancialCategory? @map("financial_category")
+  migrationStatus   String             @default("pending") @map("migration_status")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  parent            ChartOfAccounts?   @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children          ChartOfAccounts[]  @relation("AccountHierarchy")
+  journalLines      JournalEntryLine[]
+  budgetLines       BudgetLine[]
+  accountMappings   AccountMapping[]
 
   @@unique([tenantId, code])
   @@map("chart_of_accounts")
@@ -552,6 +555,23 @@ enum AccountType {
 enum TransactionType {
   CREDIT
   DEBIT
+}
+
+// Phase 2.5 — financial classification for reporting
+enum FinancialCategory {
+  OTHER_INCOME          @map("other_income")
+  INCOME                @map("income")
+  COST_OF_SALES         @map("cost_of_sales")
+  DIRECT_EXPENSES       @map("direct_expenses")
+  EXPENSES              @map("expenses")
+  OTHER_EXPENSES        @map("other_expenses")
+  CURRENT_ASSET         @map("current_asset")
+  NON_CURRENT_ASSET     @map("non_current_asset")
+  CURRENT_LIABILITY     @map("current_liability")
+  NON_CURRENT_LIABILITY @map("non_current_liability")
+  EQUITY                @map("equity")
+
+  @@map("financial_category_enum")
 }
 
 enum ItemType {
@@ -982,4 +1002,17 @@ model Earnmark360PayrollRun {
 
   @@unique([tenantId, earnmarkId])
   @@map("earnmark360_payroll_runs")
+}
+
+// ─── Phase 2.5: Tenant report configuration ───────────────────────────────────
+
+model TenantReportConfig {
+  id                   String   @id @default(uuid())
+  tenantId             String   @unique @map("tenant_id")
+  otherIncomePosition  String   @default("top") @map("other_income_position")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_report_config")
 }
