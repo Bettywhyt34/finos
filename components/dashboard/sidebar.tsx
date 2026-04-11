@@ -163,6 +163,7 @@ const NAV: NavSection[] = [
       { label: "Users", href: "/settings/users" },
       { label: "Taxes", href: "/settings/taxes" },
       { label: "Budget Settings", href: "/settings/budgets" },
+      { label: "Integrations", href: "/settings/integrations" },
     ],
   },
 ];
