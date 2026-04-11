@@ -107,6 +107,7 @@ model Tenant {
   earnmark360Employees   Earnmark360Employee[]
   earnmark360PayrollRuns Earnmark360PayrollRun[]
   inventoryMovements     InventoryMovement[]
+  journalLines           JournalLine[]
 
   @@map("tenants")
 }
@@ -140,6 +141,7 @@ model ChartOfAccounts {
   parent            ChartOfAccounts?   @relation("AccountHierarchy", fields: [parentId], references: [id])
   children          ChartOfAccounts[]  @relation("AccountHierarchy")
   journalLines      JournalEntryLine[]
+  canonicalLines    JournalLine[]
   budgetLines       BudgetLine[]
   accountMappings   AccountMapping[]
 
@@ -501,8 +503,10 @@ model JournalEntry {
   fxRevaluation          FxRevaluation?
   tenant                 Tenant             @relation(fields: [tenantId], references: [id])
   lines                  JournalEntryLine[]
+  journalLines           JournalLine[]
   revflowInvoices        RevflowInvoice[]
   earnmark360PayrollRuns Earnmark360PayrollRun[]
+  unifiedTransactions    UnifiedTransactionsCache[]
 
   @@unique([tenantId, entryNumber])
   @@map("journal_entries")
@@ -900,7 +904,21 @@ model UnifiedTransactionsCache {
   recognitionPeriod String?  @map("recognition_period")
   syncedAt          DateTime @default(now()) @map("synced_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Three-date model (Phase 2.5 B.3)
+  sourceDate        DateTime? @map("source_date") @db.Date
+  postingDate       DateTime? @map("posting_date") @db.Date
+  recognitionDate   DateTime? @map("recognition_date") @db.Date
+
+  // Lifecycle / data quality fields
+  dataQualityState String?   @default("clean") @map("data_quality_state")
+  sourceProvenance String?   @default("synced") @map("source_provenance")
+  confidenceScore  Decimal?  @default(1.0000) @map("confidence_score") @db.Decimal(5, 4)
+  isPosted         Boolean   @default(false) @map("is_posted")
+  postedAt         DateTime? @map("posted_at")
+  journalEntryId   String?   @map("journal_entry_id")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
 
   @@unique([tenantId, sourceApp, sourceTable, sourceId])
   @@map("unified_transactions_cache")
@@ -1002,6 +1020,24 @@ model Earnmark360PayrollRun {
 
   @@unique([tenantId, earnmarkId])
   @@map("earnmark360_payroll_runs")
+}
+
+// ─── Phase 2.5 Week 3: Canonical journal model ────────────────────────────────
+
+model JournalLine {
+  id          String          @id @default(uuid())
+  jeId        String          @map("je_id")
+  tenantId    String          @map("tenant_id")
+  accountId   String          @map("account_id")
+  direction   String          @map("direction")    // 'DR' | 'CR'
+  amountNgn   Decimal         @map("amount_ngn") @db.Decimal(15, 2)
+  description String?
+
+  journalEntry JournalEntry    @relation(fields: [jeId],      references: [id], onDelete: Cascade)
+  tenant       Tenant          @relation(fields: [tenantId],  references: [id])
+  account      ChartOfAccounts @relation(fields: [accountId], references: [id])
+
+  @@map("journal_lines")
 }
 
 // ─── Phase 2.5: Tenant report configuration ───────────────────────────────────
