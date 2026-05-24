@@ -5,8 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Building2,
-  Users,
-  Truck,
   Package,
   ShoppingCart,
   CreditCard,
@@ -50,23 +48,27 @@ const NAV: NavSection[] = [
     ],
   },
   {
-    key: "customers",
-    label: "Customers",
-    icon: Users,
+    key: "sales",
+    label: "Sales",
+    icon: ShoppingCart,
     children: [
-      { label: "All Customers", href: "/customers" },
-      { label: "Invoices", href: "/customers/invoices" },
+      { label: "Customers", href: "/customers" },
+      { label: "Quotes", href: "/sales/quotes" },
+      { label: "Invoices", href: "/sales/invoices" },
       { label: "Receipts", href: "/customers/receipts" },
+      { label: "Credit Notes", href: "/sales/credit-notes" },
     ],
   },
   {
-    key: "vendors",
-    label: "Vendors",
-    icon: Truck,
+    key: "purchases",
+    label: "Purchases",
+    icon: CreditCard,
     children: [
-      { label: "All Vendors", href: "/vendors" },
-      { label: "Bills", href: "/vendors/bills" },
-      { label: "Payments", href: "/vendors/payments" },
+      { label: "Vendors", href: "/vendors" },
+      { label: "Purchase Orders", href: "/purchases/orders" },
+      { label: "Bills", href: "/purchases/bills" },
+      { label: "Payments Made", href: "/vendors/payments" },
+      { label: "Vendor Credits", href: "/purchases/vendor-credits" },
     ],
   },
   {
@@ -76,26 +78,6 @@ const NAV: NavSection[] = [
     children: [
       { label: "All Items", href: "/items" },
       { label: "Categories", href: "/items/categories" },
-    ],
-  },
-  {
-    key: "sales",
-    label: "Sales",
-    icon: ShoppingCart,
-    children: [
-      { label: "Quotes", href: "/sales/quotes" },
-      { label: "Invoices", href: "/sales/invoices" },
-      { label: "Credit Notes", href: "/sales/credit-notes" },
-    ],
-  },
-  {
-    key: "purchases",
-    label: "Purchases",
-    icon: CreditCard,
-    children: [
-      { label: "Purchase Orders", href: "/purchases/orders" },
-      { label: "Bills", href: "/purchases/bills" },
-      { label: "Vendor Credits", href: "/purchases/vendor-credits" },
     ],
   },
   {
