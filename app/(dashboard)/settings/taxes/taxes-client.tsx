@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Pencil, Trash2, Plus, Check, X } from "lucide-react";
 
 type TaxType = "VAT" | "WHT" | "PAYE" | "CUSTOM";
@@ -205,9 +205,9 @@ export default function TaxesClient({ taxRates: initial }: Props) {
           <div className="flex flex-col justify-end space-y-1 pb-0.5">
             <Label className="text-xs text-slate-500">Default</Label>
             <div className="flex items-center h-9">
-              <Switch
+              <Checkbox
                 checked={form.isDefault}
-                onCheckedChange={(v) => setF("isDefault", v)}
+                onCheckedChange={(v) => setF("isDefault", !!v)}
               />
             </div>
           </div>
@@ -290,10 +290,10 @@ export default function TaxesClient({ taxRates: initial }: Props) {
                       />
                     </TableCell>
                     <TableCell>
-                      <Switch
+                      <Checkbox
                         checked={editRow.isDefault}
                         onCheckedChange={(v) =>
-                          setEditRow({ ...editRow, isDefault: v })
+                          setEditRow({ ...editRow, isDefault: !!v })
                         }
                       />
                     </TableCell>
