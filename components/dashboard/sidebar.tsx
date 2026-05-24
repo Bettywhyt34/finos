@@ -142,6 +142,7 @@ const NAV: NavSection[] = [
       { label: "General Ledger", href: "/reports/general-ledger" },
       { label: "FX Exposure", href: "/reports/fx-exposure" },
       { label: "Budget vs Actual", href: "/reports/budget-vs-actual" },
+      { label: "Inventory Movements", href: "/reports/inventory-movements" },
     ],
   },
   {
@@ -171,22 +172,19 @@ const NAV: NavSection[] = [
 interface SidebarProps {
   orgName: string;
   showBettywhyt?: boolean;
+  showFinosPos?: boolean;
 }
 
-export function Sidebar({ orgName, showBettywhyt }: SidebarProps) {
+export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) {
   const pathname = usePathname();
 
   const nav = NAV.map((section) => {
-    if (section.key === "integrations" && showBettywhyt) {
-      return {
-        ...section,
-        children: [
-          ...(section.children ?? []),
-          { label: "BettyWhyt", href: "/integrations/bettywhyt/status" },
-        ],
-      };
-    }
-    return section;
+    if (section.key !== "integrations") return section;
+    const extra: { label: string; href: string }[] = [];
+    if (showBettywhyt) extra.push({ label: "BettyWhyt", href: "/integrations/bettywhyt/status" });
+    if (showFinosPos)  extra.push({ label: "FINOS POS", href: "/integrations/finos_pos/status" });
+    if (extra.length === 0) return section;
+    return { ...section, children: [...(section.children ?? []), ...extra] };
   });
 
   // Open accordion sections where a child route is active

@@ -11,7 +11,7 @@ import IORedis from "ioredis";
 
 // ─── Source app types ─────────────────────────────────────────────────────────
 
-export const SOURCE_APPS = ["revflow", "xpenxflow", "earnmark360", "bettywhyt"] as const;
+export const SOURCE_APPS = ["revflow", "xpenxflow", "earnmark360", "bettywhyt", "finos_pos"] as const;
 export type SourceApp = (typeof SOURCE_APPS)[number];
 
 export const SYNC_TYPES = ["full", "incremental", "manual", "webhook"] as const;
@@ -24,6 +24,7 @@ export const QUEUE_NAMES = {
   xpenxflow:   "finos-sync-xpenxflow",
   earnmark360: "finos-sync-earnmark360",
   bettywhyt:   "finos-sync-bettywhyt",
+  finos_pos:   "finos-sync-finos-pos",
 } as const satisfies Record<SourceApp, string>;
 
 // ─── Job payload (serialised into Redis) ─────────────────────────────────────

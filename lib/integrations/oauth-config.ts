@@ -1,6 +1,6 @@
 import "server-only";
 
-export type SourceApp = "revflow" | "xpenxflow" | "earnmark360" | "bettywhyt";
+export type SourceApp = "revflow" | "xpenxflow" | "earnmark360" | "bettywhyt" | "finos_pos";
 
 export interface OAuthConfig {
   clientId:         string;
@@ -39,6 +39,22 @@ export const OAUTH_CONFIGS: Record<SourceApp, OAuthConfig> = {
     scopes:           [],
     callbackPath:     "/api/integrations/bettywhyt/connect",
     defaultApiUrl:    process.env.BETTYWHYT_BASE_URL ?? "https://bettywhyt.com",
+    discoveryUrl:     "",
+    tokenTtlDays:     0,
+  },
+  /**
+   * FINOS POS uses API key auth, not OAuth.
+   * Stub values satisfy the OAuthConfig type; the real connection
+   * is stored via apiKeyEncrypted in IntegrationConnection.
+   */
+  finos_pos: {
+    clientId:         "",
+    clientSecret:     "",
+    authorizationUrl: "",
+    tokenUrl:         "",
+    scopes:           [],
+    callbackPath:     "/api/integrations/finos_pos/connect",
+    defaultApiUrl:    process.env.FINOS_POS_BASE_URL ?? "https://pos.finos.internal",
     discoveryUrl:     "",
     tokenTtlDays:     0,
   },

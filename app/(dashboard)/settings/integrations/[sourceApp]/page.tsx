@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ChevronLeft } from "lucide-react";
 import { MappingManager } from "./mapping-manager";
+import { GLMappingForm } from "./gl-mapping-form";
+import { getGLMapping } from "@/lib/integrations/registry";
 
 export default async function IntegrationMappingsPage({
   params,
@@ -22,7 +24,7 @@ export default async function IntegrationMappingsPage({
   });
   if (!entry) redirect("/settings/integrations");
 
-  const [mappings, coaOptions] = await Promise.all([
+  const [mappings, coaOptions, glMapping] = await Promise.all([
     prisma.accountMapping.findMany({
       where: { tenantId, sourceApp, isActive: true },
       include: { finosAccount: { select: { code: true, name: true } } },
@@ -33,6 +35,7 @@ export default async function IntegrationMappingsPage({
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     }),
+    getGLMapping(tenantId, sourceApp),
   ]);
 
   return (
@@ -73,12 +76,25 @@ export default async function IntegrationMappingsPage({
         </div>
       </div>
 
-      {/* Manager */}
-      <MappingManager
+      {/* GL Mapping */}
+      <GLMappingForm
         sourceApp={sourceApp}
-        initialMappings={mappings}
+        initialMapping={glMapping ?? {}}
         coaOptions={coaOptions}
       />
+
+      {/* Account code mappings */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-800 mb-1">Account Code Mappings</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Map individual external account codes to specific FINOS chart of account entries.
+        </p>
+        <MappingManager
+          sourceApp={sourceApp}
+          initialMappings={mappings}
+          coaOptions={coaOptions}
+        />
+      </div>
     </div>
   );
 }
