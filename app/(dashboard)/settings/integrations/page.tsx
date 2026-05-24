@@ -139,8 +139,16 @@ export default async function IntegrationSettingsPage() {
                     )}
                   </div>
 
-                  {/* Right: action button */}
-                  <div className="flex-shrink-0">
+                  {/* Right: action buttons */}
+                  <div className="flex-shrink-0 flex items-center gap-2">
+                    {isConnected && (
+                      <Link
+                        href={`/settings/integrations/${integration.sourceApp}`}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        Mappings
+                      </Link>
+                    )}
                     {isConnected ? (
                       <Link
                         href={statusHref(integration.sourceApp)}
@@ -169,6 +177,22 @@ export default async function IntegrationSettingsPage() {
           No integrations available. Contact support to enable integrations for your account.
         </div>
       )}
+
+      {/* Quarantine link */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-amber-800">Sync Quarantine</p>
+          <p className="text-xs text-amber-600 mt-0.5">
+            Review records that failed to sync and need manual attention.
+          </p>
+        </div>
+        <Link
+          href="/settings/integrations/quarantine"
+          className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-50 transition-colors"
+        >
+          Review
+        </Link>
+      </div>
 
       {/* Info footer */}
       <p className="text-xs text-slate-400">

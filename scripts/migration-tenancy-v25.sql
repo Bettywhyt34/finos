@@ -12,9 +12,9 @@
 -- ============================================================
 
 -- ─── Step 1a: Parity snapshot ───────────────────────────────
--- Run these and save the numbers BEFORE proceeding.
-SELECT COUNT(*) AS org_count        FROM organizations;
-SELECT COUNT(*) AS membership_count FROM organization_memberships;
+-- Uses safe names that survive re-runs after partial migration.
+SELECT COUNT(*) AS org_count        FROM tenants;
+SELECT COUNT(*) AS membership_count FROM tenant_memberships;
 
 -- ─── Step 1b: Create tenants table ──────────────────────────
 CREATE TABLE IF NOT EXISTS tenants (
@@ -36,26 +36,54 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 -- ─── Step 1c: Seed tenants from organizations ───────────────
 -- Cast id TEXT → UUID (Prisma stores UUIDs as TEXT in the source table).
-INSERT INTO tenants (
-  id, name, slug, country_code, currency,
-  fiscal_year_start, fiscal_year_end, timezone, status, created_at
-)
-SELECT
-  id::UUID,    -- TEXT → UUID cast required
-  name,
-  LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9]', '-', 'g')),
-  'NG',
-  COALESCE(currency, 'NGN'),
-  1,
-  fiscal_year_end,
-  'Africa/Lagos',
-  'active',
-  created_at
-FROM organizations
-ON CONFLICT (id) DO NOTHING;
+-- On re-run organizations is already a view (no fiscal_year_end) so read
+-- from organizations_legacy (the original table) when it exists.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='organizations_legacy') THEN
+    INSERT INTO tenants (
+      id, name, slug, country_code, currency,
+      fiscal_year_start, fiscal_year_end, timezone, status, created_at
+    )
+    SELECT
+      id::UUID,
+      name,
+      LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9]', '-', 'g')),
+      'NG',
+      COALESCE(currency, 'NGN'),
+      1,
+      fiscal_year_end,
+      'Africa/Lagos',
+      'active',
+      created_at
+    FROM organizations_legacy
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='organizations') THEN
+    INSERT INTO tenants (
+      id, name, slug, country_code, currency,
+      fiscal_year_start, fiscal_year_end, timezone, status, created_at
+    )
+    SELECT
+      id::UUID,
+      name,
+      LOWER(REGEXP_REPLACE(name, '[^a-zA-Z0-9]', '-', 'g')),
+      'NG',
+      COALESCE(currency, 'NGN'),
+      1,
+      fiscal_year_end,
+      'Africa/Lagos',
+      'active',
+      created_at
+    FROM organizations
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- ─── Step 1d: Rename organizations → organizations_legacy ───
-ALTER TABLE organizations RENAME TO organizations_legacy;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='organizations') THEN
+    ALTER TABLE organizations RENAME TO organizations_legacy;
+  END IF;
+END $$;
 
 -- ─── Step 1e: Compatibility view ────────────────────────────
 -- Casts tenants.id back to TEXT so legacy app code reading id as text still works.
@@ -65,8 +93,12 @@ CREATE OR REPLACE VIEW organizations AS
 -- ─── Step 1f: Rename organization_memberships ───────────────
 -- Hard cutover — coordinate deploy.
 -- The renamed tenant_id column stays TEXT (same type as original organization_id).
-ALTER TABLE organization_memberships RENAME COLUMN organization_id TO tenant_id;
-ALTER TABLE organization_memberships RENAME TO tenant_memberships;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='organization_memberships') THEN
+    ALTER TABLE organization_memberships RENAME COLUMN organization_id TO tenant_id;
+    ALTER TABLE organization_memberships RENAME TO tenant_memberships;
+  END IF;
+END $$;
 
 -- ─── Step 1g: Add tenant_id UUID to all 28 root tables ──────
 -- Pattern: A) add UUID column  B) migrate data with TEXT→UUID cast  C) NOT NULL
