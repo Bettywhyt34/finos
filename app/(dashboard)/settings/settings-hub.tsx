@@ -41,7 +41,7 @@ const SETTINGS: SettingSection[] = [
         headerText:   "text-emerald-700",
         headerBorder: "border-emerald-100",
         items: [
-          { label: "Profile",           href: "/settings/organization" },
+          { label: "Profile",           href: "/settings/orgprofile" },
           { label: "Branding",          href: "/settings/organization/branding" },
           { label: "Fiscal Year",       href: "/settings/organization/fiscal-year" },
           { label: "Currencies",        href: "/settings/organization/currencies" },
