@@ -109,6 +109,7 @@ model Tenant {
   earnmark360PayrollRuns Earnmark360PayrollRun[]
   inventoryMovements     InventoryMovement[]
   journalLines           JournalLine[]
+  taxRates               TaxRate[]
 
   @@map("tenants")
 }
@@ -547,6 +548,20 @@ enum UserRole {
   ACCOUNTANT
   MEMBER
   VIEWER
+}
+
+model TaxRate {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String                              // e.g. "VAT", "WHT 5%", "PAYE"
+  type      String                              // VAT | WHT | PAYE | CUSTOM
+  rate      Decimal  @db.Decimal(5, 2)          // percentage, e.g. 7.50
+  isDefault Boolean  @default(false) @map("is_default")
+  isActive  Boolean  @default(true)  @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tax_rates")
 }
 
 enum AccountType {
