@@ -142,6 +142,7 @@ const NAV: NavSection[] = [
     label: "Settings",
     icon: Settings,
     children: [
+      { label: "All Settings", href: "/settings" },
       { label: "Organization", href: "/settings/organization" },
       { label: "Users", href: "/settings/users" },
       { label: "Taxes", href: "/settings/taxes" },
