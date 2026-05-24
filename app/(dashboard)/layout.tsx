@@ -26,7 +26,7 @@ export default async function DashboardLayout({
   const showFinosPos = finosPosConn?.status === "CONNECTED" || finosPosConn?.status === "CONNECTING";
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen bg-[#f7f8fb] overflow-hidden">
       <Sidebar
         orgName={session.user.tenantName ?? "Your workspace"}
         showBettywhyt={showBettywhyt}

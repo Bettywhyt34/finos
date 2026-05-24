@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Truck, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { VendorForm } from "./vendor-form";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -27,35 +28,46 @@ export default async function VendorsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Vendors</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {vendors.length} vendor{vendors.length !== 1 ? "s" : ""} ·
-            AP Balance: {formatCurrency(totalBalance)}
-          </p>
-        </div>
-        <VendorForm />
-      </div>
+      <PageHeader
+        title="Vendors"
+        subtitle={
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-xs font-medium">
+              <Truck className="h-3 w-3" />
+              {vendors.length} vendor{vendors.length !== 1 ? "s" : ""}
+            </span>
+            {totalBalance > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">
+                AP {formatCurrency(totalBalance)}
+              </span>
+            )}
+          </span>
+        }
+        icon={Truck}
+        color="orange"
+        action={<VendorForm />}
+      />
 
       {vendors.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-slate-200 rounded-xl">
-          <Truck className="h-10 w-10 text-slate-300 mb-3" />
-          <p className="text-slate-500 font-medium mb-1">No vendors yet</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-orange-200 rounded-xl bg-orange-50/40">
+          <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center mb-3">
+            <Truck className="h-7 w-7 text-orange-400" />
+          </div>
+          <p className="text-slate-600 font-medium mb-1">No vendors yet</p>
           <p className="text-sm text-slate-400">Add your first vendor to start processing bills.</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-orange-50 border-b border-orange-100">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Code</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Company</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Contact</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Terms</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">WHT</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-500">Balance</th>
+                <th className="text-left px-4 py-3 font-medium text-orange-700">Code</th>
+                <th className="text-left px-4 py-3 font-medium text-orange-700">Company</th>
+                <th className="text-left px-4 py-3 font-medium text-orange-700">Contact</th>
+                <th className="text-left px-4 py-3 font-medium text-orange-700">Email</th>
+                <th className="text-left px-4 py-3 font-medium text-orange-700">Terms</th>
+                <th className="text-left px-4 py-3 font-medium text-orange-700">WHT</th>
+                <th className="text-right px-4 py-3 font-medium text-orange-700">Balance</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>

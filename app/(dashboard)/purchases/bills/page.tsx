@@ -3,14 +3,15 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Receipt, Plus } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 
 const statusColors: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-600",
+  DRAFT:    "bg-slate-100 text-slate-600",
   RECORDED: "bg-blue-100 text-blue-700",
-  PARTIAL: "bg-amber-100 text-amber-700",
-  PAID: "bg-green-100 text-green-700",
-  OVERDUE: "bg-red-100 text-red-700",
+  PARTIAL:  "bg-amber-100 text-amber-700",
+  PAID:     "bg-emerald-100 text-emerald-700",
+  OVERDUE:  "bg-red-100 text-red-700",
 };
 
 export default async function BillsPage() {
@@ -28,40 +29,60 @@ export default async function BillsPage() {
     return s + balance;
   }, 0);
 
+  const overdueCount = bills.filter(
+    (b) => new Date(b.dueDate) < new Date() && b.status !== "PAID"
+  ).length;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Bills</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {bills.length} bill{bills.length !== 1 ? "s" : ""} ·
-            AP: {formatCurrency(totalAP)}
-          </p>
-        </div>
-        <Link href="/purchases/bills/new" className={buttonVariants()}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          New Bill
-        </Link>
-      </div>
+      <PageHeader
+        title="Bills"
+        subtitle={
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+              <Receipt className="h-3 w-3" />
+              {bills.length} bill{bills.length !== 1 ? "s" : ""}
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-xs font-medium">
+              AP {formatCurrency(totalAP)}
+            </span>
+            {overdueCount > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">
+                {overdueCount} overdue
+              </span>
+            )}
+          </span>
+        }
+        icon={Receipt}
+        color="amber"
+        action={
+          <Link href="/purchases/bills/new" className={buttonVariants()}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Bill
+          </Link>
+        }
+      />
 
       {bills.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-slate-200 rounded-xl">
-          <Receipt className="h-10 w-10 text-slate-300 mb-3" />
-          <p className="text-slate-500 font-medium mb-1">No bills yet</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-amber-200 rounded-xl bg-amber-50/40">
+          <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mb-3">
+            <Receipt className="h-7 w-7 text-amber-400" />
+          </div>
+          <p className="text-slate-600 font-medium mb-1">No bills yet</p>
           <p className="text-sm text-slate-400">Record vendor bills to track AP.</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-amber-50 border-b border-amber-100">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Number</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Vendor</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Due</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-500">Total</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-500">Balance</th>
+                <th className="text-left px-4 py-3 font-medium text-amber-700">Number</th>
+                <th className="text-left px-4 py-3 font-medium text-amber-700">Vendor</th>
+                <th className="text-left px-4 py-3 font-medium text-amber-700">Date</th>
+                <th className="text-left px-4 py-3 font-medium text-amber-700">Due</th>
+                <th className="text-left px-4 py-3 font-medium text-amber-700">Status</th>
+                <th className="text-right px-4 py-3 font-medium text-amber-700">Total</th>
+                <th className="text-right px-4 py-3 font-medium text-amber-700">Balance</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>

@@ -1,9 +1,10 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { Building2, ArrowRight } from "lucide-react";
+import { Building2, ArrowRight, Landmark } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { BankAccountForm } from "./bank-account-form";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -22,23 +23,30 @@ export default async function BankAccountsPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Bank Accounts
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {accounts.length} account{accounts.length !== 1 ? "s" : ""} ·
-            Total: {formatCurrency(totalBalance)}
-          </p>
-        </div>
-        <BankAccountForm />
-      </div>
+      <PageHeader
+        title="Bank Accounts"
+        subtitle={
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+              <Landmark className="h-3 w-3" />
+              {accounts.length} account{accounts.length !== 1 ? "s" : ""}
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+              {formatCurrency(totalBalance)} NGN
+            </span>
+          </span>
+        }
+        icon={Landmark}
+        color="indigo"
+        action={<BankAccountForm />}
+      />
 
       {accounts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-slate-200 rounded-xl">
-          <Building2 className="h-10 w-10 text-slate-300 mb-3" />
-          <p className="text-slate-500 font-medium mb-1">No bank accounts yet</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-indigo-200 rounded-xl bg-indigo-50/40">
+          <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center mb-3">
+            <Building2 className="h-7 w-7 text-indigo-400" />
+          </div>
+          <p className="text-slate-600 font-medium mb-1">No bank accounts yet</p>
           <p className="text-sm text-slate-400">
             Add your first bank account to track balances and transactions.
           </p>
@@ -51,19 +59,21 @@ export default async function BankAccountsPage() {
             const change = balance - opening;
 
             return (
-              <Card key={account.id} className="border-slate-200 shadow-none hover:border-slate-300 transition-colors">
+              <Card
+                key={account.id}
+                className="border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all overflow-hidden"
+              >
+                <div className="h-1 bg-indigo-400" />
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3">
-                    <div className="p-2 bg-blue-50 rounded-lg">
-                      <Building2 className="h-5 w-5 text-blue-600" />
+                    <div className="p-2 bg-indigo-100 rounded-lg">
+                      <Building2 className="h-5 w-5 text-indigo-600" />
                     </div>
-                    <span className="text-xs text-slate-400 font-mono">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                       {account.currency}
                     </span>
                   </div>
-                  <p className="font-semibold text-slate-900 truncate">
-                    {account.accountName}
-                  </p>
+                  <p className="font-semibold text-slate-900 truncate">{account.accountName}</p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {account.bankName} · ···{account.accountNumber.slice(-4)}
                   </p>
@@ -71,22 +81,14 @@ export default async function BankAccountsPage() {
                     {formatCurrency(balance, account.currency)}
                   </p>
                   {change !== 0 && (
-                    <p
-                      className={cn(
-                        "text-xs mt-0.5",
-                        change >= 0 ? "text-green-600" : "text-red-500"
-                      )}
-                    >
+                    <p className={cn("text-xs mt-0.5", change >= 0 ? "text-emerald-600" : "text-red-500")}>
                       {change >= 0 ? "+" : ""}
                       {formatCurrency(change, account.currency)} from opening
                     </p>
                   )}
                   <Link
                     href={`/banking/${account.id}`}
-                    className={cn(
-                      buttonVariants({ variant: "ghost", size: "sm" }),
-                      "mt-4 w-full justify-between text-xs"
-                    )}
+                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mt-4 w-full justify-between text-xs")}
                   >
                     View transactions
                     <ArrowRight className="h-3.5 w-3.5" />

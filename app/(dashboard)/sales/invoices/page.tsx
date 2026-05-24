@@ -3,15 +3,16 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { FileText, Plus } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { formatCurrency, toNGN, cn } from "@/lib/utils";
 import { formatDate } from "@/lib/utils";
 
 const statusColors: Record<string, string> = {
-  DRAFT: "bg-slate-100 text-slate-600",
-  SENT: "bg-blue-100 text-blue-700",
-  PARTIAL: "bg-amber-100 text-amber-700",
-  PAID: "bg-green-100 text-green-700",
-  OVERDUE: "bg-red-100 text-red-700",
+  DRAFT:       "bg-slate-100 text-slate-600",
+  SENT:        "bg-blue-100 text-blue-700",
+  PARTIAL:     "bg-amber-100 text-amber-700",
+  PAID:        "bg-emerald-100 text-emerald-700",
+  OVERDUE:     "bg-red-100 text-red-700",
   WRITTEN_OFF: "bg-slate-100 text-slate-400",
 };
 
@@ -25,7 +26,6 @@ export default async function InvoicesPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  // AR balance in NGN (all converted)
   const totalAR = invoices.reduce((s, i) => {
     const bal = parseFloat(String(i.balanceDue));
     const rate = parseFloat(String(i.exchangeRate));
@@ -38,39 +38,54 @@ export default async function InvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Sales Invoices</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {invoices.length} invoice{invoices.length !== 1 ? "s" : ""} ·
-            AR (NGN): {formatCurrency(totalAR)}
-            {overdueCount > 0 && <span className="text-red-600 ml-2">· {overdueCount} overdue</span>}
-          </p>
-        </div>
-        <Link href="/sales/invoices/new" className={buttonVariants()}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          New Invoice
-        </Link>
-      </div>
+      <PageHeader
+        title="Sales Invoices"
+        subtitle={
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+              <FileText className="h-3 w-3" />
+              {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+              AR {formatCurrency(totalAR)}
+            </span>
+            {overdueCount > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">
+                {overdueCount} overdue
+              </span>
+            )}
+          </span>
+        }
+        icon={FileText}
+        color="emerald"
+        action={
+          <Link href="/sales/invoices/new" className={buttonVariants()}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Invoice
+          </Link>
+        }
+      />
 
       {invoices.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-slate-200 rounded-xl">
-          <FileText className="h-10 w-10 text-slate-300 mb-3" />
-          <p className="text-slate-500 font-medium mb-1">No invoices yet</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-emerald-200 rounded-xl bg-emerald-50/40">
+          <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mb-3">
+            <FileText className="h-7 w-7 text-emerald-400" />
+          </div>
+          <p className="text-slate-600 font-medium mb-1">No invoices yet</p>
           <p className="text-sm text-slate-400">Create your first invoice to start tracking AR.</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-emerald-50 border-b border-emerald-100">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Number</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Customer</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Date</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Due</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-500">Total</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-500">Balance (NGN)</th>
+                <th className="text-left px-4 py-3 font-medium text-emerald-700">Number</th>
+                <th className="text-left px-4 py-3 font-medium text-emerald-700">Customer</th>
+                <th className="text-left px-4 py-3 font-medium text-emerald-700">Date</th>
+                <th className="text-left px-4 py-3 font-medium text-emerald-700">Due</th>
+                <th className="text-left px-4 py-3 font-medium text-emerald-700">Status</th>
+                <th className="text-right px-4 py-3 font-medium text-emerald-700">Total</th>
+                <th className="text-right px-4 py-3 font-medium text-emerald-700">Balance (NGN)</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
