@@ -72,6 +72,7 @@ model Tenant {
   benchmarkConsent        Boolean? @map("benchmark_consent")
   benchmarkConsentAt      DateTime? @map("benchmark_consent_at")
   benchmarkConsentVersion String?  @map("benchmark_consent_version")
+  logoUrl                 String?  @map("logo_url")
   createdAt               DateTime @default(now()) @map("created_at")
 
   // Core accounting

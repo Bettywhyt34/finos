@@ -19,6 +19,7 @@ export default async function OrgProfilePage() {
       fiscalYearStart: true,
       timezone:        true,
       industryCode:    true,
+      logoUrl:         true,
     },
   });
 
@@ -28,6 +29,7 @@ export default async function OrgProfilePage() {
     <OrgProfileClient
       tenant={tenant}
       orgName={session.user.tenantName ?? tenant.name}
+      logoUrl={tenant.logoUrl ?? null}
     />
   );
 }

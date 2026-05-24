@@ -158,11 +158,13 @@ interface TenantData {
   fiscalYearStart: number;
   timezone: string;
   industryCode: string | null;
+  logoUrl?: string | null;
 }
 
 interface Props {
   tenant: TenantData;
   orgName: string;
+  logoUrl?: string | null;
 }
 
 interface FormState {
@@ -278,16 +280,31 @@ function WarningBanner({ text, linkLabel, linkHref }: { text: string; linkLabel?
 }
 
 // ─── Logo Uploader ────────────────────────────────────────────────────────────
-function LogoUploader() {
-  const [preview, setPreview] = useState<string | null>(null);
+function LogoUploader({ initialUrl }: { initialUrl?: string | null }) {
+  const [preview, setPreview] = useState<string | null>(initialUrl ?? null);
+  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     if (!file.type.startsWith("image/")) { setErr("Please select an image file."); return; }
     if (file.size > 1024 * 1024) { setErr("Maximum file size is 1 MB."); return; }
     setErr("");
-    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/settings/organization/logo", { method: "POST", body: fd });
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error ?? "Upload failed"); }
+      const { url } = await res.json();
+      setPreview(url);
+      toast.success("Logo uploaded successfully.");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Upload failed.");
+      toast.error(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -295,11 +312,20 @@ function LogoUploader() {
     if (f) handleFile(f);
   }
 
-  function handleRemove(e: React.MouseEvent) {
+  async function handleRemove(e: React.MouseEvent) {
     e.stopPropagation();
-    setPreview(null);
-    setErr("");
-    if (inputRef.current) inputRef.current.value = "";
+    setUploading(true);
+    try {
+      await fetch("/api/settings/organization/logo", { method: "DELETE" });
+      setPreview(null);
+      setErr("");
+      if (inputRef.current) inputRef.current.value = "";
+      toast.success("Logo removed.");
+    } catch {
+      toast.error("Failed to remove logo.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -307,8 +333,9 @@ function LogoUploader() {
       <div className="shrink-0">
         <button
           type="button"
+          disabled={uploading}
           onClick={() => inputRef.current?.click()}
-          className="relative w-[260px] h-[110px] border border-[#d8dde6] rounded-lg bg-white flex items-center justify-center hover:bg-slate-50 transition-colors overflow-hidden"
+          className="relative w-[260px] h-[110px] border border-[#d8dde6] rounded-lg bg-white flex items-center justify-center hover:bg-slate-50 transition-colors overflow-hidden disabled:opacity-60"
         >
           {preview ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -316,14 +343,14 @@ function LogoUploader() {
           ) : (
             <div className="flex flex-col items-center gap-1.5 text-slate-300">
               <ImageIcon className="h-8 w-8" />
-              <span className="text-[11px] text-slate-400">Click to upload</span>
+              <span className="text-[11px] text-slate-400">{uploading ? "Uploading…" : "Click to upload"}</span>
             </div>
           )}
           {/* Bottom strip */}
           <div className="absolute bottom-0 left-0 right-0 h-7 border-t border-[#d8dde6] bg-slate-50 flex items-center justify-center gap-2">
-            <span className="text-[11px] text-slate-400">Upload Logo</span>
+            <span className="text-[11px] text-slate-400">{uploading ? "Uploading…" : "Upload Logo"}</span>
           </div>
-          {preview && (
+          {preview && !uploading && (
             <button
               type="button"
               onClick={handleRemove}
@@ -711,7 +738,7 @@ function SectionTitle({ title }: { title: string }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function OrgProfileClient({ tenant, orgName }: Props) {
+export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [search, setSearch] = useState("");
@@ -852,7 +879,7 @@ export function OrgProfileClient({ tenant, orgName }: Props) {
             {/* ── Organisation Logo ── */}
             <section>
               <h2 className="text-[14px] font-semibold text-slate-700 mb-3">Organisation Logo</h2>
-              <LogoUploader />
+              <LogoUploader initialUrl={logoUrl} />
             </section>
 
             <div className="h-px bg-[#e5e7eb]" />
