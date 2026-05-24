@@ -141,14 +141,7 @@ const NAV: NavSection[] = [
     key: "settings",
     label: "Settings",
     icon: Settings,
-    children: [
-      { label: "All Settings", href: "/settings" },
-      { label: "Organization", href: "/settings/organization" },
-      { label: "Users", href: "/settings/users" },
-      { label: "Taxes", href: "/settings/taxes" },
-      { label: "Budget Settings", href: "/settings/budgets" },
-      { label: "Integrations", href: "/settings/integrations" },
-    ],
+    href: "/settings",
   },
 ];
 
@@ -196,7 +189,7 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
             href={s.href!}
             className={cn(
               "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors no-underline",
-              pathname === s.href
+              pathname === s.href || pathname.startsWith(s.href + "/")
                 ? "bg-slate-100 text-slate-900"
                 : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
             )}
