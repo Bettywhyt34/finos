@@ -10,7 +10,7 @@ import {
   Building2, Users, FileText, Sliders, Palette, Zap,
   ShoppingCart, Package, Code2, Plug, Landmark,
   Globe, DollarSign, Briefcase, User, Save, Lock,
-  Trash2, Info, AlertTriangle, Plus, Pencil, ImageIcon, Settings,
+  Trash2, Info, Plus, Pencil, ImageIcon, Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,8 +30,6 @@ const EMAIL_SENDER_NAME = `Email address of ${APP_NAME}`;
 const EMAIL_SENDER_ADDR = "message-service@sender.finosbooks.com";
 const INTEGRATION_NOTICE =
   `This organisation is linked across ${APP_NAME} modules. Changes made here apply to all connected modules.`;
-const DOMAIN_WARNING =
-  `Your primary contact's email belongs to an unauthenticated domain. Emails are sent via ${EMAIL_SENDER_ADDR} to avoid spam filtering. Authenticate your domain to send from your own address.`;
 
 // ─── Static form data ─────────────────────────────────────────────────────────
 const MONTHS = [
@@ -272,22 +270,6 @@ function InfoBanner({ text, linkLabel, linkHref }: { text: string; linkLabel?: s
   );
 }
 
-// ─── WarningBanner ────────────────────────────────────────────────────────────
-function WarningBanner({ text, linkLabel, linkHref }: { text: string; linkLabel?: string; linkHref?: string }) {
-  return (
-    <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-100 rounded-lg px-4 py-3 text-[13px] text-orange-800">
-      <AlertTriangle className="h-4 w-4 text-orange-400 mt-0.5 shrink-0" />
-      <span>
-        {text}{" "}
-        {linkLabel && linkHref && (
-          <Link href={linkHref} className="text-[#4088f4] hover:underline font-medium">
-            {linkLabel}
-          </Link>
-        )}
-      </span>
-    </div>
-  );
-}
 
 // ─── Logo Uploader ────────────────────────────────────────────────────────────
 function LogoUploader({ initialUrl }: { initialUrl?: string | null }) {
@@ -1031,11 +1013,6 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
             <section className="space-y-3">
               <SectionTitle title="Primary Contact" />
               <PrimaryContactCard />
-              <WarningBanner
-                text={DOMAIN_WARNING}
-                linkLabel="Authenticate Now ›"
-                linkHref="/settings/organization/domain"
-              />
             </section>
 
             {/* ── Financial & Localisation ── */}
