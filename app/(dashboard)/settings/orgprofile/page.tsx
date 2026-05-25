@@ -20,6 +20,16 @@ export default async function OrgProfilePage() {
       timezone:        true,
       industryCode:    true,
       logoUrl:         true,
+      address1:        true,
+      address2:        true,
+      city:            true,
+      state:           true,
+      zip:             true,
+      phone:           true,
+      fax:             true,
+      website:         true,
+      companyId:       true,
+      taxId:           true,
     },
   });
 

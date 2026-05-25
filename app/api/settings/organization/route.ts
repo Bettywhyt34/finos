@@ -14,6 +14,16 @@ const schema = z.object({
   fiscalYearStart: z.number().int().min(1).max(12).optional(),
   timezone:        z.string().min(1).optional(),
   industryCode:    z.string().max(30).optional(),
+  address1:        z.string().max(200).optional(),
+  address2:        z.string().max(200).optional(),
+  city:            z.string().max(100).optional(),
+  state:           z.string().max(100).optional(),
+  zip:             z.string().max(20).optional(),
+  phone:           z.string().max(30).optional(),
+  fax:             z.string().max(30).optional(),
+  website:         z.string().max(200).optional(),
+  companyId:       z.string().max(100).optional(),
+  taxId:           z.string().max(100).optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -34,6 +44,9 @@ export async function PATCH(req: Request) {
     select: {
       id: true, name: true, currency: true, countryCode: true,
       fiscalYearStart: true, timezone: true, industryCode: true,
+      address1: true, address2: true, city: true, state: true,
+      zip: true, phone: true, fax: true, website: true,
+      companyId: true, taxId: true,
     },
   });
 

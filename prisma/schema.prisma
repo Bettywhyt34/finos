@@ -73,6 +73,16 @@ model Tenant {
   benchmarkConsentAt      DateTime? @map("benchmark_consent_at")
   benchmarkConsentVersion String?  @map("benchmark_consent_version")
   logoUrl                 String?  @map("logo_url")
+  address1                String?  @map("address1")
+  address2                String?  @map("address2")
+  city                    String?
+  state                   String?
+  zip                     String?
+  phone                   String?
+  fax                     String?
+  website                 String?
+  companyId               String?  @map("company_id")
+  taxId                   String?  @map("tax_id")
   createdAt               DateTime @default(now()) @map("created_at")
 
   // Core accounting

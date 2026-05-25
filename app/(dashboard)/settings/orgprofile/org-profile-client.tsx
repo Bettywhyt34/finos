@@ -159,6 +159,16 @@ interface TenantData {
   timezone: string;
   industryCode: string | null;
   logoUrl?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  phone?: string | null;
+  fax?: string | null;
+  website?: string | null;
+  companyId?: string | null;
+  taxId?: string | null;
 }
 
 interface Props {
@@ -751,16 +761,22 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
     fiscalYearStart: tenant.fiscalYearStart,
     timezone:        tenant.timezone,
     industryCode:    tenant.industryCode ?? "",
-    address1: "", address2: "", city: "", zip: "",
-    state: "Lagos", phone: "", fax: "", website: "",
+    address1: tenant.address1 ?? "",
+    address2: tenant.address2 ?? "",
+    city:     tenant.city     ?? "",
+    zip:      tenant.zip      ?? "",
+    state:    tenant.state    ?? "",
+    phone:    tenant.phone    ?? "",
+    fax:      tenant.fax      ?? "",
+    website:  tenant.website  ?? "",
     paymentStub: false,
     reportBasis: "accrual",
     language: "english",
     dateFormat: "dd MMM yyyy",
     companyIdLabel: "Company ID",
-    companyId: "",
+    companyId: tenant.companyId ?? "",
     taxIdLabel: "Tax ID",
-    taxId: "",
+    taxId:     tenant.taxId    ?? "",
   }), [tenant]);
 
   const [form, setForm] = useState<FormState>(initial);
@@ -818,6 +834,16 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
           fiscalYearStart: Number(form.fiscalYearStart),
           timezone:        form.timezone,
           industryCode:    form.industryCode || undefined,
+          address1:        form.address1 || undefined,
+          address2:        form.address2 || undefined,
+          city:            form.city     || undefined,
+          state:           form.state    || undefined,
+          zip:             form.zip      || undefined,
+          phone:           form.phone    || undefined,
+          fax:             form.fax      || undefined,
+          website:         form.website  || undefined,
+          companyId:       form.companyId || undefined,
+          taxId:           form.taxId    || undefined,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
