@@ -83,6 +83,7 @@ model Tenant {
   website                 String?
   companyId               String?  @map("company_id")
   taxId                   String?  @map("tax_id")
+  additionalFields        Json?    @map("additional_fields")
   createdAt               DateTime @default(now()) @map("created_at")
 
   // Core accounting

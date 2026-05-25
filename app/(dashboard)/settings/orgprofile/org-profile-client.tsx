@@ -167,12 +167,14 @@ interface TenantData {
   website?: string | null;
   companyId?: string | null;
   taxId?: string | null;
+  additionalFields?: { label: string; value: string }[] | null;
 }
 
 interface Props {
   tenant: TenantData;
   orgName: string;
   logoUrl?: string | null;
+  additionalFields?: { label: string; value: string }[];
 }
 
 interface FormState {
@@ -200,6 +202,7 @@ interface FormState {
   companyId: string;
   taxIdLabel: string;
   taxId: string;
+  additionalFields: { label: string; value: string }[];
 }
 
 // ─── Inline Toggle ─────────────────────────────────────────────────────────────
@@ -391,8 +394,13 @@ function PrimaryContactCard() {
 }
 
 // ─── Additional Fields Table ──────────────────────────────────────────────────
-function AdditionalFieldsTable() {
-  const [fields, setFields] = useState([{ label: "", value: "" }]);
+function AdditionalFieldsTable({
+  fields,
+  onChange,
+}: {
+  fields: { label: string; value: string }[];
+  onChange: (fields: { label: string; value: string }[]) => void;
+}) {
 
   return (
     <div className="space-y-2">
@@ -402,6 +410,7 @@ function AdditionalFieldsTable() {
             <tr>
               <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Label Name</th>
               <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Value</th>
+              <th className="w-8" />
             </tr>
           </thead>
           <tbody>
@@ -413,7 +422,7 @@ function AdditionalFieldsTable() {
                     onChange={(e) => {
                       const next = [...fields];
                       next[i] = { ...next[i], label: e.target.value };
-                      setFields(next);
+                      onChange(next);
                     }}
                     placeholder="Label"
                     className="w-full h-8 px-2 border border-[#e5e7eb] rounded text-[13px] focus:outline-none focus:ring-1 focus:ring-[#4088f4] focus:border-[#4088f4]"
@@ -425,11 +434,21 @@ function AdditionalFieldsTable() {
                     onChange={(e) => {
                       const next = [...fields];
                       next[i] = { ...next[i], value: e.target.value };
-                      setFields(next);
+                      onChange(next);
                     }}
                     placeholder="Value"
                     className="w-full h-8 px-2 border border-[#e5e7eb] rounded text-[13px] focus:outline-none focus:ring-1 focus:ring-[#4088f4] focus:border-[#4088f4]"
                   />
+                </td>
+                <td className="px-2 py-2 w-8">
+                  <button
+                    type="button"
+                    onClick={() => onChange(fields.filter((_, j) => j !== i))}
+                    className="p-1 text-slate-300 hover:text-red-400 transition-colors"
+                    title="Remove"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -438,7 +457,7 @@ function AdditionalFieldsTable() {
       </div>
       <button
         type="button"
-        onClick={() => setFields((f) => [...f, { label: "", value: "" }])}
+        onClick={() => onChange([...fields, { label: "", value: "" }])}
         className="flex items-center gap-1.5 text-[13px] text-[#4088f4] hover:text-blue-700 font-medium"
       >
         <Plus className="h-4 w-4" />
@@ -730,7 +749,7 @@ function SectionTitle({ title }: { title: string }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
+export function OrgProfileClient({ tenant, orgName, logoUrl, additionalFields: initialAdditionalFields = [] }: Props) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [search, setSearch] = useState("");
@@ -759,6 +778,7 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
     companyId: tenant.companyId ?? "",
     taxIdLabel: "Tax ID",
     taxId:     tenant.taxId    ?? "",
+    additionalFields: initialAdditionalFields,
   }), [tenant]);
 
   const [form, setForm] = useState<FormState>(initial);
@@ -824,8 +844,9 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
           phone:           form.phone    || undefined,
           fax:             form.fax      || undefined,
           website:         form.website  || undefined,
-          companyId:       form.companyId || undefined,
-          taxId:           form.taxId    || undefined,
+          companyId:        form.companyId || undefined,
+          taxId:            form.taxId    || undefined,
+          additionalFields: form.additionalFields.filter(f => f.label.trim()),
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
@@ -1180,11 +1201,9 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
             {/* ── Additional Fields ── */}
             <section className="space-y-3">
               <SectionTitle title="Additional Fields" />
-              <AdditionalFieldsTable />
-              <InfoBanner
-                text="You can include the Company ID, Tax ID and additional fields in your organisation address for transaction PDFs. Configure this in your"
-                linkLabel="Organisation Address Format."
-                linkHref="/settings/organization/address-format"
+              <AdditionalFieldsTable
+                fields={form.additionalFields}
+                onChange={(v) => set("additionalFields", v)}
               />
             </section>
 

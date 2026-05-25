@@ -22,8 +22,9 @@ const schema = z.object({
   phone:           z.string().max(30).optional(),
   fax:             z.string().max(30).optional(),
   website:         z.string().max(200).optional(),
-  companyId:       z.string().max(100).optional(),
-  taxId:           z.string().max(100).optional(),
+  companyId:        z.string().max(100).optional(),
+  taxId:            z.string().max(100).optional(),
+  additionalFields: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -46,7 +47,7 @@ export async function PATCH(req: Request) {
       fiscalYearStart: true, timezone: true, industryCode: true,
       address1: true, address2: true, city: true, state: true,
       zip: true, phone: true, fax: true, website: true,
-      companyId: true, taxId: true,
+      companyId: true, taxId: true, additionalFields: true,
     },
   });
 

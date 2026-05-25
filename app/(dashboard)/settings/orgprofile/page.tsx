@@ -28,18 +28,26 @@ export default async function OrgProfilePage() {
       phone:           true,
       fax:             true,
       website:         true,
-      companyId:       true,
-      taxId:           true,
+      companyId:        true,
+      taxId:            true,
     },
   });
 
   if (!tenant) redirect("/login");
+
+  const raw = await prisma.tenant.findUnique({
+    where: { id: session.user.tenantId },
+    select: { additionalFields: true },
+  });
+  const additionalFields =
+    (raw?.additionalFields as { label: string; value: string }[] | null) ?? [];
 
   return (
     <OrgProfileClient
       tenant={tenant}
       orgName={session.user.tenantName ?? tenant.name}
       logoUrl={tenant.logoUrl ?? null}
+      additionalFields={additionalFields}
     />
   );
 }
