@@ -1005,7 +1005,7 @@ export function OrgProfileClient({ tenant, orgName, logoUrl }: Props) {
                 <FormRow label="">
                   <div className="border border-[#e5e7eb] rounded-lg px-4 py-3 flex items-center justify-between bg-slate-50/60">
                     <p className="text-[13px] text-slate-600">
-                      Would you like to add a different address for payment stubs?
+                      Should payment receipts and remittance documents show a different address?
                     </p>
                     <div className="flex items-center gap-2 ml-4 shrink-0">
                       <span className="text-[13px] text-slate-500">{form.paymentStub ? "Yes" : "No"}</span>
