@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { Users, ArrowRight } from "lucide-react";
+import { Users, ArrowRight, Upload, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -45,7 +45,40 @@ export default async function CustomersPage() {
         }
         icon={Users}
         color="blue"
-        action={<CustomerForm />}
+        action={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/customers/import"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import
+            </Link>
+            <div className="flex items-center gap-1 border border-slate-200 rounded-md overflow-hidden">
+              <a
+                href="/api/customers/export?format=finos"
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "sm" }),
+                  "rounded-none border-r border-slate-200 gap-1.5 h-8 px-3"
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                FINOS CSV
+              </a>
+              <a
+                href="/api/customers/export?format=zoho"
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "sm" }),
+                  "rounded-none gap-1.5 h-8 px-3"
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Zoho CSV
+              </a>
+            </div>
+            <CustomerForm />
+          </div>
+        }
       />
 
       {customers.length === 0 ? (

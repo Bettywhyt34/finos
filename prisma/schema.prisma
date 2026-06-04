@@ -198,22 +198,34 @@ model BankTransaction {
 }
 
 model Customer {
-  id             String            @id @default(uuid())
-  tenantId       String            @map("tenant_id")
-  customerCode   String            @map("customer_code")
-  companyName    String            @map("company_name")
-  contactName    String?           @map("contact_name")
-  email          String?
-  phone          String?
-  billingAddress String?           @map("billing_address")
-  paymentTerms   Int               @default(30) @map("payment_terms")
-  creditLimit    Decimal?          @map("credit_limit") @db.Decimal(15, 2)
-  isActive       Boolean           @default(true) @map("is_active")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  contacts       CustomerContact[]
-  payments       CustomerPayment[]
-  tenant         Tenant            @relation(fields: [tenantId], references: [id])
-  invoices       Invoice[]
+  id                String            @id @default(uuid())
+  tenantId          String            @map("tenant_id")
+  customerCode      String            @map("customer_code")
+  companyName       String            @map("company_name")
+  salutation        String?
+  firstName         String?           @map("first_name")
+  lastName          String?           @map("last_name")
+  contactName       String?           @map("contact_name")
+  email             String?
+  phone             String?
+  mobile            String?
+  website           String?
+  currency          String            @default("NGN")
+  billingAddress    String?           @map("billing_address")
+  billingCity       String?           @map("billing_city")
+  billingState      String?           @map("billing_state")
+  billingCountry    String?           @map("billing_country")
+  billingPostalCode String?           @map("billing_postal_code")
+  paymentTerms      Int               @default(30) @map("payment_terms")
+  creditLimit       Decimal?          @map("credit_limit") @db.Decimal(15, 2)
+  openingBalance    Decimal           @default(0) @map("opening_balance") @db.Decimal(15, 2)
+  customerSubType   String?           @default("business") @map("customer_sub_type")
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  contacts          CustomerContact[]
+  payments          CustomerPayment[]
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
+  invoices          Invoice[]
 
   @@unique([tenantId, customerCode])
   @@map("customers")

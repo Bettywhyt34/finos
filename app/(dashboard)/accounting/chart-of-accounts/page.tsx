@@ -1,6 +1,10 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { AccountType } from "@prisma/client";
+import Link from "next/link";
+import { Upload, Download } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AccountTable } from "./account-table";
 import { AccountForm } from "./account-form";
 
@@ -80,7 +84,32 @@ export default async function ChartOfAccountsPage() {
             {accounts.length} accounts · GL structure
           </p>
         </div>
-        <AccountForm accounts={accounts} />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/accounting/chart-of-accounts/import"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import
+          </Link>
+          <div className="flex items-center gap-1 border border-slate-200 rounded-md overflow-hidden">
+            <a
+              href="/api/coa/export?format=finos"
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "rounded-none border-r border-slate-200 gap-1.5 h-8 px-3")}
+            >
+              <Download className="h-3.5 w-3.5" />
+              FINOS CSV
+            </a>
+            <a
+              href="/api/coa/export?format=zoho"
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "rounded-none gap-1.5 h-8 px-3")}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Zoho CSV
+            </a>
+          </div>
+          <AccountForm accounts={accounts} />
+        </div>
       </div>
 
       {accounts.length > 0 && (

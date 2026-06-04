@@ -135,6 +135,63 @@ export async function sendInvoice(id: string) {
   return { success: true };
 }
 
+export async function postInvoicesToLedger(ids: string[]) {
+  const session = await auth();
+  const orgId = session?.user?.tenantId;
+  const userId = session?.user?.id;
+  if (!orgId || !userId) return { error: "Unauthorized" };
+
+  let posted = 0;
+  let skipped = 0;
+  const errors: Array<{ id: string; error: string }> = [];
+
+  for (const id of ids) {
+    try {
+      const invoice = await prisma.invoice.findFirst({
+        where: { id, tenantId: orgId, status: "DRAFT" },
+      });
+      if (!invoice) { skipped++; continue; }
+
+      const rate = parseFloat(String(invoice.exchangeRate));
+      const totalNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
+      const fxNote = rate !== 1 ? ` (${invoice.currency} @ ${rate})` : "";
+
+      // Check if a journal entry was already posted for this invoice
+      const existingJE = await prisma.journalEntry.findFirst({
+        where: { tenantId: orgId, sourceId: id },
+      });
+
+      if (!existingJE) {
+        await postJournalEntry({
+          tenantId: orgId,
+          createdBy: userId,
+          entryDate: invoice.issueDate,
+          reference: invoice.invoiceNumber,
+          description: `Invoice ${invoice.invoiceNumber}${fxNote}`,
+          recognitionPeriod: invoice.recognitionPeriod,
+          source: "invoice",
+          sourceId: invoice.id,
+          lines: [
+            { accountCode: "CA-001", description: `AR - ${invoice.invoiceNumber}${fxNote}`, debit: totalNGN, credit: 0 },
+            { accountCode: "IN-001", description: `Revenue - ${invoice.invoiceNumber}${fxNote}`, debit: 0, credit: totalNGN },
+          ],
+        });
+      }
+
+      await prisma.invoice.update({
+        where: { id },
+        data: { status: "SENT", sentAt: new Date() },
+      });
+      posted++;
+    } catch (e: unknown) {
+      errors.push({ id, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  revalidatePath("/sales/invoices");
+  return { posted, skipped, errors };
+}
+
 export async function recordPayment(data: {
   customerId: string;
   paymentDate: string;
