@@ -43,30 +43,63 @@ export function detectInvoiceFormat(headers: string[]): "zoho" | "finos" {
 
 // ─── Date Normalisation ───────────────────────────────────────────────────────
 
-// Handles: "27/04/2022", "2022-04-27", "Apr 27 2022", ISO strings
-export function normaliseDate(raw: string): string {
+const MONTH_NAMES: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+}
+
+function expandYear(y: string): string {
+  // 2-digit year: 00–29 → 2000s, 30–99 → 1900s
+  if (y.length === 2) return parseInt(y) < 30 ? `20${y}` : `19${y}`
+  return y
+}
+
+// Handles: "27/04/2022", "2022-04-27", "Apr 27 2022", "27-Apr-2022",
+//          "27 Apr 2022", "Apr 27, 2022", "27-Apr-22", ISO strings
+export function normaliseDate(raw: string | undefined | null): string {
   if (!raw?.trim()) return new Date().toISOString().split("T")[0]
   const s = raw.trim()
 
-  // Already ISO YYYY-MM-DD
+  // Already ISO YYYY-MM-DD (with optional time component)
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
 
-  // DD/MM/YYYY or DD-MM-YYYY
-  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
-  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`
-
-  // MM/DD/YYYY (US — less common in Nigerian exports but handle anyway)
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (mdy) {
-    const [, m, d, y] = mdy
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`
+  // DD/MM/YYYY or DD-MM-YYYY (numeric month)
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+  if (dmy) {
+    const y = expandYear(dmy[3])
+    return `${y}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`
   }
 
-  // Fallback: parse and reformat
+  // DD-Mon-YYYY or DD-Mon-YY  e.g. "26-May-2026", "26-May-26"
+  const dmony = s.match(/^(\d{1,2})[\-\s]([A-Za-z]{3,9})[\-\s,\s]*(\d{2,4})/)
+  if (dmony) {
+    const mon = MONTH_NAMES[dmony[2].slice(0, 3).toLowerCase()]
+    if (mon) {
+      const y = expandYear(dmony[3])
+      return `${y}-${mon}-${dmony[1].padStart(2, "0")}`
+    }
+  }
+
+  // Mon DD YYYY or Mon DD, YYYY  e.g. "May 26 2026", "May 26, 2026"
+  const mdy = s.match(/^([A-Za-z]{3,9})[\s\-,]+(\d{1,2})[,\s]+(\d{2,4})/)
+  if (mdy) {
+    const mon = MONTH_NAMES[mdy[1].slice(0, 3).toLowerCase()]
+    if (mon) {
+      const y = expandYear(mdy[3])
+      return `${y}-${mon}-${mdy[2].padStart(2, "0")}`
+    }
+  }
+
+  // Fallback: let JS parse it
   const parsed = new Date(s)
   if (!isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0]
 
-  return new Date().toISOString().split("T")[0]
+  // Return sentinel so caller can detect failure instead of silently using today
+  return "__invalid__"
+}
+
+export function isValidNormalisedDate(d: string): boolean {
+  return d !== "__invalid__" && !isNaN(new Date(d).getTime())
 }
 
 // ─── Zoho Row Grouper ─────────────────────────────────────────────────────────

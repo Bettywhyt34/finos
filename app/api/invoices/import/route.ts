@@ -3,9 +3,24 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { InvoiceImportRecord } from "@/lib/invoices/csv-map"
 
+type CustomerResolution =
+  | { action: "map"; customerId: string }
+  | { action: "create" }
+
 function getRecognitionPeriod(dateStr: string): string {
   const d = new Date(dateStr)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+function safeDate(dateStr: string, invoiceNumber: string, field: string): Date | string {
+  if (!dateStr || dateStr === "__invalid__") {
+    return `${field} is missing or unparseable — check the date column in your CSV`
+  }
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) {
+    return `${field} "${dateStr}" could not be parsed — use DD/MM/YYYY`
+  }
+  return d
 }
 
 export async function POST(req: NextRequest) {
@@ -15,16 +30,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { records } = (await req.json()) as { records: InvoiceImportRecord[] }
+  const body = await req.json() as {
+    records: InvoiceImportRecord[]
+    customerResolutions?: Record<string, CustomerResolution>
+  }
+  const { records, customerResolutions = {} } = body
 
   // Pre-load customers for name matching (case-insensitive)
-  const customers = await prisma.customer.findMany({
+  const existingCustomers = await prisma.customer.findMany({
     where: { tenantId },
     select: { id: true, companyName: true },
   })
   const customerByName = new Map(
-    customers.map((c) => [c.companyName.toLowerCase().trim(), c.id])
+    existingCustomers.map((c) => [c.companyName.toLowerCase().trim(), c.id])
   )
+
+  // Apply resolutions: create new customers first, then add to map
+  for (const [csvName, resolution] of Object.entries(customerResolutions)) {
+    const key = csvName.toLowerCase().trim()
+    if (resolution.action === "map") {
+      customerByName.set(key, resolution.customerId)
+    } else if (resolution.action === "create") {
+      // Only create if still not in map (avoid double-create on retry)
+      if (!customerByName.has(key)) {
+        const created = await prisma.customer.create({
+          data: {
+            tenantId,
+            companyName: csvName.trim(),
+            customerCode: `CUST-${Date.now()}`,
+            paymentTerms: 30,
+            currency: "NGN",
+          },
+        })
+        customerByName.set(key, created.id)
+      }
+    }
+  }
 
   // Pre-load existing invoice numbers to detect duplicates
   const existingInvoices = await prisma.invoice.findMany({
@@ -55,18 +96,18 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    // Customer lookup — case-insensitive exact match
+    // Customer lookup
     const customerId = customerByName.get(rec.customerName.toLowerCase().trim())
     if (!customerId) {
       errors.push({
         invoiceNumber: rec.invoiceNumber,
-        error: `Customer not found: "${rec.customerName}" — create the customer first`,
+        error: `Customer not found: "${rec.customerName}"`,
       })
       skipped++
       continue
     }
 
-    // Deduplication: externalTxnId takes priority when present
+    // Deduplication
     if (rec.externalTxnId) {
       if (existingTxnIds.has(rec.externalTxnId)) {
         errors.push({
@@ -77,7 +118,6 @@ export async function POST(req: NextRequest) {
         continue
       }
     } else {
-      // Fall back to invoice number dedup
       if (existingNumbers.has(rec.invoiceNumber)) {
         errors.push({
           invoiceNumber: rec.invoiceNumber,
@@ -90,6 +130,20 @@ export async function POST(req: NextRequest) {
 
     if (!rec.lines.length) {
       errors.push({ invoiceNumber: rec.invoiceNumber, error: "No line items found" })
+      skipped++
+      continue
+    }
+
+    // Date validation — fail early with a clear message
+    const issueDate = safeDate(rec.invoiceDate, rec.invoiceNumber, "Invoice date")
+    const dueDate = safeDate(rec.dueDate, rec.invoiceNumber, "Due date")
+    if (typeof issueDate === "string") {
+      errors.push({ invoiceNumber: rec.invoiceNumber, error: issueDate })
+      skipped++
+      continue
+    }
+    if (typeof dueDate === "string") {
+      errors.push({ invoiceNumber: rec.invoiceNumber, error: dueDate })
       skipped++
       continue
     }
@@ -109,8 +163,8 @@ export async function POST(req: NextRequest) {
           customerId,
           invoiceNumber: rec.invoiceNumber,
           reference: rec.reference ?? null,
-          issueDate: new Date(rec.invoiceDate),
-          dueDate: new Date(rec.dueDate),
+          issueDate,
+          dueDate,
           status: "DRAFT",
           currency: rec.currency,
           exchangeRate: rate,
