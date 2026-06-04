@@ -449,7 +449,7 @@ export default function InvoiceImportPage() {
             </div>
           </div>
 
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm divide-y divide-slate-100">
+          <div className="border border-slate-200 rounded-xl bg-white shadow-sm divide-y divide-slate-100">
             {unknownCustomers.map((csvName) => {
               const resolution = resolutions[csvName]
               return (
@@ -594,7 +594,7 @@ function CustomerResolutionRow({
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400"
               />
               {open && filtered.length > 0 && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                   {filtered.slice(0, 20).map((c) => (
                     <button
                       key={c.id}
