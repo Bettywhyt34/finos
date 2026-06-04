@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { BankAccountForm } from "./bank-account-form";
+import { SyncFromCoaButton } from "./sync-from-coa-button";
 import { formatCurrency, cn } from "@/lib/utils";
 
 export default async function BankAccountsPage() {
@@ -38,7 +39,12 @@ export default async function BankAccountsPage() {
         }
         icon={Landmark}
         color="indigo"
-        action={<BankAccountForm />}
+        action={
+          <div className="flex items-center gap-2">
+            <SyncFromCoaButton />
+            <BankAccountForm />
+          </div>
+        }
       />
 
       {accounts.length === 0 ? (
