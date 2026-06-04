@@ -92,13 +92,26 @@ export default async function BankAccountsPage() {
                       {formatCurrency(change, account.currency)} from opening
                     </p>
                   )}
-                  <Link
-                    href={`/banking/${account.id}`}
-                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mt-4 w-full justify-between text-xs")}
-                  >
-                    View transactions
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
+                  <div className="mt-4 flex items-center gap-2">
+                    <Link
+                      href={`/banking/${account.id}`}
+                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "flex-1 justify-between text-xs")}
+                    >
+                      View transactions
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                    <BankAccountForm
+                      mode="edit"
+                      account={{
+                        id: account.id,
+                        accountName: account.accountName,
+                        accountNumber: account.accountNumber,
+                        bankName: account.bankName,
+                        currency: account.currency,
+                        openingBalance: parseFloat(String(account.openingBalance)),
+                      }}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             );

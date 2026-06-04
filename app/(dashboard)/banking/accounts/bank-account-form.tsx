@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createBankAccount } from "./actions";
+import { createBankAccount, updateBankAccount } from "./actions";
 
 const NIGERIAN_BANKS = [
   "GTBank",
@@ -36,16 +36,40 @@ const NIGERIAN_BANKS = [
   "Union Bank",
   "Polaris Bank",
   "Keystone Bank",
+  "Ecobank",
+  "FCMB",
+  "Heritage Bank",
+  "Providus Bank",
+  "Standard Chartered",
 ];
 
 const CURRENCIES = ["NGN", "USD", "GBP", "EUR"];
 
-export function BankAccountForm() {
+interface BankAccountFormProps {
+  mode?: "create" | "edit";
+  account?: {
+    id: string;
+    accountName: string;
+    accountNumber: string;
+    bankName: string;
+    currency: string;
+    openingBalance: number;
+  };
+}
+
+export function BankAccountForm({ mode = "create", account }: BankAccountFormProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bankName, setBankName] = useState("");
-  const [currency, setCurrency] = useState("NGN");
+  const [bankName, setBankName] = useState(account?.bankName ?? "");
+  const [currency, setCurrency] = useState(account?.currency ?? "NGN");
+
+  function handleOpen() {
+    setBankName(account?.bankName ?? "");
+    setCurrency(account?.currency ?? "NGN");
+    setError(null);
+    setOpen(true);
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -56,7 +80,11 @@ export function BankAccountForm() {
     formData.set("bankName", bankName);
     formData.set("currency", currency);
 
-    const result = await createBankAccount(formData);
+    const result =
+      mode === "edit" && account
+        ? await updateBankAccount(account.id, formData)
+        : await createBankAccount(formData);
+
     setLoading(false);
 
     if (result?.error) {
@@ -64,23 +92,28 @@ export function BankAccountForm() {
       return;
     }
 
-    toast.success("Bank account created");
+    toast.success(mode === "edit" ? "Bank account updated" : "Bank account created");
     setOpen(false);
-    setBankName("");
-    setCurrency("NGN");
   }
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4 mr-1.5" />
-        Add Bank Account
-      </Button>
+      {mode === "edit" ? (
+        <Button variant="ghost" size="sm" onClick={handleOpen}>
+          <Pencil className="h-3.5 w-3.5 mr-1" />
+          Edit
+        </Button>
+      ) : (
+        <Button onClick={handleOpen}>
+          <Plus className="h-4 w-4 mr-1.5" />
+          Add Bank Account
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={(o) => setOpen(o)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New Bank Account</DialogTitle>
+            <DialogTitle>{mode === "edit" ? "Edit Bank Account" : "New Bank Account"}</DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -90,6 +123,7 @@ export function BankAccountForm() {
                 id="accountName"
                 name="accountName"
                 placeholder="e.g. GTBank Current Account"
+                defaultValue={account?.accountName}
                 required
               />
             </div>
@@ -101,6 +135,7 @@ export function BankAccountForm() {
                   id="accountNumber"
                   name="accountNumber"
                   placeholder="0123456789"
+                  defaultValue={account?.accountNumber}
                   required
                 />
               </div>
@@ -146,15 +181,13 @@ export function BankAccountForm() {
                 name="openingBalance"
                 type="number"
                 step="0.01"
-                defaultValue="0"
+                defaultValue={account?.openingBalance ?? 0}
                 placeholder="0.00"
               />
             </div>
 
             {error && (
-              <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md">
-                {error}
-              </p>
+              <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md">{error}</p>
             )}
 
             <DialogFooter>
@@ -165,7 +198,13 @@ export function BankAccountForm() {
                 Cancel
               </DialogClose>
               <Button type="submit" disabled={loading || !bankName}>
-                {loading ? "Creating…" : "Create Account"}
+                {loading
+                  ? mode === "edit"
+                    ? "Saving…"
+                    : "Creating…"
+                  : mode === "edit"
+                  ? "Save Changes"
+                  : "Create Account"}
               </Button>
             </DialogFooter>
           </form>

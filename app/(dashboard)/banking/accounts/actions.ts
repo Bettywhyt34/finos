@@ -83,6 +83,31 @@ export async function syncBankAccountsFromCoa(): Promise<{
   return { created, skipped, names }
 }
 
+export async function updateBankAccount(id: string, formData: FormData) {
+  try {
+    const tenantId = await getOrgId();
+    const accountName = (formData.get("accountName") as string).trim();
+    const accountNumber = (formData.get("accountNumber") as string).trim();
+    const bankName = (formData.get("bankName") as string).trim();
+    const currency = (formData.get("currency") as string) || "NGN";
+    const openingBalance = parseFloat(formData.get("openingBalance") as string) || 0;
+
+    if (!accountName || !accountNumber || !bankName) {
+      return { error: "Account name, number, and bank name are required" };
+    }
+
+    await prisma.bankAccount.updateMany({
+      where: { id, tenantId },
+      data: { accountName, accountNumber, bankName, currency, openingBalance },
+    });
+
+    revalidatePath("/banking/accounts");
+    return { success: true };
+  } catch {
+    return { error: "Failed to update bank account" };
+  }
+}
+
 export async function createBankAccount(formData: FormData) {
   try {
     const tenantId = await getOrgId();
