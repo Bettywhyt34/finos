@@ -349,6 +349,8 @@ model Invoice {
   balanceDue        Decimal                     @map("balance_due") @db.Decimal(15, 2)
   recognitionPeriod String                      @map("recognition_period")
   notes             String?
+  campaignId        String?                     @map("campaign_id")
+  externalTxnId     String?                     @map("external_txn_id")
   sentAt            DateTime?                   @map("sent_at")
   createdAt         DateTime                    @default(now()) @map("created_at")
   payments          CustomerPaymentAllocation[]
@@ -357,6 +359,7 @@ model Invoice {
   tenant            Tenant                      @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, externalTxnId])
   @@map("invoices")
 }
 

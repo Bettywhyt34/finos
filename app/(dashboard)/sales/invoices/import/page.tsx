@@ -192,10 +192,9 @@ export default function InvoiceImportPage() {
       {/* Info banner */}
       <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
         <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
-        <div>
-          <span className="font-medium">Payment data is not imported.</span> Invoice values and line items are
-          imported in full. After reviewing, use <span className="font-medium">Post to Ledger</span> on the
-          invoices list to raise GL journal entries and activate invoices in the books.
+        <div className="space-y-1">
+          <p><span className="font-medium">Payment data is not imported.</span> Invoice values and line items are imported in full. After reviewing, use <span className="font-medium">Post to Ledger</span> on the invoices list to raise GL journal entries.</p>
+          <p><span className="font-medium">Re-import safe:</span> If your CSV includes a <span className="font-medium">Transaction ID</span> column, FINOS uses it to skip already-imported records — you can re-upload the same file without creating duplicates. Without a Transaction ID, deduplication falls back to invoice number.</p>
         </div>
       </div>
 
@@ -272,7 +271,8 @@ export default function InvoiceImportPage() {
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Currency</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Lines</th>
                     <th className="text-right px-3 py-2 font-medium text-slate-600">Total</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">PO Ref</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Campaign ID</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-600">Transaction ID</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -293,7 +293,12 @@ export default function InvoiceImportPage() {
                         <td className="px-3 py-2 text-right font-mono font-medium text-slate-900">
                           {formatCurrency(total, rec.currency)}
                         </td>
-                        <td className="px-3 py-2 text-slate-400">{rec.reference || "—"}</td>
+                        <td className="px-3 py-2 text-slate-500 max-w-[120px] truncate">
+                          {rec.campaignId || <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-slate-500 max-w-[140px] truncate">
+                          {rec.externalTxnId || <span className="text-slate-300">—</span>}
+                        </td>
                       </tr>
                     )
                   })}

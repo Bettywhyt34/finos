@@ -27,13 +27,15 @@ export async function POST(req: NextRequest) {
   )
 
   // Pre-load existing invoice numbers to detect duplicates
-  const existingNumbers = new Set(
-    (
-      await prisma.invoice.findMany({
-        where: { tenantId },
-        select: { invoiceNumber: true },
-      })
-    ).map((i) => i.invoiceNumber)
+  const existingInvoices = await prisma.invoice.findMany({
+    where: { tenantId },
+    select: { invoiceNumber: true, externalTxnId: true },
+  })
+  const existingNumbers = new Set(existingInvoices.map((i) => i.invoiceNumber))
+  const existingTxnIds = new Set(
+    existingInvoices
+      .filter((i) => i.externalTxnId)
+      .map((i) => i.externalTxnId as string)
   )
 
   let imported = 0
@@ -64,14 +66,26 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    // Skip duplicates
-    if (existingNumbers.has(rec.invoiceNumber)) {
-      errors.push({
-        invoiceNumber: rec.invoiceNumber,
-        error: "Invoice number already exists — skipped",
-      })
-      skipped++
-      continue
+    // Deduplication: externalTxnId takes priority when present
+    if (rec.externalTxnId) {
+      if (existingTxnIds.has(rec.externalTxnId)) {
+        errors.push({
+          invoiceNumber: rec.invoiceNumber,
+          error: `Transaction ID "${rec.externalTxnId}" already imported — skipped`,
+        })
+        skipped++
+        continue
+      }
+    } else {
+      // Fall back to invoice number dedup
+      if (existingNumbers.has(rec.invoiceNumber)) {
+        errors.push({
+          invoiceNumber: rec.invoiceNumber,
+          error: "Invoice number already exists — skipped",
+        })
+        skipped++
+        continue
+      }
     }
 
     if (!rec.lines.length) {
@@ -104,10 +118,12 @@ export async function POST(req: NextRequest) {
           discountAmount: rec.discountAmount,
           taxAmount,
           totalAmount,
-          amountPaid: 0,         // payment data ignored on import
+          amountPaid: 0,
           balanceDue: totalAmount,
           recognitionPeriod: getRecognitionPeriod(rec.invoiceDate),
           notes: rec.notes ?? null,
+          campaignId: rec.campaignId ?? null,
+          externalTxnId: rec.externalTxnId ?? null,
           lines: {
             create: rec.lines.map((l) => ({
               description: l.description,
@@ -121,6 +137,7 @@ export async function POST(req: NextRequest) {
       })
 
       existingNumbers.add(rec.invoiceNumber)
+      if (rec.externalTxnId) existingTxnIds.add(rec.externalTxnId)
       imported++
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error"
