@@ -49,25 +49,53 @@ const MONTH_NAMES: Record<string, string> = {
 }
 
 function expandYear(y: string): string {
-  // 2-digit year: 00–29 → 2000s, 30–99 → 1900s
   if (y.length === 2) return parseInt(y) < 30 ? `20${y}` : `19${y}`
   return y
 }
 
+// Scan all rows to detect whether numeric dates are MM/DD or DD/MM.
+// Strategy: if ANY date has a second numeric part > 12, it can't be a month
+// so the whole file must be MM/DD/YYYY.
+export function sniffDateOrder(
+  rows: Record<string, string>[],
+  cols: string[]
+): "mdy" | "dmy" {
+  for (const row of rows) {
+    for (const col of cols) {
+      const v = (row[col] ?? "").trim()
+      const m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-]/)
+      if (m && parseInt(m[2]) > 12) return "mdy"
+    }
+  }
+  return "dmy" // default: DD/MM/YYYY
+}
+
 // Handles: "27/04/2022", "2022-04-27", "Apr 27 2022", "27-Apr-2022",
-//          "27 Apr 2022", "Apr 27, 2022", "27-Apr-22", ISO strings
-export function normaliseDate(raw: string | undefined | null): string {
+//          "27 Apr 2022", "Apr 27, 2022", "27-Apr-22", ISO strings,
+//          and MM/DD/YYYY when dateOrder="mdy"
+export function normaliseDate(
+  raw: string | undefined | null,
+  dateOrder: "dmy" | "mdy" = "dmy"
+): string {
   if (!raw?.trim()) return new Date().toISOString().split("T")[0]
   const s = raw.trim()
 
   // Already ISO YYYY-MM-DD (with optional time component)
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
 
-  // DD/MM/YYYY or DD-MM-YYYY (numeric month)
-  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
-  if (dmy) {
-    const y = expandYear(dmy[3])
-    return `${y}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`
+  // Numeric date: X/Y/YYYY or X-Y-YYYY
+  const num = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+  if (num) {
+    const a = parseInt(num[1])
+    const b = parseInt(num[2])
+    const y = expandYear(num[3])
+    // b > 12 → b can't be a month → unambiguously MM/DD/YYYY
+    // Otherwise follow the file-level hint
+    const useMdy = b > 12 || (a <= 12 && b <= 12 && dateOrder === "mdy")
+    if (useMdy) {
+      return `${y}-${num[1].padStart(2, "0")}-${num[2].padStart(2, "0")}`
+    }
+    return `${y}-${num[2].padStart(2, "0")}-${num[1].padStart(2, "0")}`
   }
 
   // DD-Mon-YYYY or DD-Mon-YY  e.g. "26-May-2026", "26-May-26"
@@ -108,6 +136,7 @@ export function isValidNormalisedDate(d: string): boolean {
 export function groupZohoRows(
   rows: Record<string, string>[]
 ): InvoiceImportRecord[] {
+  const dateOrder = sniffDateOrder(rows, ["Invoice Date", "Due Date"])
   const grouped = new Map<string, { header: Record<string, string>; lines: Record<string, string>[] }>()
 
   for (const row of rows) {
@@ -174,8 +203,8 @@ export function groupZohoRows(
 
     records.push({
       invoiceNumber,
-      invoiceDate: normaliseDate(header["Invoice Date"] ?? ""),
-      dueDate: normaliseDate(header["Due Date"] ?? header["Invoice Date"] ?? ""),
+      invoiceDate: normaliseDate(header["Invoice Date"] ?? "", dateOrder),
+      dueDate: normaliseDate(header["Due Date"] ?? header["Invoice Date"] ?? "", dateOrder),
       customerName,
       currency,
       exchangeRate,
@@ -196,6 +225,7 @@ export function groupZohoRows(
 export function groupFinosRows(
   rows: Record<string, string>[]
 ): InvoiceImportRecord[] {
+  const dateOrder = sniffDateOrder(rows, ["Invoice Date", "Due Date"])
   const grouped = new Map<string, { header: Record<string, string>; lines: Record<string, string>[] }>()
 
   for (const row of rows) {
@@ -228,8 +258,8 @@ export function groupFinosRows(
 
     records.push({
       invoiceNumber,
-      invoiceDate: normaliseDate(header["Invoice Date"] ?? ""),
-      dueDate: normaliseDate(header["Due Date"] ?? ""),
+      invoiceDate: normaliseDate(header["Invoice Date"] ?? "", dateOrder),
+      dueDate: normaliseDate(header["Due Date"] ?? "", dateOrder),
       customerName: (header["Customer Name"] ?? "").trim(),
       currency: (header["Currency"] ?? "NGN").trim(),
       exchangeRate: parseFloat(header["Exchange Rate"] ?? "1") || 1,
