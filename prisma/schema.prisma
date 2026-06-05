@@ -509,12 +509,14 @@ model Expense {
   receiptUrl   String?          @map("receipt_url")
   approvedBy   String?          @map("approved_by")
   approvedAt   DateTime?        @map("approved_at")
-  campaignId   String?          @map("campaign_id")
-  createdAt    DateTime         @default(now()) @map("created_at")
+  campaignId          String?          @map("campaign_id")
+  externalExpenseId   String?          @map("external_expense_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
   category     ExpenseCategory  @relation(fields: [categoryId], references: [id])
   tenant       Tenant           @relation(fields: [tenantId], references: [id])
   campaign     RevflowCampaign? @relation(fields: [campaignId], references: [id])
 
+  @@unique([tenantId, externalExpenseId])
   @@map("expenses")
 }
 
