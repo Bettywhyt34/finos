@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { Truck, ArrowRight } from "lucide-react";
+import { Truck, ArrowRight, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -45,7 +45,18 @@ export default async function VendorsPage() {
         }
         icon={Truck}
         color="orange"
-        action={<VendorForm />}
+        action={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/vendors/import"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              Import from Zoho
+            </Link>
+            <VendorForm />
+          </div>
+        }
       />
 
       {vendors.length === 0 ? (

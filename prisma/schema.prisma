@@ -244,25 +244,36 @@ model CustomerContact {
 }
 
 model Vendor {
-  id             String          @id @default(uuid())
-  tenantId       String          @map("tenant_id")
-  vendorCode     String          @map("vendor_code")
-  companyName    String          @map("company_name")
-  contactName    String?         @map("contact_name")
-  email          String?
-  phone          String?
-  address        String?
-  paymentTerms   Int             @default(30) @map("payment_terms")
-  bankName       String?         @map("bank_name")
-  bankAccount    String?         @map("bank_account")
-  isWhtEligible  Boolean         @default(false) @map("is_wht_eligible")
-  isActive       Boolean         @default(true) @map("is_active")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  bills          Bill[]
-  vendorPayments VendorPayment[]
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  id               String          @id @default(uuid())
+  tenantId         String          @map("tenant_id")
+  vendorCode       String          @map("vendor_code")
+  companyName      String          @map("company_name")
+  contactName      String?         @map("contact_name")
+  email            String?
+  phone            String?
+  address          String?
+  billingAddress   String?         @map("billing_address")
+  billingCity      String?         @map("billing_city")
+  billingState     String?         @map("billing_state")
+  billingCountry   String?         @map("billing_country")
+  billingPostalCode String?        @map("billing_postal_code")
+  paymentTerms     Int             @default(30) @map("payment_terms")
+  openingBalance   Decimal         @default(0) @map("opening_balance") @db.Decimal(15, 2)
+  currency         String          @default("NGN")
+  notes            String?
+  website          String?
+  bankName         String?         @map("bank_name")
+  bankAccount      String?         @map("bank_account")
+  isWhtEligible    Boolean         @default(false) @map("is_wht_eligible")
+  isActive         Boolean         @default(true) @map("is_active")
+  externalVendorId String?         @map("external_vendor_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  bills            Bill[]
+  vendorPayments   VendorPayment[]
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, vendorCode])
+  @@unique([tenantId, externalVendorId])
   @@map("vendors")
 }
 
