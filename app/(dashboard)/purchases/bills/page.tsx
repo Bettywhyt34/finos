@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { Receipt, Plus } from "lucide-react";
+import { Receipt, Plus, Upload } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
@@ -56,10 +56,19 @@ export default async function BillsPage() {
         icon={Receipt}
         color="amber"
         action={
-          <Link href="/purchases/bills/new" className={buttonVariants()}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Bill
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/purchases/bills/import"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              Import from Zoho
+            </Link>
+            <Link href="/purchases/bills/new" className={buttonVariants()}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              New Bill
+            </Link>
+          </div>
         }
       />
 

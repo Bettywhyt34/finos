@@ -12,7 +12,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type IconType = React.ComponentType<{ className?: string; size?: number }>;
+type IconType = React.ComponentType<{ className?: string; size?: number | string }>;
 
 type SettingItem  = { label: string; href: string };
 type SettingCard  = {

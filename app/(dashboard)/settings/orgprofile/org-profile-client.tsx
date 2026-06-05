@@ -479,7 +479,7 @@ function SettingsHeader({
   search: string;
   onSearch: (v: string) => void;
   onClose: () => void;
-  searchRef: React.RefObject<HTMLInputElement | null>;
+  searchRef: React.RefObject<HTMLInputElement>;
 }) {
   return (
     <header className="shrink-0 h-[72px] bg-white border-b border-[#e5e7eb] flex items-center px-6 gap-6 z-10">
@@ -751,7 +751,7 @@ function SectionTitle({ title }: { title: string }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function OrgProfileClient({ tenant, orgName, logoUrl, additionalFields: initialAdditionalFields = [] }: Props) {
   const router = useRouter();
-  const searchRef = useRef<HTMLInputElement | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["organization"]));
 

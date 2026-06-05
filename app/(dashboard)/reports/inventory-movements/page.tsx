@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { InventoryMovementsExport } from "./inventory-movements-export";
@@ -36,7 +37,7 @@ export default async function InventoryMovementsPage({
   const typeFilter    = searchParams.type    ?? "";
   const channelFilter = searchParams.channel ?? "";
 
-  const where: Parameters<typeof prisma.inventoryMovement.findMany>[0]["where"] = {
+  const where: Prisma.InventoryMovementWhereInput = {
     tenantId,
     createdAt: { gte: fromDate, lte: toDate },
     ...(typeFilter    ? { movementType: typeFilter }    : {}),

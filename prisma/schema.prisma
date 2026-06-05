@@ -435,26 +435,31 @@ model CustomerPaymentAllocation {
 }
 
 model Bill {
-  id           String     @id @default(uuid())
-  tenantId     String     @map("tenant_id")
-  vendorId     String     @map("vendor_id")
-  billNumber   String     @map("bill_number")
-  vendorRef    String?    @map("vendor_reference")
-  billDate     DateTime   @map("bill_date")
-  dueDate      DateTime   @map("due_date")
-  status       BillStatus @default(DRAFT)
-  currency     String     @default("NGN")
-  exchangeRate Decimal    @default(1) @map("exchange_rate") @db.Decimal(15, 6)
-  subtotal     Decimal    @db.Decimal(15, 2)
-  taxAmount    Decimal    @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  totalAmount  Decimal    @map("total_amount") @db.Decimal(15, 2)
-  amountPaid   Decimal    @default(0) @map("amount_paid") @db.Decimal(15, 2)
-  notes        String?
-  createdAt    DateTime   @default(now()) @map("created_at")
-  lines        BillLine[]
-  tenant       Tenant     @relation(fields: [tenantId], references: [id])
-  vendor       Vendor     @relation(fields: [vendorId], references: [id])
+  id                  String          @id @default(uuid())
+  tenantId            String          @map("tenant_id")
+  vendorId            String          @map("vendor_id")
+  billNumber          String          @map("bill_number")
+  vendorRef           String?         @map("vendor_reference")
+  billDate            DateTime        @map("bill_date")
+  dueDate             DateTime        @map("due_date")
+  status              BillStatus      @default(DRAFT)
+  currency            String          @default("NGN")
+  exchangeRate        Decimal         @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  subtotal            Decimal         @db.Decimal(15, 2)
+  taxAmount           Decimal         @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount         Decimal         @map("total_amount") @db.Decimal(15, 2)
+  amountPaid          Decimal         @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  notes               String?
+  campaignId          String?         @map("campaign_id")
+  externalBillId      String?         @map("external_bill_id")
+  purchaseOrderNumber String?         @map("purchase_order_number")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  lines               BillLine[]
+  tenant              Tenant          @relation(fields: [tenantId], references: [id])
+  vendor              Vendor          @relation(fields: [vendorId], references: [id])
+  campaign            RevflowCampaign? @relation(fields: [campaignId], references: [id])
 
+  @@unique([tenantId, externalBillId])
   @@map("bills")
 }
 
@@ -501,12 +506,14 @@ model Expense {
   taxAmount    Decimal         @default(0) @map("tax_amount") @db.Decimal(15, 2)
   totalAmount  Decimal         @map("total_amount") @db.Decimal(15, 2)
   status       ExpenseStatus   @default(DRAFT)
-  receiptUrl   String?         @map("receipt_url")
-  approvedBy   String?         @map("approved_by")
-  approvedAt   DateTime?       @map("approved_at")
-  createdAt    DateTime        @default(now()) @map("created_at")
-  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
-  tenant       Tenant          @relation(fields: [tenantId], references: [id])
+  receiptUrl   String?          @map("receipt_url")
+  approvedBy   String?          @map("approved_by")
+  approvedAt   DateTime?        @map("approved_at")
+  campaignId   String?          @map("campaign_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  category     ExpenseCategory  @relation(fields: [categoryId], references: [id])
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
+  campaign     RevflowCampaign? @relation(fields: [campaignId], references: [id])
 
   @@map("expenses")
 }
@@ -998,6 +1005,8 @@ model RevflowCampaign {
 
   tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoices RevflowInvoice[]
+  bills    Bill[]
+  expenses Expense[]
 
   @@unique([tenantId, revflowId])
   @@map("revflow_campaigns")

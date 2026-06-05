@@ -125,6 +125,7 @@ const NAV: NavSection[] = [
       { label: "FX Exposure", href: "/reports/fx-exposure" },
       { label: "Budget vs Actual", href: "/reports/budget-vs-actual" },
       { label: "Inventory Movements", href: "/reports/inventory-movements" },
+      { label: "Campaign P&L", href: "/reports/campaigns" },
     ],
   },
   {
