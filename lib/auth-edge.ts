@@ -10,6 +10,7 @@ import Google from "next-auth/providers/google";
 import type { NextAuthConfig } from "next-auth";
 
 const edgeConfig: NextAuthConfig = {
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   providers: [
     // Provider list must match auth.ts so NextAuth generates compatible tokens.
