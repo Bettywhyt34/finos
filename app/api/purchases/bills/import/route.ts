@@ -4,6 +4,27 @@ import { prisma } from "@/lib/prisma"
 import { BillStatus } from "@prisma/client"
 import type { MappedBill } from "@/lib/bills/csv-map"
 
+type VendorResolution =
+  | { action: "map"; vendorId: string }
+  | { action: "create" }
+
+/** Generate a short vendor code from company name + de-dupe counter */
+function generateVendorCode(name: string, taken: Set<string>): string {
+  const base = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 6)
+    .padEnd(3, "X")
+  let code = base
+  let n = 1
+  while (taken.has(code)) {
+    code = `${base.slice(0, 4)}${String(n).padStart(2, "0")}`
+    n++
+  }
+  taken.add(code)
+  return code
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth()
   const tenantId = session?.user?.tenantId
@@ -11,14 +32,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const body = (await req.json()) as { bills: MappedBill[] }
+  const body = (await req.json()) as {
+    bills: MappedBill[]
+    vendorResolutions?: Record<string, VendorResolution>
+  }
   const incomingBills = body.bills ?? []
+  const vendorResolutions: Record<string, VendorResolution> = body.vendorResolutions ?? {}
 
-  // Pre-load vendors and campaigns for fast lookup
+  // Pre-load vendors, campaigns, existing bills, GL accounts
   const [vendors, campaigns, existingBills, defaultAccount] = await Promise.all([
     prisma.vendor.findMany({
       where: { tenantId },
-      select: { id: true, companyName: true },
+      select: { id: true, companyName: true, vendorCode: true },
     }),
     prisma.revflowCampaign.findMany({
       where: { tenantId },
@@ -28,49 +53,57 @@ export async function POST(req: NextRequest) {
       where: { tenantId, externalBillId: { not: null } },
       select: { id: true, externalBillId: true },
     }),
-    // Fallback GL account for unresolved account codes (AP)
     prisma.chartOfAccounts.findFirst({
       where: { tenantId, code: "AP-001" },
       select: { id: true },
     }),
   ])
 
-  // Lookup maps
-  const vendorByName = new Map(
-    vendors.map((v) => [v.companyName.toLowerCase().trim(), v.id])
-  )
+  // Vendor lookup
+  const vendorByName = new Map(vendors.map((v) => [v.companyName.toLowerCase().trim(), v.id]))
+  const takenCodes = new Set(vendors.map((v) => v.vendorCode))
+
+  // Apply vendor resolutions — create new vendors first
+  for (const [csvName, resolution] of Object.entries(vendorResolutions)) {
+    if (resolution.action === "create") {
+      const code = generateVendorCode(csvName, takenCodes)
+      const created = await prisma.vendor.create({
+        data: {
+          tenantId,
+          companyName: csvName,
+          vendorCode: code,
+          paymentTerms: 30,
+          openingBalance: 0,
+          isWhtEligible: false,
+        },
+      })
+      vendorByName.set(csvName.toLowerCase().trim(), created.id)
+    } else {
+      vendorByName.set(csvName.toLowerCase().trim(), resolution.vendorId)
+    }
+  }
+
+  // Campaign lookup
   const campaignByRevflowId = new Map(campaigns.map((c) => [c.revflowId, c.id]))
   const campaignByCode = new Map(
-    campaigns
-      .filter((c) => c.campaignCode)
-      .map((c) => [c.campaignCode!.toLowerCase(), c.id])
+    campaigns.filter((c) => c.campaignCode).map((c) => [c.campaignCode!.toLowerCase(), c.id])
   )
-  const campaignByName = new Map(
-    campaigns.map((c) => [c.campaignName.toLowerCase(), c.id])
-  )
-  const existingByExternalId = new Map(
-    existingBills.map((b) => [b.externalBillId!, b.id])
-  )
+  const campaignByName = new Map(campaigns.map((c) => [c.campaignName.toLowerCase(), c.id]))
 
-  // Pre-load all GL accounts for this tenant
+  // Existing bills (dedup)
+  const existingByExternalId = new Map(existingBills.map((b) => [b.externalBillId!, b.id]))
+
+  // GL accounts
   const glAccounts = await prisma.chartOfAccounts.findMany({
     where: { tenantId },
     select: { id: true, code: true, name: true },
   })
   const glByCode = new Map(glAccounts.map((a) => [a.code.toLowerCase(), a.id]))
-  const glByName = new Map(
-    glAccounts.map((a) => [a.name.toLowerCase().trim(), a.id])
-  )
+  const glByName = new Map(glAccounts.map((a) => [a.name.toLowerCase().trim(), a.id]))
 
   function resolveGl(code: string | null, name: string | null): string | null {
-    if (code) {
-      const found = glByCode.get(code.toLowerCase())
-      if (found) return found
-    }
-    if (name) {
-      const found = glByName.get(name.toLowerCase().trim())
-      if (found) return found
-    }
+    if (code) { const f = glByCode.get(code.toLowerCase()); if (f) return f }
+    if (name) { const f = glByName.get(name.toLowerCase().trim()); if (f) return f }
     return defaultAccount?.id ?? null
   }
 
@@ -93,17 +126,15 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < incomingBills.length; i++) {
     const b = incomingBills[i]
 
-    // Resolve vendor
     const vendorId = vendorByName.get(b.vendorName.toLowerCase().trim())
     if (!vendorId) {
-      errors.push({ row: i + 2, bill: b.billNumber, error: `Vendor not found: "${b.vendorName}" — import vendor first` })
+      errors.push({ row: i + 2, bill: b.billNumber, error: `Vendor not found: "${b.vendorName}"` })
       skipped++
       continue
     }
 
     const campaignId = resolveCampaign(b.campaignRef)
 
-    // Build bill data
     const billData = {
       vendorId,
       billNumber: b.billNumber,
@@ -127,14 +158,9 @@ export async function POST(req: NextRequest) {
       const existingId = existingByExternalId.get(b.externalBillId)
 
       if (existingId) {
-        // Update bill header only (don't re-create lines on update)
-        await prisma.bill.update({
-          where: { id: existingId },
-          data: billData,
-        })
+        await prisma.bill.update({ where: { id: existingId }, data: billData })
         updated++
       } else {
-        // Resolve GL accounts for lines
         const resolvedLines = b.lines.map((l) => ({
           description: l.description,
           quantity: l.quantity,
@@ -150,11 +176,7 @@ export async function POST(req: NextRequest) {
         }
 
         await prisma.bill.create({
-          data: {
-            tenantId,
-            ...billData,
-            lines: { create: resolvedLines },
-          },
+          data: { tenantId, ...billData, lines: { create: resolvedLines } },
         })
         existingByExternalId.set(b.externalBillId, "new")
         imported++
