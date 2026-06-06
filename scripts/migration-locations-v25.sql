@@ -18,7 +18,7 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS locations_enabled BOOLEAN NOT NULL 
 -- 3. Locations table
 CREATE TABLE IF NOT EXISTS locations (
   id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  tenant_id   TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   type        location_type_enum NOT NULL DEFAULT 'BUSINESS_LOCATION',
   parent_id   TEXT REFERENCES locations(id) ON DELETE SET NULL,
