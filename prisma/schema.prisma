@@ -123,6 +123,8 @@ model Tenant {
   journalLines           JournalLine[]
   taxRates               TaxRate[]
   locationsEnabled       Boolean    @default(false) @map("locations_enabled")
+  keepBranding           Boolean    @default(true)  @map("keep_branding")
+  recommendApp           Boolean    @default(true)  @map("recommend_app")
   locations              Location[]
 
   @@map("tenants")

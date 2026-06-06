@@ -10,8 +10,8 @@ export default async function BrandingPage() {
   if (!session?.user?.tenantId) redirect("/login");
 
   const tenant = await prisma.tenant.findUnique({
-    where: { id: session.user.tenantId },
-    select: { name: true, logoUrl: true },
+    where:  { id: session.user.tenantId },
+    select: { name: true, logoUrl: true, keepBranding: true, recommendApp: true },
   });
 
   if (!tenant) redirect("/login");
@@ -20,6 +20,8 @@ export default async function BrandingPage() {
     <BrandingClient
       orgName={session.user.tenantName ?? tenant.name}
       logoUrl={tenant.logoUrl ?? null}
+      keepBranding={tenant.keepBranding}
+      recommendApp={tenant.recommendApp}
     />
   );
 }

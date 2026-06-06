@@ -281,7 +281,7 @@ function EnableModal({ onClose, onConfirm, loading }: { onClose: () => void; onC
             Cancel
           </button>
           <button onClick={onConfirm} disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-white bg-[#4088f4] hover:bg-blue-600 rounded-md transition-colors disabled:opacity-60">
+            className="px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] hover:bg-blue-600 rounded-md transition-colors disabled:opacity-60">
             {loading ? "Enabling…" : "Enable Locations"}
           </button>
         </div>
@@ -349,7 +349,7 @@ function LocationFormModal({
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Location Name <span className="text-red-500">*</span></label>
             <input value={form.name} onChange={(e) => setField("name", e.target.value)}
-              className={cn("w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25",
+              className={cn("w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25",
                 errors.name ? "border-red-400" : "border-slate-200")}
               placeholder="e.g. Lagos Head Office" />
             {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
@@ -360,7 +360,7 @@ function LocationFormModal({
             <label className="block text-xs font-medium text-slate-700 mb-1">Location Type <span className="text-red-500">*</span></label>
             <div className="relative">
               <select value={form.type} onChange={(e) => setField("type", e.target.value as LocType)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25 appearance-none bg-white">
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25 appearance-none bg-white">
                 <option value="BUSINESS_LOCATION">Business Location</option>
                 <option value="WAREHOUSE">Warehouse</option>
                 <option value="BRANCH">Branch</option>
@@ -374,7 +374,7 @@ function LocationFormModal({
             <label className="block text-xs font-medium text-slate-700 mb-1">Parent Location</label>
             <div className="relative">
               <select value={form.parentId ?? ""} onChange={(e) => setField("parentId", e.target.value || null)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25 appearance-none bg-white">
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25 appearance-none bg-white">
                 <option value="">None (top-level)</option>
                 {parentOptions.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}</option>
@@ -388,7 +388,7 @@ function LocationFormModal({
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Address</label>
             <input value={form.address ?? ""} onChange={(e) => setField("address", e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25"
               placeholder="Street address" />
           </div>
 
@@ -397,7 +397,7 @@ function LocationFormModal({
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">City <span className="text-red-500">*</span></label>
               <input value={form.city ?? ""} onChange={(e) => setField("city", e.target.value)}
-                className={cn("w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25",
+                className={cn("w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25",
                   errors.city ? "border-red-400" : "border-slate-200")}
                 placeholder="City" />
               {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
@@ -405,7 +405,7 @@ function LocationFormModal({
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">State / Region</label>
               <input value={form.state ?? ""} onChange={(e) => setField("state", e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25"
                 placeholder="State" />
             </div>
           </div>
@@ -414,7 +414,7 @@ function LocationFormModal({
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Country <span className="text-red-500">*</span></label>
             <input value={form.country ?? ""} onChange={(e) => setField("country", e.target.value)}
-              className={cn("w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25",
+              className={cn("w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25",
                 errors.country ? "border-red-400" : "border-slate-200")}
               placeholder="e.g. Nigeria" />
             {errors.country && <p className="text-xs text-red-500 mt-1">{errors.country}</p>}
@@ -427,7 +427,7 @@ function LocationFormModal({
             Cancel
           </button>
           <button onClick={handleSubmit} disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-white bg-[#4088f4] hover:bg-blue-600 rounded-md transition-colors disabled:opacity-60">
+            className="px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] hover:bg-blue-600 rounded-md transition-colors disabled:opacity-60">
             {loading ? "Saving…" : "Save Location"}
           </button>
         </div>
@@ -538,13 +538,13 @@ function BenefitsCard() {
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden w-full max-w-[760px]">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-        <CheckCircle2 className="h-3.5 w-3.5 text-[#4088f4]" />
+        <CheckCircle2 className="h-3.5 w-3.5 text-[var(--finos-accent)]" />
         <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Key Benefits</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-1 gap-0 divide-y divide-slate-100">
         {BENEFITS.map((b, i) => (
           <div key={b} className={cn("flex items-center gap-2.5 px-4 py-2.5", i % 2 === 0 ? "" : "")}>
-            <CheckCircle2 className="h-3.5 w-3.5 text-[#4088f4] shrink-0" />
+            <CheckCircle2 className="h-3.5 w-3.5 text-[var(--finos-accent)] shrink-0" />
             <span className="text-sm text-slate-700">{b}</span>
           </div>
         ))}
@@ -735,7 +735,7 @@ export function LocationsClient({ orgName, locationsEnabled, locations }: Props)
                   <button
                     type="button"
                     onClick={openAdd}
-                    className="flex items-center gap-2 h-9 px-4 text-sm font-medium text-white bg-[#4088f4] hover:bg-blue-600 rounded-md transition-colors"
+                    className="flex items-center gap-2 h-9 px-4 text-sm font-medium text-white bg-[var(--finos-accent)] hover:bg-blue-600 rounded-md transition-colors"
                   >
                     <Plus className="h-4 w-4" />
                     Add Location
@@ -744,7 +744,7 @@ export function LocationsClient({ orgName, locationsEnabled, locations }: Props)
                   <button
                     type="button"
                     onClick={() => setShowEnable(true)}
-                    className="h-9 px-5 text-sm font-medium text-white bg-[#4088f4] hover:bg-blue-600 rounded-md transition-colors"
+                    className="h-9 px-5 text-sm font-medium text-white bg-[var(--finos-accent)] hover:bg-blue-600 rounded-md transition-colors"
                   >
                     Enable Locations
                   </button>
@@ -775,7 +775,7 @@ export function LocationsClient({ orgName, locationsEnabled, locations }: Props)
                       <button
                         type="button"
                         onClick={() => setShowEnable(true)}
-                        className="text-sm text-[#4088f4] hover:underline font-medium"
+                        className="text-sm text-[var(--finos-accent)] hover:underline font-medium"
                       >
                         Enable now
                       </button>

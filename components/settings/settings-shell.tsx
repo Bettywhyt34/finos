@@ -82,8 +82,8 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: 
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[#4088f4] focus:ring-offset-1",
-        checked ? "bg-[#4088f4]" : "bg-slate-200"
+        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)] focus:ring-offset-1",
+        checked ? "bg-[var(--finos-accent)]" : "bg-slate-200"
       )}
     >
       <span
@@ -149,7 +149,7 @@ export function SettingsHeader({
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Search settings  (Ctrl + /)"
-            className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25 focus:bg-white placeholder:text-slate-400 transition-colors"
+            className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25 focus:bg-white placeholder:text-slate-400 transition-colors"
           />
           {search && (
             <button onClick={() => onSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -331,7 +331,7 @@ export function AssistanceButton() {
   return (
     <button
       type="button"
-      className="fixed bottom-6 right-5 z-50 flex items-center gap-2 bg-[#4088f4] hover:bg-blue-600 text-white text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg transition-colors"
+      className="fixed bottom-6 right-5 z-50 flex items-center gap-2 bg-[var(--finos-accent)] hover:bg-blue-600 text-white text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg transition-colors"
     >
       <MessageSquare className="h-3.5 w-3.5" />
       Need Assistance?
