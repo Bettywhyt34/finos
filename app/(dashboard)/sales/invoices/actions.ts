@@ -122,17 +122,127 @@ export async function createInvoice(data: {
   }
 }
 
-export async function sendInvoice(id: string) {
+export async function sendInvoice(id: string, dateSent?: string) {
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
+  const sentAt = dateSent ? new Date(dateSent) : new Date();
   await prisma.invoice.update({
     where: { id, tenantId: orgId },
-    data: { status: "SENT", sentAt: new Date() },
+    data: { status: "SENT", sentAt },
   });
   revalidatePath(`/sales/invoices/${id}`);
   revalidatePath("/sales/invoices");
   return { success: true };
+}
+
+export async function updateInvoice(id: string, data: {
+  notes?: string;
+  reference?: string;
+  dueDate?: string;
+}) {
+  const session = await auth();
+  const orgId = session?.user?.tenantId;
+  if (!orgId) return { error: "Unauthorized" };
+
+  const invoice = await prisma.invoice.findFirst({ where: { id, tenantId: orgId } });
+  if (!invoice) return { error: "Invoice not found" };
+  if (invoice.status === "VOIDED") return { error: "Cannot edit a voided invoice" };
+
+  await prisma.invoice.update({
+    where: { id },
+    data: {
+      notes: data.notes ?? invoice.notes,
+      reference: data.reference !== undefined ? (data.reference || null) : invoice.reference,
+      dueDate: data.dueDate ? new Date(data.dueDate) : invoice.dueDate,
+    },
+  });
+  revalidatePath(`/sales/invoices/${id}`);
+  revalidatePath("/sales/invoices");
+  return { success: true };
+}
+
+export async function voidInvoice(id: string, reason: string, convertToDraft: boolean) {
+  const session = await auth();
+  const orgId = session?.user?.tenantId;
+  const userId = session?.user?.id;
+  if (!orgId || !userId) return { error: "Unauthorized" };
+
+  const invoice = await prisma.invoice.findFirst({
+    where: { id, tenantId: orgId },
+    include: { lines: true, customer: true },
+  });
+  if (!invoice) return { error: "Invoice not found" };
+  if (invoice.status === "VOIDED") return { error: "Invoice already voided" };
+  if (invoice.status === "PAID") return { error: "Cannot void a fully paid invoice" };
+
+  const rate = parseFloat(String(invoice.exchangeRate));
+  const totalNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
+  const fxNote = rate !== 1 ? ` (${invoice.currency} @ ${rate})` : "";
+
+  // Void the invoice
+  await prisma.invoice.update({
+    where: { id },
+    data: { status: "VOIDED", voidedAt: new Date(), voidedReason: reason },
+  });
+
+  // Post reversal journal (flip DR/CR)
+  await postJournalEntry({
+    tenantId: orgId,
+    createdBy: userId,
+    entryDate: new Date(),
+    reference: `VOID-${invoice.invoiceNumber}`,
+    description: `Void ${invoice.invoiceNumber}: ${reason}${fxNote}`,
+    recognitionPeriod: getRecognitionPeriod(new Date()),
+    source: "invoice_void",
+    sourceId: invoice.id,
+    lines: [
+      { accountCode: "IN-001", description: `Void Revenue - ${invoice.invoiceNumber}`, debit: totalNGN, credit: 0 },
+      { accountCode: "CA-001", description: `Void AR - ${invoice.invoiceNumber}`, debit: 0, credit: totalNGN },
+    ],
+  }).catch(() => {});
+
+  let newInvoiceId: string | undefined;
+
+  if (convertToDraft) {
+    const newNumber = await getNextInvoiceNumber(orgId);
+    const newInvoice = await prisma.invoice.create({
+      data: {
+        tenantId: orgId,
+        customerId: invoice.customerId,
+        invoiceNumber: newNumber,
+        reference: invoice.reference,
+        issueDate: invoice.issueDate,
+        dueDate: invoice.dueDate,
+        status: "DRAFT",
+        currency: invoice.currency,
+        exchangeRate: invoice.exchangeRate,
+        subtotal: invoice.subtotal,
+        discountAmount: invoice.discountAmount,
+        taxAmount: invoice.taxAmount,
+        totalAmount: invoice.totalAmount,
+        amountPaid: 0,
+        balanceDue: invoice.totalAmount,
+        recognitionPeriod: invoice.recognitionPeriod,
+        notes: invoice.notes,
+        lines: {
+          create: invoice.lines.map((l) => ({
+            itemId: l.itemId,
+            description: l.description,
+            quantity: l.quantity,
+            rate: l.rate,
+            amount: l.amount,
+            taxRate: l.taxRate,
+          })),
+        },
+      },
+    });
+    newInvoiceId = newInvoice.id;
+  }
+
+  revalidatePath(`/sales/invoices/${id}`);
+  revalidatePath("/sales/invoices");
+  return { success: true, newInvoiceId };
 }
 
 export async function postInvoicesToLedger(ids: string[]) {

@@ -15,6 +15,7 @@ const statusColors: Record<string, string> = {
   PAID: "bg-green-100 text-green-700",
   OVERDUE: "bg-red-100 text-red-700",
   WRITTEN_OFF: "bg-slate-100 text-slate-400",
+  VOIDED: "bg-red-100 text-red-500 line-through",
 };
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -74,7 +75,15 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           )}
         </div>
         <InvoiceActions
-          invoice={{ id: invoice.id, status: invoice.status, customerId: invoice.customerId, balanceDue: balance }}
+          invoice={{
+            id: invoice.id,
+            status: invoice.status,
+            customerId: invoice.customerId,
+            balanceDue: balance,
+            notes: invoice.notes,
+            reference: invoice.reference,
+            dueDate: invoice.dueDate,
+          }}
           openInvoices={openInvoices.map((i) => ({
             ...i,
             balanceDue: parseFloat(String(i.balanceDue)),
@@ -83,6 +92,21 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           bankAccounts={bankAccounts}
         />
       </div>
+
+      {/* Void banner */}
+      {invoice.status === "VOIDED" && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm">
+          <span className="text-red-700 font-medium">Voided</span>
+          <span className="text-red-500">·</span>
+          <span className="text-red-600">{invoice.voidedReason}</span>
+          {invoice.voidedAt && (
+            <>
+              <span className="text-red-300 mx-1">·</span>
+              <span className="text-red-400">{formatDate(invoice.voidedAt)}</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* FX banner */}
       {!isNGN && (
@@ -105,6 +129,9 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           </div>
           <div className="text-right">
             <p className="text-sm text-slate-500">Issue Date: <span className="text-slate-900">{formatDate(invoice.issueDate)}</span></p>
+            {invoice.sentAt && (
+              <p className="text-sm text-slate-500 mt-1">Date Sent: <span className="text-slate-900">{formatDate(invoice.sentAt)}</span></p>
+            )}
             <p className="text-sm text-slate-500 mt-1">Due Date: <span className="text-slate-900">{formatDate(invoice.dueDate)}</span></p>
             <p className="text-sm text-slate-500 mt-1">Period: <span className="font-mono text-slate-900">{invoice.recognitionPeriod}</span></p>
             {!isNGN && <p className="text-sm text-slate-500 mt-1">Currency: <span className="font-semibold text-amber-700">{currency}</span></p>}

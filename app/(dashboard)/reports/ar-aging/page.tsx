@@ -31,6 +31,8 @@ export default async function ARAgingPage() {
     select: {
       id: true,
       customerId: true,
+      issueDate: true,
+      sentAt: true,
       dueDate: true,
       balanceDue: true,
       exchangeRate: true,
@@ -43,7 +45,8 @@ export default async function ARAgingPage() {
 
   for (const inv of invoices) {
     const amountNgn = toNGN(Number(inv.balanceDue), Number(inv.exchangeRate));
-    const bucket = ageBucket(inv.dueDate, today);
+    const agingBaseDate = inv.sentAt ?? inv.issueDate;
+    const bucket = ageBucket(agingBaseDate, today);
 
     if (!map.has(inv.customerId)) {
       map.set(inv.customerId, {

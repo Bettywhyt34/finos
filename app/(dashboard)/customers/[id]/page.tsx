@@ -6,6 +6,7 @@ import { ArrowLeft, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { CustomerForm } from "../customer-form";
 
 const statusColors: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
@@ -43,13 +44,29 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-3">
-        <Link href="/customers" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> Customers
-        </Link>
-        <span className="text-slate-300">/</span>
-        <span className="font-semibold text-slate-900">{customer.companyName}</span>
-        <span className="font-mono text-xs text-slate-400">{customer.customerCode}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/customers" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+            <ArrowLeft className="h-4 w-4 mr-1" /> Customers
+          </Link>
+          <span className="text-slate-300">/</span>
+          <span className="font-semibold text-slate-900">{customer.companyName}</span>
+          <span className="font-mono text-xs text-slate-400">{customer.customerCode}</span>
+        </div>
+        <CustomerForm
+          mode="edit"
+          customer={{
+            id: customer.id,
+            customerCode: customer.customerCode,
+            companyName: customer.companyName,
+            contactName: customer.contactName,
+            email: customer.email,
+            phone: customer.phone,
+            paymentTerms: customer.paymentTerms,
+            billingAddress: customer.billingAddress,
+            creditLimit: customer.creditLimit ? parseFloat(String(customer.creditLimit)) : null,
+          }}
+        />
       </div>
 
       {/* Summary cards */}

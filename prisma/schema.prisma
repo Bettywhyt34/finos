@@ -363,6 +363,8 @@ model Invoice {
   campaignId        String?                     @map("campaign_id")
   externalTxnId     String?                     @map("external_txn_id")
   sentAt            DateTime?                   @map("sent_at")
+  voidedAt          DateTime?                   @map("voided_at")
+  voidedReason      String?                     @map("voided_reason")
   createdAt         DateTime                    @default(now()) @map("created_at")
   payments          CustomerPaymentAllocation[]
   lines             InvoiceLine[]
@@ -654,6 +656,7 @@ enum InvoiceStatus {
   PAID
   OVERDUE
   WRITTEN_OFF
+  VOIDED
 }
 
 enum CreditNoteStatus {
