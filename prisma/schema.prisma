@@ -122,8 +122,50 @@ model Tenant {
   inventoryMovements     InventoryMovement[]
   journalLines           JournalLine[]
   taxRates               TaxRate[]
+  locationsEnabled       Boolean    @default(false) @map("locations_enabled")
+  locations              Location[]
 
   @@map("tenants")
+}
+
+// ─── Location enums ───────────────────────────────────────────────────────────
+
+enum LocationType {
+  BUSINESS_LOCATION
+  WAREHOUSE
+  BRANCH
+
+  @@map("location_type_enum")
+}
+
+enum LocationStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("location_status_enum")
+}
+
+// ─── Location model ───────────────────────────────────────────────────────────
+
+model Location {
+  id        String         @id @default(cuid())
+  tenantId  String         @map("tenant_id")
+  name      String
+  type      LocationType   @default(BUSINESS_LOCATION)
+  parentId  String?        @map("parent_id")
+  address   String?
+  city      String?
+  state     String?
+  country   String?
+  status    LocationStatus @default(ACTIVE)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   Location?  @relation("LocationChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children Location[] @relation("LocationChildren")
+
+  @@map("locations")
 }
 
 model TenantMembership {
