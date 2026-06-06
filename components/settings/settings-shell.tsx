@@ -10,7 +10,7 @@ import Link from "next/link";
 import {
   Building2, Users, FileText, Sliders, Palette, Zap,
   ShoppingCart, Package, Code2, Plug, Landmark,
-  Search, X, Settings, ChevronRight, ChevronDown,
+  Search, X, ChevronRight, ChevronDown,
   HelpCircle, Bell, MessageCircle, CalendarDays, Settings2, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -102,7 +102,7 @@ export function SectionTitle({ title }: { title: string }) {
   return (
     <div className="pt-1">
       <h2 className="text-[15px] font-semibold text-slate-800">{title}</h2>
-      <div className="h-px bg-[#e5e7eb] mt-2.5" />
+      <div className="h-px bg-slate-200 mt-2.5" />
     </div>
   );
 }
@@ -125,20 +125,18 @@ export function SettingsHeader({
   searchRef: React.RefObject<HTMLInputElement>;
 }) {
   return (
-    <header className="shrink-0 h-[68px] bg-white border-b border-[#e5e7eb] flex items-center px-6 gap-6 z-10">
-      {/* Left */}
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center">
-          <span className="text-white text-[11px] font-black tracking-tight">F</span>
-        </div>
-        <Link href="/settings" className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors" title="All Settings">
-          <Settings className="h-3.5 w-3.5 text-slate-600" />
+    <header className="shrink-0 h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-6 z-10">
+      {/* Left — FINOS wordmark + breadcrumb */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        <Link href="/" className="text-base font-bold text-slate-900 leading-none hover:text-slate-700 transition-colors">
+          FINOS
         </Link>
-        <div className="flex items-center gap-1.5 text-[13px]">
-          <Link href="/settings" className="text-slate-400 hover:text-slate-600 transition-colors">All Settings</Link>
-          <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-          <span className="text-slate-600 font-medium">{breadcrumb}</span>
-        </div>
+        <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
+        <Link href="/settings" className="text-sm text-slate-400 hover:text-slate-600 transition-colors">
+          Settings
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
+        <span className="text-sm text-slate-700 font-medium">{breadcrumb}</span>
       </div>
 
       {/* Center search */}
@@ -151,7 +149,7 @@ export function SettingsHeader({
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Search settings  (Ctrl + /)"
-            className="w-full pl-9 pr-8 py-[7px] text-[13px] bg-slate-50 border border-[#e5e7eb] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25 focus:bg-white placeholder:text-slate-400 transition-colors"
+            className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4088f4]/25 focus:bg-white placeholder:text-slate-400 transition-colors"
           />
           {search && (
             <button onClick={() => onSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -163,15 +161,15 @@ export function SettingsHeader({
 
       {/* Right */}
       <div className="flex items-center gap-3 shrink-0">
-        <span className="hidden lg:inline-flex text-[12px] text-slate-500 bg-slate-50 border border-[#e5e7eb] px-3 py-1.5 rounded-lg truncate max-w-[180px]">
+        <span className="hidden lg:inline-flex text-xs text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md truncate max-w-[180px]">
           {orgName}
         </span>
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-slate-600 bg-slate-50 border border-[#e5e7eb] rounded-lg hover:bg-slate-100 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
         >
-          Close Settings
-          <X className="h-3.5 w-3.5 text-red-400 ml-0.5" />
+          Close
+          <X className="h-3.5 w-3.5 text-slate-400 ml-0.5" />
         </button>
       </div>
     </header>
@@ -201,13 +199,13 @@ export function SettingsSidebar({
         key={id}
         href={href}
         className={cn(
-          "flex items-center justify-between px-3 py-[7px] rounded-md text-[13px] no-underline transition-colors",
-          isActive ? "bg-[#4088f4] text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          "flex items-center justify-between px-3 py-2 rounded-md text-sm no-underline transition-colors",
+          isActive ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
         )}
       >
         <span>{label}</span>
         {parentLabel && !isActive && (
-          <span className="text-[11px] text-slate-400 truncate ml-2">{parentLabel}</span>
+          <span className="text-xs text-slate-400 truncate ml-2">{parentLabel}</span>
         )}
       </Link>
     );
@@ -215,12 +213,12 @@ export function SettingsSidebar({
 
   if (q) {
     return (
-      <aside className="shrink-0 w-[248px] bg-white border-r border-[#e5e7eb] overflow-y-auto">
+      <aside className="shrink-0 w-[248px] bg-white border-r border-slate-200 overflow-y-auto">
         <div className="px-3 py-3">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Results</p>
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide px-2 mb-2">Results</p>
           {searchResults.length > 0
             ? searchResults.map((i) => renderLeaf(i.id, i.label, i.href, i.parent))
-            : <p className="text-[13px] text-slate-400 px-2 py-2">No results for &ldquo;{q}&rdquo;</p>
+            : <p className="text-sm text-slate-400 px-2 py-2">No results for &ldquo;{q}&rdquo;</p>
           }
         </div>
       </aside>
@@ -228,11 +226,11 @@ export function SettingsSidebar({
   }
 
   return (
-    <aside className="shrink-0 w-[248px] bg-white border-r border-[#e5e7eb] overflow-y-auto">
+    <aside className="shrink-0 w-[248px] bg-white border-r border-slate-200 overflow-y-auto">
       <div className="py-3">
         {SIDEBAR_NAV.map((section) => (
           <div key={section.id} className="mb-4">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-4 py-1.5">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide px-4 py-1.5">
               {section.title}
             </p>
             {section.items.map((group) => {
@@ -249,8 +247,8 @@ export function SettingsSidebar({
                       type="button"
                       onClick={() => onToggle(group.id)}
                       className={cn(
-                        "w-full flex items-center gap-2.5 px-4 py-[9px] text-[13px] text-left transition-colors",
-                        isGroupActive ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50"
+                        "w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors",
+                        isGroupActive ? "bg-slate-50 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50"
                       )}
                     >
                       <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
@@ -264,11 +262,11 @@ export function SettingsSidebar({
                     <Link
                       href={group.href!}
                       className={cn(
-                        "flex items-center gap-2.5 px-4 py-[9px] text-[13px] no-underline transition-colors",
-                        isGroupActive ? "bg-[#4088f4] text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        "flex items-center gap-2.5 px-4 py-2 text-sm no-underline transition-colors",
+                        isGroupActive ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                       )}
                     >
-                      <group.icon className={cn("h-4 w-4 shrink-0", isGroupActive ? "text-white" : "text-slate-400")} />
+                      <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
                       <span>{group.label}</span>
                     </Link>
                   )}
@@ -280,9 +278,9 @@ export function SettingsSidebar({
                           key={child.id}
                           href={child.href}
                           className={cn(
-                            "flex items-center pl-5 pr-4 py-[7px] text-[13px] no-underline transition-colors",
+                            "flex items-center pl-5 pr-4 py-2 text-sm no-underline transition-colors",
                             activeItem === child.id
-                              ? "bg-[#4088f4] text-white font-medium"
+                              ? "bg-slate-100 text-slate-900 font-medium"
                               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                           )}
                         >
