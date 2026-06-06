@@ -18,6 +18,14 @@ const statusColors: Record<string, string> = {
   WRITTEN_OFF: "bg-slate-100 text-slate-400",
 }
 
+const MS_PER_DAY = 86_400_000
+
+function invoiceAgeDays(sentAt: Date | null, paidAt: Date | null, status: string): number | null {
+  if (!sentAt) return null
+  const end = status === "PAID" && paidAt ? paidAt : new Date()
+  return Math.floor((end.getTime() - new Date(sentAt).getTime()) / MS_PER_DAY)
+}
+
 type InvoiceRow = {
   id: string
   invoiceNumber: string
@@ -28,6 +36,8 @@ type InvoiceRow = {
   balanceDue: string | number
   issueDate: Date
   dueDate: Date
+  sentAt: Date | null
+  paidAt: Date | null
   customer: { companyName: string }
 }
 
@@ -130,6 +140,7 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Date</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Due</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Status</th>
+              <th className="text-right px-4 py-3 font-medium text-emerald-700">Age</th>
               <th className="text-right px-4 py-3 font-medium text-emerald-700">Total</th>
               <th className="text-right px-4 py-3 font-medium text-emerald-700">Balance (NGN)</th>
               <th className="px-4 py-3"></th>
@@ -149,6 +160,7 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
               const statusKey = isOverdue ? "OVERDUE" : inv.status
               const isDraft = inv.status === "DRAFT"
               const isChecked = selected.has(inv.id)
+              const ageDays = invoiceAgeDays(inv.sentAt, inv.paidAt, inv.status)
 
               return (
                 <tr
@@ -194,6 +206,15 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-500 text-xs">
+                    {ageDays !== null ? (
+                      <span className={ageDays > 60 ? "text-red-500 font-semibold" : ageDays > 30 ? "text-amber-600" : "text-slate-600"}>
+                        {ageDays}d
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-mono">
                     <div>{formatCurrency(parseFloat(String(inv.totalAmount)), inv.currency)}</div>

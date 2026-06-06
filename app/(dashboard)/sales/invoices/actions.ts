@@ -353,7 +353,12 @@ export async function recordPayment(data: {
         const newStatus = newBalance <= 0.01 ? "PAID" : newPaid > 0 ? "PARTIAL" : inv.status;
         await tx.invoice.update({
           where: { id: alloc.invoiceId },
-          data: { amountPaid: newPaid, balanceDue: newBalance, status: newStatus },
+          data: {
+            amountPaid: newPaid,
+            balanceDue: newBalance,
+            status: newStatus,
+            paidAt: newStatus === "PAID" ? new Date() : undefined,
+          },
         });
       }
       return pmt;

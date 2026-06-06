@@ -17,16 +17,17 @@ export default async function InvoicesPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const totalAR = invoices.reduce((s, i) => {
-    const bal = parseFloat(String(i.balanceDue));
-    const rate = parseFloat(String(i.exchangeRate));
-    return s + toNGN(bal, rate);
-  }, 0);
+  // AR total: only invoices that have been sent (exclude DRAFT, VOIDED, WRITTEN_OFF)
+  const totalAR = invoices
+    .filter((i) => ["SENT", "PARTIAL", "OVERDUE"].includes(i.status))
+    .reduce((s, i) => {
+      const bal = parseFloat(String(i.balanceDue));
+      const rate = parseFloat(String(i.exchangeRate));
+      return s + toNGN(bal, rate);
+    }, 0);
 
   const draftCount = invoices.filter((i) => i.status === "DRAFT").length;
-  const overdueCount = invoices.filter(
-    (i) => new Date(i.dueDate) < new Date() && i.status !== "PAID" && i.status !== "WRITTEN_OFF"
-  ).length;
+  const overdueCount = invoices.filter((i) => i.status === "OVERDUE").length;
 
   return (
     <div className="space-y-6">
@@ -109,6 +110,8 @@ export default async function InvoicesPage() {
             exchangeRate: String(inv.exchangeRate),
             totalAmount: String(inv.totalAmount),
             balanceDue: String(inv.balanceDue),
+            sentAt: inv.sentAt ?? null,
+            paidAt: inv.paidAt ?? null,
           }))}
         />
       )}

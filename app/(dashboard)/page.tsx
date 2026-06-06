@@ -9,6 +9,8 @@ import {
   Receipt,
   Clock,
   LayoutDashboard,
+  CalendarClock,
+  BarChart2,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +19,8 @@ import {
   getDashboardKpis,
   getRecentInvoices,
   getRecentBills,
+  getAvgInvoiceAge,
+  getDsoMetric,
 } from "@/lib/dashboard-data";
 import { formatDate, cn } from "@/lib/utils";
 
@@ -43,10 +47,12 @@ export default async function DashboardPage() {
   const orgId = session!.user.tenantId!;
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
 
-  const [kpis, recentInvoices, recentBills] = await Promise.all([
+  const [kpis, recentInvoices, recentBills, avgAge, dso] = await Promise.all([
     getDashboardKpis(orgId),
     getRecentInvoices(orgId),
     getRecentBills(orgId),
+    getAvgInvoiceAge(orgId),
+    getDsoMetric(orgId, 365),
   ]);
 
   const kpiCards: { title: string; subtitle: string; value: string; icon: React.ComponentType<{ className?: string }>; color: KpiColor }[] = [
@@ -106,6 +112,49 @@ export default async function DashboardPage() {
             </Card>
           );
         })}
+      </div>
+
+      {/* AR Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Avg Invoice Age */}
+        <Link href="/sales/invoices" className="block group">
+          <Card className="border-slate-200 shadow-none border-t-4 border-t-sky-500 overflow-hidden transition-shadow group-hover:shadow-md">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-medium text-slate-500">Avg Invoice Age</CardTitle>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-sky-100">
+                <CalendarClock className="h-4 w-4 text-sky-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-slate-900">
+                {avgAge > 0 ? `${avgAge} days` : "—"}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Active + paid invoices since sent · click to view
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* DSO */}
+        <Link href="/reports/dso" className="block group">
+          <Card className="border-slate-200 shadow-none border-t-4 border-t-indigo-500 overflow-hidden transition-shadow group-hover:shadow-md">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-medium text-slate-500">Days Sales Outstanding</CardTitle>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-indigo-100">
+                <BarChart2 className="h-4 w-4 text-indigo-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-slate-900">
+                {dso.dso > 0 ? `${dso.dso} days` : "—"}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                (AR ÷ Revenue) × 365 · click for per-customer breakdown
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Recent Activity */}

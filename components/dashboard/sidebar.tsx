@@ -120,6 +120,7 @@ const NAV: NavSection[] = [
       { label: "Balance Sheet", href: "/reports/balance-sheet" },
       { label: "Cash Flow", href: "/reports/cash-flow" },
       { label: "AR Aging", href: "/reports/ar-aging" },
+      { label: "Days Sales Outstanding", href: "/reports/dso" },
       { label: "AP Aging", href: "/reports/ap-aging" },
       { label: "General Ledger", href: "/reports/general-ledger" },
       { label: "FX Exposure", href: "/reports/fx-exposure" },

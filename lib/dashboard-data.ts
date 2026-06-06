@@ -96,6 +96,63 @@ export async function getDashboardKpis(
   };
 }
 
+export async function getAvgInvoiceAge(tenantId: string): Promise<number> {
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      tenantId,
+      sentAt: { not: null },
+      status: { notIn: ["DRAFT", "VOIDED", "WRITTEN_OFF"] },
+    },
+    select: { status: true, sentAt: true, paidAt: true },
+  });
+
+  if (invoices.length === 0) return 0;
+
+  const today = Date.now();
+  const MS = 86_400_000;
+  const totalDays = invoices.reduce((sum, inv) => {
+    const end = inv.status === "PAID" && inv.paidAt ? inv.paidAt.getTime() : today;
+    return sum + Math.floor((end - inv.sentAt!.getTime()) / MS);
+  }, 0);
+
+  return Math.round(totalDays / invoices.length);
+}
+
+export interface DsoMetric {
+  dso: number;           // Days Sales Outstanding
+  arBalance: number;     // Outstanding AR in NGN
+  revenue: number;       // Revenue in period in NGN
+  period: number;        // 30 | 90 | 365
+}
+
+export async function getDsoMetric(tenantId: string, days: 30 | 90 | 365 = 365): Promise<DsoMetric> {
+  const since = new Date(Date.now() - days * 86_400_000);
+
+  const [arAgg, revenueAgg] = await Promise.all([
+    prisma.invoice.aggregate({
+      where: {
+        tenantId,
+        status: { in: ["SENT", "PARTIAL", "OVERDUE"] },
+      },
+      _sum: { balanceDue: true },
+    }),
+    prisma.invoice.aggregate({
+      where: {
+        tenantId,
+        issueDate: { gte: since },
+        status: { notIn: ["DRAFT", "VOIDED"] },
+      },
+      _sum: { totalAmount: true },
+    }),
+  ]);
+
+  const ar = toNum(arAgg._sum.balanceDue);
+  const revenue = toNum(revenueAgg._sum.totalAmount);
+  const dso = revenue > 0 ? Math.round((ar / revenue) * days) : 0;
+
+  return { dso, arBalance: ar, revenue, period: days };
+}
+
 export async function getRecentInvoices(
   tenantId: string
 ): Promise<RecentInvoice[]> {
