@@ -33,8 +33,8 @@ export function Header({ userName, userImage, orgName }: HeaderProps) {
     : "U";
 
   return (
-    <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
-      <p className="text-sm font-medium text-slate-700 truncate">{orgName}</p>
+    <header className="h-14 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-between px-6 shrink-0">
+      <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{orgName}</p>
 
       <div className="flex items-center gap-3">
         <Link
@@ -46,7 +46,7 @@ export function Header({ userName, userImage, orgName }: HeaderProps) {
         </Link>
 
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-300 transition-colors focus:outline-none overflow-hidden">
+          <DropdownMenuTrigger className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors focus:outline-none overflow-hidden">
             {userImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

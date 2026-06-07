@@ -83,7 +83,7 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: 
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)] focus:ring-offset-1",
-        checked ? "bg-[var(--finos-accent)]" : "bg-slate-200"
+        checked ? "bg-[var(--finos-accent)]" : "bg-slate-200 dark:bg-slate-600"
       )}
     >
       <span
@@ -101,8 +101,8 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: 
 export function SectionTitle({ title }: { title: string }) {
   return (
     <div className="pt-1">
-      <h2 className="text-[15px] font-semibold text-slate-800">{title}</h2>
-      <div className="h-px bg-slate-200 mt-2.5" />
+      <h2 className="text-[15px] font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
+      <div className="h-px bg-slate-200 dark:bg-slate-700 mt-2.5" />
     </div>
   );
 }
@@ -125,34 +125,34 @@ export function SettingsHeader({
   searchRef: React.RefObject<HTMLInputElement>;
 }) {
   return (
-    <header className="shrink-0 h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-6 z-10">
+    <header className="shrink-0 h-14 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 flex items-center px-6 gap-6 z-10">
       {/* Left — FINOS wordmark + breadcrumb */}
       <div className="flex items-center gap-2.5 shrink-0">
-        <Link href="/" className="text-base font-bold text-slate-900 leading-none hover:text-slate-700 transition-colors">
+        <Link href="/" className="text-base font-bold text-slate-900 dark:text-white leading-none hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
           FINOS
         </Link>
-        <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-        <Link href="/settings" className="text-sm text-slate-400 hover:text-slate-600 transition-colors">
+        <ChevronRight className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600" />
+        <Link href="/settings" className="text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
           Settings
         </Link>
-        <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-        <span className="text-sm text-slate-700 font-medium">{breadcrumb}</span>
+        <ChevronRight className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600" />
+        <span className="text-sm text-slate-700 dark:text-slate-200 font-medium">{breadcrumb}</span>
       </div>
 
       {/* Center search */}
       <div className="flex-1 flex justify-center">
         <div className="relative w-full max-w-[400px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
           <input
             ref={searchRef}
             type="text"
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Search settings  (Ctrl + /)"
-            className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25 focus:bg-white placeholder:text-slate-400 transition-colors"
+            className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25 focus:bg-white dark:focus:bg-slate-800 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
           />
           {search && (
-            <button onClick={() => onSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            <button onClick={() => onSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300">
               <X className="h-3.5 w-3.5" />
             </button>
           )}
@@ -161,15 +161,15 @@ export function SettingsHeader({
 
       {/* Right */}
       <div className="flex items-center gap-3 shrink-0">
-        <span className="hidden lg:inline-flex text-xs text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md truncate max-w-[180px]">
+        <span className="hidden lg:inline-flex text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-md truncate max-w-[180px]">
           {orgName}
         </span>
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
         >
           Close
-          <X className="h-3.5 w-3.5 text-slate-400 ml-0.5" />
+          <X className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 ml-0.5" />
         </button>
       </div>
     </header>
@@ -200,12 +200,12 @@ export function SettingsSidebar({
         href={href}
         className={cn(
           "flex items-center justify-between px-3 py-2 rounded-md text-sm no-underline transition-colors",
-          isActive ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          isActive ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
         )}
       >
         <span>{label}</span>
         {parentLabel && !isActive && (
-          <span className="text-xs text-slate-400 truncate ml-2">{parentLabel}</span>
+          <span className="text-xs text-slate-400 dark:text-slate-500 truncate ml-2">{parentLabel}</span>
         )}
       </Link>
     );
@@ -213,12 +213,12 @@ export function SettingsSidebar({
 
   if (q) {
     return (
-      <aside className="shrink-0 w-[248px] bg-white border-r border-slate-200 overflow-y-auto">
+      <aside className="shrink-0 w-[248px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 overflow-y-auto">
         <div className="px-3 py-3">
-          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide px-2 mb-2">Results</p>
+          <p className="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide px-2 mb-2">Results</p>
           {searchResults.length > 0
             ? searchResults.map((i) => renderLeaf(i.id, i.label, i.href, i.parent))
-            : <p className="text-sm text-slate-400 px-2 py-2">No results for &ldquo;{q}&rdquo;</p>
+            : <p className="text-sm text-slate-400 dark:text-slate-500 px-2 py-2">No results for &ldquo;{q}&rdquo;</p>
           }
         </div>
       </aside>
@@ -226,11 +226,11 @@ export function SettingsSidebar({
   }
 
   return (
-    <aside className="shrink-0 w-[248px] bg-white border-r border-slate-200 overflow-y-auto">
+    <aside className="shrink-0 w-[248px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 overflow-y-auto">
       <div className="py-3">
         {SIDEBAR_NAV.map((section) => (
           <div key={section.id} className="mb-4">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide px-4 py-1.5">
+            <p className="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide px-4 py-1.5">
               {section.title}
             </p>
             {section.items.map((group) => {
@@ -248,14 +248,14 @@ export function SettingsSidebar({
                       onClick={() => onToggle(group.id)}
                       className={cn(
                         "w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors",
-                        isGroupActive ? "bg-slate-50 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50"
+                        isGroupActive ? "bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                       )}
                     >
-                      <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
+                      <group.icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
                       <span className="flex-1">{group.label}</span>
                       {isExpanded
-                        ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                        : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                        ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                        : <ChevronRight className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                       }
                     </button>
                   ) : (
@@ -263,16 +263,16 @@ export function SettingsSidebar({
                       href={group.href!}
                       className={cn(
                         "flex items-center gap-2.5 px-4 py-2 text-sm no-underline transition-colors",
-                        isGroupActive ? "bg-slate-100 text-slate-900 font-medium" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        isGroupActive ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium" : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                       )}
                     >
-                      <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
+                      <group.icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
                       <span>{group.label}</span>
                     </Link>
                   )}
 
                   {hasChildren && isExpanded && (
-                    <div className="ml-4 border-l border-slate-100 my-0.5">
+                    <div className="ml-4 border-l border-slate-100 dark:border-slate-700 my-0.5">
                       {group.children!.map((child) => (
                         <Link
                           key={child.id}
@@ -280,8 +280,8 @@ export function SettingsSidebar({
                           className={cn(
                             "flex items-center pl-5 pr-4 py-2 text-sm no-underline transition-colors",
                             activeItem === child.id
-                              ? "bg-slate-100 text-slate-900 font-medium"
-                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                              ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                              : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                           )}
                         >
                           {child.label}
@@ -316,7 +316,7 @@ export function RightUtilityDock() {
           key={label}
           title={label}
           type="button"
-          className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-white hover:shadow-sm transition-all"
+          className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm transition-all"
         >
           <Icon className="h-4 w-4" />
         </button>

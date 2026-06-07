@@ -176,11 +176,11 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
   const expandable = nav.filter((s) => s.children);
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col h-screen overflow-y-auto shrink-0">
+    <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-screen overflow-y-auto shrink-0">
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-slate-200 shrink-0">
-        <p className="text-lg font-bold text-slate-900 leading-tight">FINOS</p>
-        <p className="text-xs text-slate-500 truncate mt-0.5">{orgName}</p>
+      <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+        <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">FINOS</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{orgName}</p>
       </div>
 
       {/* Top-level simple links (Dashboard) */}
@@ -192,8 +192,8 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
             className={cn(
               "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors no-underline",
               pathname === s.href || pathname.startsWith(s.href + "/")
-                ? "bg-slate-100 text-slate-900"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white"
+                : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
             )}
           >
             <s.icon className="h-4 w-4 shrink-0" />
@@ -223,15 +223,15 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
                   className={cn(
                     "flex w-full items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium no-underline hover:no-underline transition-colors",
                     isChildActive
-                      ? "text-slate-900"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      ? "text-slate-900 dark:text-white"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
                   )}
                 >
                   <section.icon className="h-4 w-4 shrink-0" />
                   <span className="flex-1 text-left">{section.label}</span>
                 </AccordionTrigger>
                 <AccordionContent className="pb-0 pt-0.5 [&>div]:h-auto [&>div]:pb-0">
-                  <div className="ml-6 space-y-0.5 border-l border-slate-100 pl-3">
+                  <div className="ml-6 space-y-0.5 border-l border-slate-100 dark:border-slate-700 pl-3">
                     {section.children!.map((child) => {
                       const active =
                         pathname === child.href ||
@@ -243,8 +243,8 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
                           className={cn(
                             "block px-2.5 py-1.5 rounded-md text-sm transition-colors no-underline",
                             active
-                              ? "bg-slate-100 text-slate-900 font-medium"
-                              : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                              ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
                           )}
                         >
                           {child.label}
