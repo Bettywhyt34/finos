@@ -1,7 +1,13 @@
 import "server-only";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy singleton — instantiated on first call, not at module load time.
+// This prevents build-time failures when RESEND_API_KEY is not set.
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 const FROM    = process.env.EMAIL_FROM ?? "FINOS <noreply@finos-app.com>";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://finos-app.com";
@@ -14,7 +20,7 @@ export async function sendEmail(opts: {
   html:    string;
   text?:   string;
 }) {
-  const { data, error } = await resend.emails.send({
+  const { data, error } = await getResend().emails.send({
     from:    FROM,
     to:      Array.isArray(opts.to) ? opts.to : [opts.to],
     subject: opts.subject,
