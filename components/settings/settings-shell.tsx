@@ -331,7 +331,7 @@ export function AssistanceButton() {
   return (
     <button
       type="button"
-      className="fixed bottom-6 right-5 z-50 flex items-center gap-2 bg-[var(--finos-accent)] hover:bg-blue-600 text-white text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg transition-colors"
+      className="fixed bottom-6 right-5 z-50 flex items-center gap-2 bg-[var(--finos-accent)] hover:opacity-90 text-white text-[13px] font-medium px-4 py-2.5 rounded-full shadow-lg transition-opacity"
     >
       <MessageSquare className="h-3.5 w-3.5" />
       Need Assistance?

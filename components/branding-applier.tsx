@@ -24,6 +24,13 @@ export function BrandingApplier() {
   useEffect(() => {
     const root = document.documentElement;
 
+    // Migrate legacy key (finos-appearance → finos-pane)
+    const legacy = localStorage.getItem("finos-appearance");
+    if (legacy && !localStorage.getItem("finos-pane")) {
+      localStorage.setItem("finos-pane", legacy === "light" ? "light" : "dark");
+    }
+    if (legacy) localStorage.removeItem("finos-appearance");
+
     // Pane mode — controls sidebar/topbar chrome only
     const pane = localStorage.getItem("finos-pane") ?? "dark";
     root.setAttribute("data-pane", pane === "light" ? "light" : "dark");
