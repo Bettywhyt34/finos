@@ -65,8 +65,8 @@ export function AIClient({ orgName }: Props) {
           <div className="px-10 py-7 max-w-[880px] space-y-8">
 
             <div>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">AI Preferences</h1>
-              <div className="h-px bg-slate-200 dark:bg-slate-700 mt-3" />
+              <h1 className="text-xl font-semibold text-slate-900 tracking-tight">AI Preferences</h1>
+              <div className="h-px bg-slate-200 mt-3" />
             </div>
 
             <section className="space-y-3">

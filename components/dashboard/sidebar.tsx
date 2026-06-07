@@ -165,7 +165,6 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
     return { ...section, children: [...(section.children ?? []), ...extra] };
   });
 
-  // Open accordion sections where a child route is active
   const defaultOpen = nav.filter((s) =>
     s.children?.some(
       (c) => pathname === c.href || pathname.startsWith(c.href + "/")
@@ -173,65 +172,79 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
   ).map((s) => s.key);
 
   const simpleLinks = nav.filter((s) => !s.children);
-  const expandable = nav.filter((s) => s.children);
+  const expandable  = nav.filter((s) => s.children);
 
   return (
-    <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-screen overflow-y-auto shrink-0">
+    <aside
+      className="w-64 flex flex-col h-screen overflow-y-auto shrink-0 border-r border-white/10"
+      style={{ backgroundColor: "var(--sidebar-bg)" }}
+    >
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
-        <p className="text-lg font-bold text-slate-900 dark:text-white leading-tight">FINOS</p>
-        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{orgName}</p>
+      <div className="px-4 py-4 border-b border-white/10 shrink-0">
+        <p className="text-lg font-bold text-white leading-tight">FINOS</p>
+        <p className="text-xs text-slate-400 truncate mt-0.5">{orgName}</p>
       </div>
 
-      {/* Top-level simple links (Dashboard) */}
+      {/* Top-level simple links (Dashboard, Settings) */}
       <div className="px-3 pt-3 shrink-0">
-        {simpleLinks.map((s) => (
-          <Link
-            key={s.key}
-            href={s.href!}
-            className={cn(
-              "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors no-underline",
-              pathname === s.href || pathname.startsWith(s.href + "/")
-                ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white"
-                : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
-            )}
-          >
-            <s.icon className="h-4 w-4 shrink-0" />
-            {s.label}
-          </Link>
-        ))}
+        {simpleLinks.map((s) => {
+          const active = pathname === s.href || pathname.startsWith(s.href! + "/");
+          return (
+            <Link
+              key={s.key}
+              href={s.href!}
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors no-underline",
+                active
+                  ? "text-white"
+                  : "text-slate-300 hover:text-white"
+              )}
+              style={active ? { backgroundColor: "var(--sidebar-active)" } : undefined}
+              onMouseEnter={active ? undefined : (e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = "var(--sidebar-hover)";
+              }}
+              onMouseLeave={active ? undefined : (e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = "";
+              }}
+            >
+              <s.icon className="h-4 w-4 shrink-0" />
+              {s.label}
+            </Link>
+          );
+        })}
       </div>
 
       {/* Expandable sections */}
       <div className="px-3 pb-4 flex-1">
-        <Accordion
-          defaultValue={defaultOpen}
-          className="space-y-0.5 gap-0"
-        >
+        <Accordion defaultValue={defaultOpen} className="space-y-0.5 gap-0">
           {expandable.map((section) => {
             const isChildActive = section.children?.some(
               (c) => pathname === c.href || pathname.startsWith(c.href + "/")
             );
 
             return (
-              <AccordionItem
-                key={section.key}
-                value={section.key}
-                className="border-none"
-              >
+              <AccordionItem key={section.key} value={section.key} className="border-none">
                 <AccordionTrigger
                   className={cn(
                     "flex w-full items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium no-underline hover:no-underline transition-colors",
-                    isChildActive
-                      ? "text-slate-900 dark:text-white"
-                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                    isChildActive ? "text-white" : "text-slate-300"
                   )}
+                  style={{ backgroundColor: "transparent" }}
+                  onMouseEnter={(e) => {
+                    if (!isChildActive)
+                      (e.currentTarget as HTMLElement).style.backgroundColor = "var(--sidebar-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isChildActive)
+                      (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+                  }}
                 >
-                  <section.icon className="h-4 w-4 shrink-0" />
+                  <section.icon className="h-4 w-4 shrink-0 text-slate-400" />
                   <span className="flex-1 text-left">{section.label}</span>
                 </AccordionTrigger>
+
                 <AccordionContent className="pb-0 pt-0.5 [&>div]:h-auto [&>div]:pb-0">
-                  <div className="ml-6 space-y-0.5 border-l border-slate-100 dark:border-slate-700 pl-3">
+                  <div className="ml-6 space-y-0.5 border-l border-white/10 pl-3">
                     {section.children!.map((child) => {
                       const active =
                         pathname === child.href ||
@@ -243,9 +256,16 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
                           className={cn(
                             "block px-2.5 py-1.5 rounded-md text-sm transition-colors no-underline",
                             active
-                              ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
-                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
+                              ? "text-white font-medium"
+                              : "text-slate-400 hover:text-slate-100"
                           )}
+                          style={active ? { backgroundColor: "var(--sidebar-active)" } : undefined}
+                          onMouseEnter={active ? undefined : (e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = "var(--sidebar-hover)";
+                          }}
+                          onMouseLeave={active ? undefined : (e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = "";
+                          }}
                         >
                           {child.label}
                         </Link>

@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * Reads branding preferences from localStorage on mount and applies them:
- *   - appearance  → toggles `dark` class on <html>
- *   - accent-color → sets --finos-accent CSS variable on <html>
+ * Reads the user's accent-colour preference from localStorage on mount
+ * and applies it as --finos-accent on <html>.
  *
- * Mounted once in the root layout. Zero render output.
+ * Appearance (dark/light) is intentionally NOT toggled here.
+ * The sidebar and top bar are always dark via --sidebar-bg / --topbar-bg
+ * CSS tokens (Dark Pane Mode). Content areas remain light at all times.
  */
 
 import { useEffect } from "react";
@@ -20,20 +21,9 @@ const ACCENT_HEX: Record<string, string> = {
 
 export function BrandingApplier() {
   useEffect(() => {
-    const root = document.documentElement;
-
-    // ── Appearance ────────────────────────────────────────────────────────────
-    const appearance = localStorage.getItem("finos-appearance");
-    if (appearance === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-
-    // ── Accent colour ─────────────────────────────────────────────────────────
     const key = localStorage.getItem("finos-accent-color") ?? "blue";
     const hex = ACCENT_HEX[key] ?? ACCENT_HEX.blue;
-    root.style.setProperty("--finos-accent", hex);
+    document.documentElement.style.setProperty("--finos-accent", hex);
   }, []);
 
   return null;
