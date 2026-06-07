@@ -19,11 +19,67 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
     if (user?.id) {
       token.id = user.id;
 
+      // ── Auto-accept pending invitations ──────────────────────────────────
+      // On every sign-in, find non-expired PENDING invitations for this email
+      // and create TenantMembership records atomically. If a concurrent request
+      // already created the membership (P2002), we still mark the invitation
+      // ACCEPTED so it doesn't stay in the pending list.
+      //
+      // This block is wrapped in try/catch: a DB error must never prevent sign-in.
+      const userEmail = user.email ?? (token.email as string | undefined);
+      if (userEmail) {
+        try {
+          const pendingInvitations = await prisma.tenantInvitation.findMany({
+            where: {
+              email:     userEmail,
+              status:    "PENDING",
+              expiresAt: { gt: new Date() },
+            },
+          });
+
+          for (const invitation of pendingInvitations) {
+            try {
+              // Atomic: create membership + accept invitation in one transaction.
+              // If the membership already exists (P2002 unique violation), fall through
+              // to the catch block and just mark the invitation accepted.
+              await prisma.$transaction([
+                prisma.tenantMembership.create({
+                  data: {
+                    tenantId: invitation.tenantId,
+                    userId:   user.id,
+                    role:     invitation.role,
+                    status:   "ACTIVE",
+                  },
+                }),
+                prisma.tenantInvitation.update({
+                  where: { id: invitation.id },
+                  data:  { status: "ACCEPTED" },
+                }),
+              ]);
+            } catch (txErr: unknown) {
+              // P2002 = unique constraint violation (membership already exists)
+              const code = (txErr as { code?: string })?.code;
+              if (code === "P2002") {
+                // Membership already exists — just accept the invitation
+                await prisma.tenantInvitation.update({
+                  where: { id: invitation.id },
+                  data:  { status: "ACCEPTED" },
+                }).catch(() => { /* best-effort */ });
+              } else {
+                console.error("[auth] invitation auto-accept transaction failed:", txErr);
+              }
+            }
+          }
+        } catch (err) {
+          // Never let invitation processing break the sign-in flow
+          console.error("[auth] invitation auto-accept query failed:", err);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const membership = await prisma.tenantMembership.findFirst({
-        where: { userId: user.id },
-        include: {
-          tenant: { select: { id: true, name: true } },
-        },
+        where:   { userId: user.id, status: "ACTIVE" },
+        include: { tenant: { select: { id: true, name: true } } },
         orderBy: { createdAt: "asc" },
       });
 
@@ -35,10 +91,8 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
     // Re-hydrate on `update()` call (e.g. after tenant creation / switching)
     if (trigger === "update" && token.id) {
       const membership = await prisma.tenantMembership.findFirst({
-        where: { userId: token.id as string },
-        include: {
-          tenant: { select: { id: true, name: true } },
-        },
+        where:   { userId: token.id as string, status: "ACTIVE" },
+        include: { tenant: { select: { id: true, name: true } } },
         orderBy: { createdAt: "asc" },
       });
 

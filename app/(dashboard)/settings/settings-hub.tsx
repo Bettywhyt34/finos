@@ -57,9 +57,9 @@ const SETTINGS: SettingSection[] = [
         headerText:   "text-rose-700",
         headerBorder: "border-rose-100",
         items: [
-          { label: "Users",             href: "/settings/users" },
-          { label: "Roles",             href: "/settings/users/roles" },
-          { label: "User Preferences",  href: "/settings/users/preferences" },
+          { label: "Users",             href: "/settings/users-roles/users" },
+          { label: "Roles",             href: "/settings/users-roles/roles" },
+          { label: "User Preferences",  href: "/settings/users-roles/user-preferences" },
         ],
       },
       {

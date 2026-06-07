@@ -110,7 +110,7 @@ const SIDEBAR_NAV: NavSection[] = [
           { id: "subscription",  label: "Manage Subscription", href: "/settings/organization/subscription"},
         ],
       },
-      { id: "users-roles",    label: "Users & Roles",         icon: Users,    href: "/settings/users"         },
+      { id: "users-roles",    label: "Users & Roles",         icon: Users,    href: "/settings/users-roles/users" },
       { id: "taxes",          label: "Taxes & Compliance",    icon: FileText, href: "/settings/taxes"         },
       { id: "setup",          label: "Setup & Configurations",icon: Sliders,  href: "/settings/general"       },
       { id: "customization",  label: "Customization",         icon: Palette,  href: "/settings/customization" },

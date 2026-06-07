@@ -42,9 +42,10 @@ model User {
   emailVerified DateTime?         @map("email_verified")
   image         String?
   password      String?
-  accounts      Account[]
-  memberships   TenantMembership[]
-  sessions      Session[]
+  accounts        Account[]
+  memberships     TenantMembership[]
+  sessions        Session[]
+  invitationsSent TenantInvitation[] @relation("InvitationsSent")
 
   @@map("users")
 }
@@ -126,6 +127,7 @@ model Tenant {
   keepBranding           Boolean    @default(true)  @map("keep_branding")
   recommendApp           Boolean    @default(true)  @map("recommend_app")
   locations              Location[]
+  invitations            TenantInvitation[]
 
   @@map("tenants")
 }
@@ -171,13 +173,15 @@ model Location {
 }
 
 model TenantMembership {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  userId    String   @map("user_id")
-  role      UserRole @default(MEMBER)
-  createdAt DateTime @default(now()) @map("created_at")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String           @id @default(uuid())
+  tenantId  String           @map("tenant_id")
+  userId    String           @map("user_id")
+  role      UserRole         @default(MEMBER)
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId])
   @@map("tenant_memberships")
@@ -642,6 +646,22 @@ enum UserRole {
   ACCOUNTANT
   MEMBER
   VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("membership_status_enum")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+
+  @@map("invitation_status_enum")
 }
 
 model TaxRate {
@@ -1207,4 +1227,24 @@ model TenantIntegration {
 
   @@unique([tenantId, sourceApp], name: "uq_tenant_source")
   @@map("tenant_integrations")
+}
+
+// ─── User Invitations ─────────────────────────────────────────────────────────
+
+model TenantInvitation {
+  id          String           @id @default(uuid())
+  tenantId    String           @map("tenant_id")
+  email       String
+  role        UserRole         @default(MEMBER)
+  token       String           @unique @default(uuid())
+  status      InvitationStatus @default(PENDING)
+  invitedById String           @map("invited_by_id")
+  expiresAt   DateTime         @map("expires_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy User   @relation("InvitationsSent", fields: [invitedById], references: [id])
+
+  @@map("tenant_invitations")
 }
