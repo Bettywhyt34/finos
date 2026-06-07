@@ -26,14 +26,11 @@ export function Header({ userName, userImage, orgName }: HeaderProps) {
     : "U";
 
   return (
-    <header
-      className="h-14 flex items-center justify-between px-6 shrink-0 border-b border-white/10"
-      style={{ backgroundColor: "var(--topbar-bg)" }}
-    >
-      <p className="text-sm font-medium text-slate-300 truncate">{orgName}</p>
+    <header className="h-14 flex items-center justify-between px-6 shrink-0 border-b border-[var(--topbar-border)] bg-[var(--topbar-bg)]">
+      <p className="text-sm font-medium text-[var(--topbar-org)] truncate">{orgName}</p>
 
       <div className="flex items-center gap-3">
-        {/* New Invoice — accent-coloured so it pops on the dark bar */}
+        {/* New Invoice — always accent-coloured so it pops in both pane modes */}
         <Link
           href="/sales/invoices/new"
           className="inline-flex items-center gap-1.5 h-8 px-3 text-sm font-medium rounded-md text-white transition-opacity hover:opacity-90"
@@ -44,7 +41,9 @@ export function Header({ userName, userImage, orgName }: HeaderProps) {
         </Link>
 
         <DropdownMenu>
-          <DropdownMenuTrigger className="flex items-center justify-center h-8 w-8 rounded-full text-xs font-semibold focus:outline-none overflow-hidden bg-white/20 text-white hover:bg-white/30 transition-colors">
+          <DropdownMenuTrigger
+            className="flex items-center justify-center h-8 w-8 rounded-full text-xs font-semibold focus:outline-none overflow-hidden transition-opacity hover:opacity-80 text-[var(--topbar-text)] bg-[var(--topbar-avatar-bg)]"
+          >
             {userImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={userImage} alt={userName ?? "User"} className="h-full w-full object-cover" />

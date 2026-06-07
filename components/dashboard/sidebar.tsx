@@ -134,9 +134,9 @@ const NAV: NavSection[] = [
     label: "Integrations",
     icon: Plug,
     children: [
-      { label: "Revflow",      href: "/integrations/revflow/status" },
-      { label: "XpenxFlow",    href: "/integrations/xpenxflow/status" },
-      { label: "EARNMARK360",  href: "/integrations/earnmark360/status" },
+      { label: "Revflow",     href: "/integrations/revflow/status" },
+      { label: "XpenxFlow",   href: "/integrations/xpenxflow/status" },
+      { label: "EARNMARK360", href: "/integrations/earnmark360/status" },
     ],
   },
   {
@@ -165,24 +165,20 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
     return { ...section, children: [...(section.children ?? []), ...extra] };
   });
 
-  const defaultOpen = nav.filter((s) =>
-    s.children?.some(
-      (c) => pathname === c.href || pathname.startsWith(c.href + "/")
-    )
-  ).map((s) => s.key);
+  const defaultOpen = nav
+    .filter((s) => s.children?.some((c) => pathname === c.href || pathname.startsWith(c.href + "/")))
+    .map((s) => s.key);
 
   const simpleLinks = nav.filter((s) => !s.children);
   const expandable  = nav.filter((s) => s.children);
 
   return (
-    <aside
-      className="w-64 flex flex-col h-screen overflow-y-auto shrink-0 border-r border-white/10"
-      style={{ backgroundColor: "var(--sidebar-bg)" }}
-    >
+    <aside className="w-64 flex flex-col h-screen overflow-y-auto shrink-0 border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)]">
+
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-white/10 shrink-0">
-        <p className="text-lg font-bold text-white leading-tight">FINOS</p>
-        <p className="text-xs text-slate-400 truncate mt-0.5">{orgName}</p>
+      <div className="px-4 py-4 border-b border-[var(--sidebar-border)] shrink-0">
+        <p className="text-lg font-bold leading-tight text-[var(--sidebar-active-text)]">FINOS</p>
+        <p className="text-xs truncate mt-0.5 text-[var(--sidebar-muted)]">{orgName}</p>
       </div>
 
       {/* Top-level simple links (Dashboard, Settings) */}
@@ -196,16 +192,9 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
               className={cn(
                 "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors no-underline",
                 active
-                  ? "text-white"
-                  : "text-slate-300 hover:text-white"
+                  ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-text)]"
+                  : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-active-text)]"
               )}
-              style={active ? { backgroundColor: "var(--sidebar-active)" } : undefined}
-              onMouseEnter={active ? undefined : (e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = "var(--sidebar-hover)";
-              }}
-              onMouseLeave={active ? undefined : (e) => {
-                (e.currentTarget as HTMLElement).style.backgroundColor = "";
-              }}
             >
               <s.icon className="h-4 w-4 shrink-0" />
               {s.label}
@@ -227,28 +216,19 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
                 <AccordionTrigger
                   className={cn(
                     "flex w-full items-center gap-2.5 px-2.5 py-2 rounded-md text-sm font-medium no-underline hover:no-underline transition-colors",
-                    isChildActive ? "text-white" : "text-slate-300"
+                    isChildActive
+                      ? "text-[var(--sidebar-active-text)]"
+                      : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-active-text)]"
                   )}
-                  style={{ backgroundColor: "transparent" }}
-                  onMouseEnter={(e) => {
-                    if (!isChildActive)
-                      (e.currentTarget as HTMLElement).style.backgroundColor = "var(--sidebar-hover)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isChildActive)
-                      (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
-                  }}
                 >
-                  <section.icon className="h-4 w-4 shrink-0 text-slate-400" />
+                  <section.icon className="h-4 w-4 shrink-0 text-[var(--sidebar-muted)]" />
                   <span className="flex-1 text-left">{section.label}</span>
                 </AccordionTrigger>
 
                 <AccordionContent className="pb-0 pt-0.5 [&>div]:h-auto [&>div]:pb-0">
-                  <div className="ml-6 space-y-0.5 border-l border-white/10 pl-3">
+                  <div className="ml-6 space-y-0.5 border-l border-[var(--sidebar-border)] pl-3">
                     {section.children!.map((child) => {
-                      const active =
-                        pathname === child.href ||
-                        pathname.startsWith(child.href + "/");
+                      const active = pathname === child.href || pathname.startsWith(child.href + "/");
                       return (
                         <Link
                           key={child.href}
@@ -256,16 +236,9 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
                           className={cn(
                             "block px-2.5 py-1.5 rounded-md text-sm transition-colors no-underline",
                             active
-                              ? "text-white font-medium"
-                              : "text-slate-400 hover:text-slate-100"
+                              ? "bg-[var(--sidebar-active)] text-[var(--sidebar-active-text)] font-medium"
+                              : "text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-active-text)]"
                           )}
-                          style={active ? { backgroundColor: "var(--sidebar-active)" } : undefined}
-                          onMouseEnter={active ? undefined : (e) => {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = "var(--sidebar-hover)";
-                          }}
-                          onMouseLeave={active ? undefined : (e) => {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = "";
-                          }}
                         >
                           {child.label}
                         </Link>

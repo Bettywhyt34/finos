@@ -18,7 +18,8 @@ import { saveBrandingPrefs } from "./actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Appearance  = "dark" | "light";
+type PaneMode    = "dark" | "light";
+type Appearance  = PaneMode; // alias kept for component prop compatibility
 type AccentColor = "blue" | "green" | "red" | "orange" | "purple";
 
 const APP_NAME = "FINOS Books";
@@ -36,8 +37,9 @@ const ACCENT_COLORS: { id: AccentColor; label: string; hex: string }[] = [
 // ─── Live DOM helpers ─────────────────────────────────────────────────────────
 
 function applyAppearance(a: Appearance) {
-  if (a === "dark") document.documentElement.classList.add("dark");
-  else              document.documentElement.classList.remove("dark");
+  // Sets data-pane attribute — controls sidebar/topbar CSS tokens only.
+  // Never touches .dark class; main content is always light.
+  document.documentElement.setAttribute("data-pane", a);
 }
 
 function applyAccent(hex: string) {
@@ -115,8 +117,8 @@ export function BrandingClient({
   const [search,   setSearch]   = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["organization"]));
 
-  // Appearance & accent — localStorage + live DOM
-  const [appearance,  setAppearanceState]  = useState<Appearance>("light");
+  // Pane mode & accent — localStorage + live DOM
+  const [appearance,  setAppearanceState]  = useState<Appearance>("dark");
   const [accentColor, setAccentColorState] = useState<AccentColor>("blue");
 
   // Org-level toggles — seeded from DB, saved back to DB
@@ -125,9 +127,9 @@ export function BrandingClient({
 
   const [isPending, startTransition] = useTransition();
 
-  // Hydrate appearance/accent from localStorage on mount
+  // Hydrate pane/accent from localStorage on mount
   useEffect(() => {
-    const a = localStorage.getItem("finos-appearance") as Appearance | null;
+    const a = localStorage.getItem("finos-pane") as Appearance | null;
     const c = localStorage.getItem("finos-accent-color") as AccentColor | null;
     if (a === "dark" || a === "light") setAppearanceState(a);
     if (c && ACCENT_COLORS.some((x) => x.id === c)) setAccentColorState(c);
@@ -135,7 +137,7 @@ export function BrandingClient({
 
   function setAppearance(a: Appearance) {
     setAppearanceState(a);
-    localStorage.setItem("finos-appearance", a);
+    localStorage.setItem("finos-pane", a);
     applyAppearance(a);
   }
 
@@ -235,11 +237,12 @@ export function BrandingClient({
               </div>
             </section>
 
-            {/* ── Appearance ── */}
+            {/* ── Pane Appearance ── */}
             <section className="space-y-3">
-              <SectionTitle title="Appearance" />
+              <SectionTitle title="Pane Appearance" />
               <p className="text-xs text-slate-400 -mt-1">
-                Applies instantly to your browser. Other users in your organisation are not affected.
+                Controls the sidebar and top bar style. Content, cards, and tables always remain light.
+                Applies per browser — other users are not affected.
               </p>
               <div className="flex gap-4 pt-1">
                 {(["dark", "light"] as Appearance[]).map((type) => {

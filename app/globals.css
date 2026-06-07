@@ -10,32 +10,40 @@
 
 @layer base {
   :root {
-    /* ── FINOS Design Tokens ─────────────────────────────────────────── */
-
-    /* Accent (user-configurable via BrandingApplier) */
+    /* ── FINOS accent (user-configurable) ───────────────────────────── */
     --finos-accent: #4088f4;
 
-    /* Navigation chrome — always dark regardless of appearance setting */
-    --sidebar-bg:     #0b1220;
-    --sidebar-hover:  #172033;
-    --sidebar-active: #1f2d44;
-    --topbar-bg:      #0b1220;
-
-    /* App canvas — always light */
+    /* ── App canvas — always light regardless of pane mode ─────────── */
     --app-bg:        #f5f7fb;
     --surface:       #ffffff;
     --surface-muted: #f1f5f9;
+    --surface-soft:  #eef4ff;
 
-    /* Semantic text */
+    /* ── Semantic content text ──────────────────────────────────────── */
     --text-primary:   #0f172a;
     --text-secondary: #475569;
     --text-muted:     #64748b;
     --text-inverse:   #ffffff;
 
-    /* Borders */
+    /* ── Content borders ────────────────────────────────────────────── */
     --app-border: #e2e8f0;
 
-    /* ── shadcn/ui component tokens (light-only, no dark override) ───── */
+    /* ── Pane chrome defaults — Dark Pane (no data-pane attr yet) ───── */
+    --sidebar-bg:          #0b1220;
+    --sidebar-text:        #cbd5e1;
+    --sidebar-muted:       #94a3b8;
+    --sidebar-hover:       #172033;
+    --sidebar-active:      #1f2d44;
+    --sidebar-active-text: #ffffff;
+    --sidebar-border:      rgba(255, 255, 255, 0.1);
+
+    --topbar-bg:        #0b1220;
+    --topbar-text:      #ffffff;
+    --topbar-org:       #94a3b8;
+    --topbar-border:    rgba(255, 255, 255, 0.1);
+    --topbar-avatar-bg: #1e293b;
+
+    /* ── shadcn/ui component tokens — light only, no .dark override ── */
     --background:            oklch(1 0 0);
     --foreground:            oklch(0.145 0 0);
     --card:                  oklch(1 0 0);
@@ -70,8 +78,41 @@
     --sidebar-ring:          oklch(0.708 0 0);
   }
 
-  /* ─── No .dark block: chrome tokens are always dark via CSS variables ─ */
+  /* ── Dark Pane (explicit; mirrors :root defaults above) ───────────── */
+  [data-pane="dark"] {
+    --sidebar-bg:          #0b1220;
+    --sidebar-text:        #cbd5e1;
+    --sidebar-muted:       #94a3b8;
+    --sidebar-hover:       #172033;
+    --sidebar-active:      #1f2d44;
+    --sidebar-active-text: #ffffff;
+    --sidebar-border:      rgba(255, 255, 255, 0.1);
 
+    --topbar-bg:        #0b1220;
+    --topbar-text:      #ffffff;
+    --topbar-org:       #94a3b8;
+    --topbar-border:    rgba(255, 255, 255, 0.1);
+    --topbar-avatar-bg: #1e293b;
+  }
+
+  /* ── Light Pane ──────────────────────────────────────────────────── */
+  [data-pane="light"] {
+    --sidebar-bg:          #ffffff;
+    --sidebar-text:        #334155;
+    --sidebar-muted:       #64748b;
+    --sidebar-hover:       #f1f5f9;
+    --sidebar-active:      #eff6ff;
+    --sidebar-active-text: var(--finos-accent);
+    --sidebar-border:      #e2e8f0;
+
+    --topbar-bg:        #ffffff;
+    --topbar-text:      #0f172a;
+    --topbar-org:       #475569;
+    --topbar-border:    #e2e8f0;
+    --topbar-avatar-bg: #f1f5f9;
+  }
+
+  /* ── Global resets ───────────────────────────────────────────────── */
   * {
     border-color: var(--border);
   }
