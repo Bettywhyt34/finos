@@ -65,7 +65,6 @@ export default async function UsersSettingsPage() {
     <UsersClient
       users={users}
       currentUserId={session.user.id}
-      orgName={session.user.tenantName ?? "Organisation"}
     />
   );
 }

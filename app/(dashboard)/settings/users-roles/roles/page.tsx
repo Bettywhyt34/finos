@@ -49,7 +49,6 @@ export default async function RolesSettingsPage() {
     <RolesClient
       roles={roles}
       canManage={canManage}
-      orgName={session.user.tenantName ?? "Organisation"}
     />
   );
 }

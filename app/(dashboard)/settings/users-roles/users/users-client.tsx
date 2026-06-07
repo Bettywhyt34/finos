@@ -1,20 +1,13 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
-import { useRouter }                  from "next/navigation";
-import { toast }                      from "sonner";
+import { useState, useMemo } from "react";
+import { toast }              from "sonner";
 import {
   ChevronDown, MoreHorizontal, UserPlus, UserCheck,
   Info, X, Trash2, ShieldCheck, CheckCircle2, Users,
   RotateCcw, SendHorizonal, Ban, RefreshCw,
 } from "lucide-react";
-import { cn }          from "@/lib/utils";
-import {
-  SettingsHeader,
-  SettingsSidebar,
-  RightUtilityDock,
-  AssistanceButton,
-} from "@/components/settings/settings-shell";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
 import { Label }  from "@/components/ui/label";
@@ -148,18 +141,11 @@ function inviteStatus(u: { expiresAt: string }): "PENDING" | "EXPIRED" {
 interface Props {
   users:         UnifiedUser[];
   currentUserId: string;
-  orgName:       string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function UsersClient({ users: initial, currentUserId, orgName }: Props) {
-  const router    = useRouter();
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  // Sidebar
-  const [search,   setSearch]   = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["users-roles"]));
+export default function UsersClient({ users: initial, currentUserId }: Props) {
 
   // Table
   const [users,       setUsers]       = useState<UnifiedUser[]>(initial);
@@ -188,16 +174,6 @@ export default function UsersClient({ users: initial, currentUserId, orgName }: 
 
   // How-to modal
   const [howToOpen, setHowToOpen] = useState(false);
-
-  // ── Sidebar helpers ───────────────────────────────────────────────────────
-
-  function toggleExpanded(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
 
   // ── Filtered list ──────────────────────────────────────────────────────────
 
@@ -394,29 +370,8 @@ export default function UsersClient({ users: initial, currentUserId, orgName }: 
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#f7f8fb] flex flex-col">
-      {/* ── Header ── */}
-      <SettingsHeader
-        orgName={orgName}
-        breadcrumb="Users & Roles"
-        search={search}
-        onSearch={setSearch}
-        onClose={() => router.push("/settings")}
-        searchRef={searchRef}
-      />
-
-      {/* ── Body ── */}
-      <div className="flex flex-1 overflow-hidden">
-        <SettingsSidebar
-          search={search}
-          expanded={expanded}
-          onToggle={toggleExpanded}
-          activeItem="users"
-        />
-
-        {/* ── Main ── */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto px-8 py-8 space-y-5">
+    <>
+      <div className="max-w-5xl mx-auto px-8 py-8 space-y-5">
 
             {/* ── Title row ── */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -633,13 +588,7 @@ export default function UsersClient({ users: initial, currentUserId, orgName }: 
               )}
             </div>
 
-          </div>
-        </main>
-
-        <RightUtilityDock />
       </div>
-
-      <AssistanceButton />
 
       {/* Close dropdowns on outside click */}
       {(filterOpen || moreOpen) && (
@@ -1035,6 +984,6 @@ export default function UsersClient({ users: initial, currentUserId, orgName }: 
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }

@@ -1,19 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter }                   from "next/navigation";
-import { toast }                       from "sonner";
+import { useState } from "react";
+import { toast }    from "sonner";
 import {
   MoreHorizontal, Plus, Shield, ShieldCheck, ShieldAlert,
   X, AlertTriangle, Info, Users, Lock, CheckCircle2,
 } from "lucide-react";
-import { cn }          from "@/lib/utils";
-import {
-  SettingsHeader,
-  SettingsSidebar,
-  RightUtilityDock,
-  AssistanceButton,
-} from "@/components/settings/settings-shell";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
 import { Label }  from "@/components/ui/label";
@@ -55,7 +48,6 @@ const ROLE_COLORS: Record<UserRole, string> = {
 interface Props {
   roles:     RoleWithStats[];
   canManage: boolean;
-  orgName:   string;
 }
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
@@ -334,97 +326,33 @@ function RoleActionsMenu({ role, onView }: { role: RoleWithStats; onView: () => 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function RolesClient({ roles, canManage, orgName }: Props) {
-  const router    = useRouter();
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const [search,         setSearch]         = useState("");
-  const [expanded,       setExpanded]       = useState<Set<string>>(new Set(["users-roles"]));
-  const [selectedRole,   setSelectedRole]   = useState<RoleWithStats | null>(null);
-  const [showNewDrawer,  setShowNewDrawer]  = useState(false);
+export default function RolesClient({ roles, canManage }: Props) {
+  const [selectedRole,  setSelectedRole]  = useState<RoleWithStats | null>(null);
+  const [showNewDrawer, setShowNewDrawer] = useState(false);
 
   const usage = getRoleUsage(roles);
-
-  function toggleExpanded(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (e.key === "Escape" && search) setSearch("");
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [search]);
 
   // ── Access restricted ──────────────────────────────────────────────────────
 
   if (!canManage) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#f7f8fb] flex flex-col">
-        <SettingsHeader
-          orgName={orgName}
-          breadcrumb="Roles"
-          search={search}
-          onSearch={setSearch}
-          onClose={() => router.push("/settings")}
-          searchRef={searchRef as React.RefObject<HTMLInputElement>}
-        />
-        <div className="flex flex-1 overflow-hidden">
-          <SettingsSidebar
-            search={search}
-            expanded={expanded}
-            onToggle={toggleExpanded}
-            activeItem="roles"
-          />
-          <main className="flex-1 overflow-y-auto flex items-center justify-center">
-            <div className="text-center max-w-sm">
-              <Lock className="h-10 w-10 text-slate-300 mx-auto mb-4" />
-              <h2 className="text-base font-semibold text-slate-800 mb-1">Access Restricted</h2>
-              <p className="text-sm text-slate-500">
-                Only Owners and Admins can view and manage roles.
-              </p>
-            </div>
-          </main>
-          <RightUtilityDock />
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center max-w-sm">
+          <Lock className="h-10 w-10 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-base font-semibold text-slate-800 mb-1">Access Restricted</h2>
+          <p className="text-sm text-slate-500">
+            Only Owners and Admins can view and manage roles.
+          </p>
         </div>
-        <AssistanceButton />
       </div>
     );
   }
 
-  // ── Main layout ───────────────────────────────────────────────────────────
+  // ── Content ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#f7f8fb] flex flex-col">
-
-      <SettingsHeader
-        orgName={orgName}
-        breadcrumb="Roles"
-        search={search}
-        onSearch={setSearch}
-        onClose={() => router.push("/settings")}
-        searchRef={searchRef as React.RefObject<HTMLInputElement>}
-      />
-
-      <div className="flex flex-1 overflow-hidden">
-        <SettingsSidebar
-          search={search}
-          expanded={expanded}
-          onToggle={toggleExpanded}
-          activeItem="roles"
-        />
-
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto px-8 py-8 space-y-5">
+    <>
+      <div className="max-w-5xl mx-auto px-8 py-8 space-y-5">
 
             {/* Page header */}
             <div className="flex items-center justify-between">
@@ -536,13 +464,7 @@ export default function RolesClient({ roles, canManage, orgName }: Props) {
               </p>
             </div>
 
-          </div>
-        </main>
-
-        <RightUtilityDock />
       </div>
-
-      <AssistanceButton />
 
       {selectedRole && (
         <RoleDetailDrawer role={selectedRole} onClose={() => setSelectedRole(null)} />
@@ -550,6 +472,6 @@ export default function RolesClient({ roles, canManage, orgName }: Props) {
       {showNewDrawer && (
         <NewRoleDrawer onClose={() => setShowNewDrawer(false)} />
       )}
-    </div>
+    </>
   );
 }
