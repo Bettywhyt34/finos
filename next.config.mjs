@@ -64,6 +64,47 @@ const nextConfig = {
     // app/page.tsx intentionally has no default export (route handled by route group)
     ignoreBuildErrors: true,
   },
+  // -- Redirects for moved settings routes --
+  async redirects() {
+    return [
+      {
+        source:      "/settings/general",
+        destination: "/settings/setup-configurations/general",
+        permanent:   false,
+      },
+      {
+        source:      "/settings/currencies",
+        destination: "/settings/setup-configurations/currencies",
+        permanent:   false,
+      },
+      {
+        source:      "/settings/payment-terms",
+        destination: "/settings/setup-configurations/payment-terms",
+        permanent:   false,
+      },
+      {
+        source:      "/settings/opening-balances",
+        destination: "/settings/setup-configurations/opening-balances",
+        permanent:   false,
+      },
+      {
+        source:      "/settings/reminders",
+        destination: "/settings/setup-configurations/reminders",
+        permanent:   false,
+      },
+      {
+        source:      "/settings/customer-portal",
+        destination: "/settings/setup-configurations/customer-portal",
+        permanent:   false,
+      },
+      {
+        source:      "/settings/vendor-portal",
+        destination: "/settings/setup-configurations/vendor-portal",
+        permanent:   false,
+      },
+    ];
+  },
+
   // -- Security headers on all routes --
   async headers() {
     return [

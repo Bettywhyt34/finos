@@ -128,6 +128,7 @@ model Tenant {
   recommendApp           Boolean    @default(true)  @map("recommend_app")
   locations              Location[]
   invitations            TenantInvitation[]
+  paymentTerms           PaymentTerm[]
 
   @@map("tenants")
 }
@@ -676,6 +677,48 @@ model TaxRate {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("tax_rates")
+}
+
+// ─── Setup & Configurations: Payment Terms ───────────────────────────────────
+
+enum PaymentTermDueType {
+  DUE_ON_RECEIPT
+  FIXED_DAYS
+  END_OF_MONTH
+  END_OF_NEXT_MONTH
+
+  @@map("payment_term_due_type_enum")
+}
+
+enum PaymentTermAppliesTo {
+  CUSTOMERS
+  VENDORS
+  BOTH
+
+  @@map("payment_term_applies_to_enum")
+}
+
+model PaymentTerm {
+  id          String               @id @default(uuid())
+  tenantId    String               @map("tenant_id")
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  dueInDays   Int?                 @map("due_in_days")
+  dueType     PaymentTermDueType   @default(FIXED_DAYS) @map("due_type")
+  appliesTo   PaymentTermAppliesTo @default(BOTH)       @map("applies_to")
+
+  isDefault   Boolean  @default(false) @map("is_default")
+  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean  @default(true)  @map("is_active")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("payment_terms")
 }
 
 enum AccountType {
