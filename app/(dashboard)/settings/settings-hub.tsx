@@ -70,9 +70,8 @@ const SETTINGS: SettingSection[] = [
         headerText:   "text-blue-700",
         headerBorder: "border-blue-100",
         items: [
-          { label: "Tax Rates",         href: "/settings/taxes" },
-          { label: "WHT Rates",         href: "/settings/taxes/wht" },
-          { label: "VAT Settings",      href: "/settings/taxes/vat" },
+          { label: "Tax Rates",    href: "/settings/taxes-compliance/taxes/rates"    },
+          { label: "Tax Settings", href: "/settings/taxes-compliance/taxes/settings" },
         ],
       },
       {

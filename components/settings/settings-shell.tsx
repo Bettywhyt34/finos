@@ -4,8 +4,14 @@
  * Shared settings shell components.
  * Used by OrgProfile, Branding, and any future settings pages
  * that need the Zoho-style full-screen layout.
+ *
+ * FullSettingsShell — single source of truth for settings page chrome.
+ * Section shells (users-roles, taxes-compliance, etc.) import this and
+ * add only their module-specific layout (e.g. secondary nav).
  */
 
+import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Building2, Users, FileText, Sliders, Palette, Zap,
@@ -45,7 +51,13 @@ export const SIDEBAR_NAV: NavSection[] = [
           { id: "user-preferences", label: "User Preferences", href: "/settings/users-roles/user-preferences" },
         ],
       },
-      { id: "taxes",         label: "Taxes & Compliance",     icon: FileText,  href: "/settings/taxes"         },
+      {
+        id: "taxes-compliance", label: "Taxes & Compliance", icon: FileText,
+        children: [
+          { id: "tax-rates",    label: "Tax Rates",    href: "/settings/taxes-compliance/taxes/rates"    },
+          { id: "tax-settings", label: "Tax Settings", href: "/settings/taxes-compliance/taxes/settings" },
+        ],
+      },
       { id: "setup",         label: "Setup & Configurations", icon: Sliders,   href: "/settings/general"       },
       { id: "customization", label: "Customization",          icon: Palette,   href: "/settings/customization" },
       { id: "automation",    label: "Automation",             icon: Zap,       href: "/settings/automation"    },
@@ -343,5 +355,91 @@ export function AssistanceButton() {
       <MessageSquare className="h-3.5 w-3.5" />
       Need Assistance?
     </button>
+  );
+}
+
+// ─── FullSettingsShell ────────────────────────────────────────────────────────
+// Single source of truth for the settings page chrome.
+// Manages: search state, expanded sidebar groups, keyboard shortcuts,
+//          close navigation. Section shells use this and add their own
+//          module-specific layout inside the content slot.
+
+function deriveDefaultExpanded(activeItem: string): Set<string> {
+  for (const section of SIDEBAR_NAV) {
+    for (const group of section.items) {
+      if (group.children?.some((c) => c.id === activeItem)) {
+        return new Set([group.id]);
+      }
+    }
+  }
+  return new Set();
+}
+
+export function FullSettingsShell({
+  orgName,
+  activeItem,
+  breadcrumb,
+  children,
+}: {
+  orgName:   string;
+  activeItem: string;
+  breadcrumb: string;
+  children:  React.ReactNode;
+}) {
+  const router    = useRouter();
+  const searchRef = useRef<HTMLInputElement>(null!);
+
+  const [search,   setSearch]   = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(() => deriveDefaultExpanded(activeItem));
+
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === "Escape" && search) setSearch("");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [search]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#f7f8fb] flex flex-col">
+      <SettingsHeader
+        orgName={orgName}
+        breadcrumb={breadcrumb}
+        search={search}
+        onSearch={setSearch}
+        onClose={() => router.push("/settings")}
+        searchRef={searchRef}
+      />
+
+      <div className="flex flex-1 overflow-hidden">
+        <SettingsSidebar
+          search={search}
+          expanded={expanded}
+          onToggle={toggleExpanded}
+          activeItem={activeItem}
+        />
+
+        {/* Content slot — section shells control their own overflow */}
+        <main className="flex-1 overflow-hidden">
+          {children}
+        </main>
+
+        <RightUtilityDock />
+      </div>
+
+      <AssistanceButton />
+    </div>
   );
 }

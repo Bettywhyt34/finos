@@ -26,6 +26,10 @@ export async function PATCH(
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userRole = (session.user as { role?: string }).role;
+  if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const taxRate = await getTaxRate(params.id, session.user.tenantId);
   if (!taxRate) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -62,6 +66,10 @@ export async function DELETE(
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userRole = (session.user as { role?: string }).role;
+  if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const taxRate = await getTaxRate(params.id, session.user.tenantId);

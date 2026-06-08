@@ -111,7 +111,7 @@ const SIDEBAR_NAV: NavSection[] = [
         ],
       },
       { id: "users-roles",    label: "Users & Roles",         icon: Users,    href: "/settings/users-roles/users" },
-      { id: "taxes",          label: "Taxes & Compliance",    icon: FileText, href: "/settings/taxes"         },
+      { id: "taxes",          label: "Taxes & Compliance",    icon: FileText, href: "/settings/taxes-compliance/taxes/rates" },
       { id: "setup",          label: "Setup & Configurations",icon: Sliders,  href: "/settings/general"       },
       { id: "customization",  label: "Customization",         icon: Palette,  href: "/settings/customization" },
       { id: "automation",     label: "Automation",            icon: Zap,      href: "/settings/automation"    },

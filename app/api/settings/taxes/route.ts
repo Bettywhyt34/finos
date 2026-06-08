@@ -34,6 +34,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const userRole = (session.user as { role?: string }).role;
+  if (userRole !== "OWNER" && userRole !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const tenantId = session.user.tenantId;
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
