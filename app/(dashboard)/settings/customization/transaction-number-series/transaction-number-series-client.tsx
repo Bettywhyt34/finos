@@ -3,8 +3,8 @@
 import { useState }                                    from "react";
 import { Pencil, X, AlertTriangle, Info }              from "lucide-react";
 import { toast }                                       from "sonner";
-import type { TransactionNumberSeriesRow }             from "@/lib/customization/service";
-import { moduleDisplayLabel, MODULE_GROUPS, previewTransactionNumber } from "@/lib/customization/service";
+import type { TransactionNumberSeriesRow }                             from "@/lib/customization/utils";
+import { moduleDisplayLabel, MODULE_GROUPS, previewTransactionNumber } from "@/lib/customization/utils";
 import { cn }                                          from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

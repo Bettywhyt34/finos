@@ -1,66 +1,31 @@
 /**
  * Customization service — Transaction Number Series.
  *
- * Provides helpers for reading, updating, previewing, and generating
- * sequential transaction numbers per module per tenant.
+ * Server-only. All DB functions are tenant-scoped.
  *
- * All functions are tenant-scoped; every write verifies tenantId ownership.
+ * Pure client-safe helpers (previewTransactionNumber, moduleDisplayLabel,
+ * MODULE_GROUPS, etc.) live in ./utils and are re-exported here so callers
+ * can import from a single location when needed server-side.
+ *
+ * Client components should import directly from "@/lib/customization/utils"
+ * to avoid pulling pg/prisma into the browser bundle.
  */
 
 import { prisma } from "@/lib/prisma";
 
-// ─── Display labels ────────────────────────────────────────────────────────────
+// Re-export pure helpers for server-side callers.
+export {
+  moduleDisplayLabel,
+  MODULE_DISPLAY_ORDER,
+  MODULE_GROUPS,
+  previewTransactionNumber,
+  type TransactionNumberSeriesRow,
+} from "./utils";
 
-const MODULE_DISPLAY: Record<string, string> = {
-  INVOICE:          "Invoice",
-  CUSTOMER_PAYMENT: "Customer Payment",
-  CREDIT_NOTE:      "Credit Note",
-  BILL:             "Bill",
-  VENDOR_PAYMENT:   "Vendor Payment",
-  JOURNAL:          "Journal Entry",
-  ESTIMATE:         "Estimate",
-  PURCHASE_ORDER:   "Purchase Order",
-  VENDOR_CREDIT:    "Vendor Credit",
-  DEBIT_NOTE:       "Debit Note",
-};
-
-export function moduleDisplayLabel(module: string): string {
-  return MODULE_DISPLAY[module] ?? module;
-}
-
-// Display order for the settings UI (Sales → Purchases → Accounting)
-export const MODULE_DISPLAY_ORDER: string[] = [
-  "INVOICE",
-  "ESTIMATE",
-  "CREDIT_NOTE",
-  "CUSTOMER_PAYMENT",
-  "PURCHASE_ORDER",
-  "BILL",
-  "VENDOR_CREDIT",
-  "VENDOR_PAYMENT",
-  "DEBIT_NOTE",
-  "JOURNAL",
-];
-
-export const MODULE_GROUPS: { label: string; modules: string[] }[] = [
-  { label: "Sales",      modules: ["INVOICE", "ESTIMATE", "CREDIT_NOTE", "CUSTOMER_PAYMENT"] },
-  { label: "Purchases",  modules: ["PURCHASE_ORDER", "BILL", "VENDOR_CREDIT", "VENDOR_PAYMENT", "DEBIT_NOTE"] },
-  { label: "Accounting", modules: ["JOURNAL"] },
-];
+import type { TransactionNumberSeriesRow } from "./utils";
+import { moduleDisplayLabel, previewTransactionNumber } from "./utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-
-export type TransactionNumberSeriesRow = {
-  id:            string;
-  module:        string;
-  prefix:        string;
-  nextNumber:    number;
-  padLength:     number;
-  restartFreq:   string;
-  lastResetDate: Date | null;
-  isEnabled:     boolean;
-  updatedAt:     Date;
-};
 
 export type UpdateTransactionNumberSeriesInput = {
   prefix?:      string;
@@ -69,21 +34,6 @@ export type UpdateTransactionNumberSeriesInput = {
   restartFreq?: string;
   isEnabled?:   boolean;
 };
-
-// ─── Pure helpers ──────────────────────────────────────────────────────────────
-
-/**
- * Returns the formatted number string for a given series state.
- * Pure function — no DB access, no side effects.
- */
-export function previewTransactionNumber(series: {
-  prefix:     string;
-  nextNumber: number;
-  padLength:  number;
-}): string {
-  const padded = String(series.nextNumber).padStart(series.padLength, "0");
-  return series.prefix ? `${series.prefix}-${padded}` : padded;
-}
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -94,7 +44,6 @@ export async function getTransactionNumberSeries(
     where:   { tenantId },
     orderBy: { module: "asc" },
   });
-
   return rows.map(rowToPublic);
 }
 
@@ -105,7 +54,6 @@ export async function updateTransactionNumberSeries(
   seriesId: string,
   data: UpdateTransactionNumberSeriesInput,
 ): Promise<TransactionNumberSeriesRow> {
-  // Verify ownership
   const existing = await prisma.transactionNumberSeries.findFirst({
     where: { id: seriesId, tenantId },
   });
@@ -121,24 +69,26 @@ export async function updateTransactionNumberSeries(
   const updated = await prisma.transactionNumberSeries.update({
     where: { id: seriesId },
     data: {
-      ...(data.prefix      !== undefined ? { prefix:      data.prefix.trim()                                   } : {}),
-      ...(data.nextNumber  !== undefined ? { nextNumber:  data.nextNumber                                      } : {}),
-      ...(data.padLength   !== undefined ? { padLength:   data.padLength                                       } : {}),
-      ...(data.restartFreq !== undefined ? { restartFreq: data.restartFreq as "NEVER" | "MONTHLY" | "YEARLY"  } : {}),
-      ...(data.isEnabled   !== undefined ? { isEnabled:   data.isEnabled                                       } : {}),
+      ...(data.prefix      !== undefined ? { prefix:      data.prefix.trim()                                  } : {}),
+      ...(data.nextNumber  !== undefined ? { nextNumber:  data.nextNumber                                     } : {}),
+      ...(data.padLength   !== undefined ? { padLength:   data.padLength                                      } : {}),
+      ...(data.restartFreq !== undefined ? { restartFreq: data.restartFreq as "NEVER" | "MONTHLY" | "YEARLY" } : {}),
+      ...(data.isEnabled   !== undefined ? { isEnabled:   data.isEnabled                                      } : {}),
     },
   });
-
   return rowToPublic(updated);
 }
 
 // ─── Number generation ────────────────────────────────────────────────────────
 
+type TransactionModuleValue =
+  | "INVOICE" | "CUSTOMER_PAYMENT" | "CREDIT_NOTE" | "BILL"
+  | "VENDOR_PAYMENT" | "JOURNAL" | "ESTIMATE" | "PURCHASE_ORDER"
+  | "VENDOR_CREDIT" | "DEBIT_NOTE";
+
 /**
  * Atomically generates the next number for a module, incrementing nextNumber.
  * Uses a Prisma transaction to prevent race conditions.
- *
- * For use from transaction creation flows (invoice, bill, etc.).
  */
 export async function generateTransactionNumber(
   tenantId: string,
@@ -146,31 +96,23 @@ export async function generateTransactionNumber(
 ): Promise<string> {
   return prisma.$transaction(async (tx) => {
     const series = await tx.transactionNumberSeries.findFirst({
-      where: { tenantId, module: module as "INVOICE" | "CUSTOMER_PAYMENT" | "CREDIT_NOTE" | "BILL" | "VENDOR_PAYMENT" | "JOURNAL" | "ESTIMATE" | "PURCHASE_ORDER" | "VENDOR_CREDIT" | "DEBIT_NOTE" },
+      where: { tenantId, module: module as TransactionModuleValue },
     });
     if (!series)           throw new Error(`No number series configured for module: ${module}`);
     if (!series.isEnabled) throw new Error(`Number series is disabled for module: ${module}`);
 
     const number = previewTransactionNumber(series);
-
     await tx.transactionNumberSeries.update({
       where: { id: series.id },
       data:  { nextNumber: series.nextNumber + 1 },
     });
-
     return number;
   });
 }
 
 /**
- * Same as generateTransactionNumber but accepts an existing Prisma transaction
- * client so it can participate in a larger atomic operation.
- *
- * Usage:
- *   await prisma.$transaction(async (tx) => {
- *     const num = await reserveTransactionNumber(tenantId, "INVOICE", tx);
- *     await tx.invoice.create({ data: { invoiceNumber: num, ... } });
- *   });
+ * Like generateTransactionNumber but participates in a caller-provided Prisma
+ * transaction for atomicity with the parent operation.
  */
 export async function reserveTransactionNumber(
   tenantId: string,
@@ -184,18 +126,15 @@ export async function reserveTransactionNumber(
   if (!series.isEnabled) throw new Error(`Number series is disabled for module: ${module}`);
 
   const number = previewTransactionNumber(series);
-
   await (tx as any).transactionNumberSeries.update({
     where: { id: series.id },
     data:  { nextNumber: series.nextNumber + 1 },
   });
-
   return number;
 }
 
 /**
- * Checks whether a given formatted number already exists in the relevant
- * module's table. Returns { isValid: true } if the number is free to use.
+ * Checks whether a formatted number already exists in the relevant module table.
  */
 export async function validateTransactionNumber(
   tenantId: string,
@@ -224,31 +163,21 @@ export async function validateTransactionNumber(
       exists = !!(await prisma.journalEntry.findFirst({ where: { tenantId, entryNumber: number } }));
       break;
     default:
-      // Module has no DB table yet (ESTIMATE, PURCHASE_ORDER, etc.) — always valid
       return { isValid: true };
   }
 
   if (exists) {
-    return {
-      isValid: false,
-      reason:  `Number "${number}" already exists for ${moduleDisplayLabel(module)}.`,
-    };
+    return { isValid: false, reason: `Number "${number}" already exists for ${moduleDisplayLabel(module)}.` };
   }
   return { isValid: true };
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+// ─── Internal helper ──────────────────────────────────────────────────────────
 
 function rowToPublic(r: {
-  id: string;
-  module: string;
-  prefix: string;
-  nextNumber: number;
-  padLength: number;
-  restartFreq: string;
-  lastResetDate: Date | null;
-  isEnabled: boolean;
-  updatedAt: Date;
+  id: string; module: string; prefix: string; nextNumber: number;
+  padLength: number; restartFreq: string; lastResetDate: Date | null;
+  isEnabled: boolean; updatedAt: Date;
 }): TransactionNumberSeriesRow {
   return {
     id:            r.id,
