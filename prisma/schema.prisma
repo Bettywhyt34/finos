@@ -129,6 +129,7 @@ model Tenant {
   locations              Location[]
   invitations            TenantInvitation[]
   paymentTerms           PaymentTerm[]
+  openingBalanceBatches  OpeningBalanceBatch[]
 
   @@map("tenants")
 }
@@ -1290,4 +1291,77 @@ model TenantInvitation {
   invitedBy User   @relation("InvitationsSent", fields: [invitedById], references: [id])
 
   @@map("tenant_invitations")
+}
+
+// ─── Opening Balances ─────────────────────────────────────────────────────────
+
+enum OpeningBalanceStatus {
+  DRAFT
+  FINALISED
+
+  @@map("opening_balance_status_enum")
+}
+
+enum OpeningBalanceLineType {
+  ACCOUNT
+  CUSTOMER
+  VENDOR
+  BANK
+
+  @@map("opening_balance_line_type_enum")
+}
+
+model OpeningBalanceBatch {
+  id             String               @id @default(cuid())
+  tenantId       String               @map("tenant_id")
+  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  migrationDate  DateTime             @map("migration_date")
+  status         OpeningBalanceStatus @default(DRAFT)
+
+  notes          String?
+  finalisedAt    DateTime?            @map("finalised_at")
+  finalisedById  String?              @map("finalised_by_id")
+  journalEntryId String?              @unique @map("journal_entry_id")
+
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt      @map("updated_at")
+
+  lines          OpeningBalanceLine[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("opening_balance_batches")
+}
+
+model OpeningBalanceLine {
+  id              String                 @id @default(cuid())
+  batchId         String                 @map("batch_id")
+  batch           OpeningBalanceBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  tenantId        String                 @map("tenant_id")
+  accountId       String?                @map("account_id")
+
+  lineType        OpeningBalanceLineType @default(ACCOUNT) @map("line_type")
+
+  customerId      String?                @map("customer_id")
+  vendorId        String?                @map("vendor_id")
+  bankAccountId   String?                @map("bank_account_id")
+
+  label           String
+  accountCategory String?                @map("account_category")
+
+  currency        String                 @default("NGN")
+  exchangeRate    Decimal                @default(1)  @map("exchange_rate") @db.Decimal(15, 6)
+
+  debit           Decimal                @default(0)                         @db.Decimal(15, 2)
+  credit          Decimal                @default(0)                         @db.Decimal(15, 2)
+
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt      @map("updated_at")
+
+  @@index([tenantId])
+  @@index([batchId])
+  @@index([accountId])
+  @@map("opening_balance_lines")
 }

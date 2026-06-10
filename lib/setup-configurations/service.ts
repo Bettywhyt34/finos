@@ -4,10 +4,16 @@
  * General preferences: no model in DB yet — all write ops throw.
  * Currencies: reads tenant.currency (base currency) from DB.
  *             Full TenantCurrency table does not exist yet — add/edit/disable ops throw.
+ * Opening Balances: OpeningBalanceBatch + OpeningBalanceLine tables.
+ *   Finalisation posts a balanced opening journal entry via lib/accounting/journals.ts.
  */
 
 import { prisma }           from "@/lib/prisma";
 import { CURRENCY_SYMBOLS } from "@/lib/fx";
+import {
+  postJournalEntry,
+  type JournalLineInput,
+}                           from "@/lib/accounting/journals";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -309,4 +315,465 @@ export function calculateDueDate(
     default:
       return d;
   }
+}
+
+// ─── Opening Balances ─────────────────────────────────────────────────────────
+
+export type OpeningBalanceLineRow = {
+  id:              string;
+  batchId:         string;
+  tenantId:        string;
+  accountId:       string | null;
+  lineType:        string;   // "ACCOUNT" | "CUSTOMER" | "VENDOR" | "BANK"
+  customerId:      string | null;
+  vendorId:        string | null;
+  bankAccountId:   string | null;
+  label:           string;
+  accountCategory: string | null;
+  currency:        string;
+  exchangeRate:    number;
+  debit:           number;
+  credit:          number;
+  createdAt:       string;
+  updatedAt:       string;
+};
+
+export type OpeningBalanceBatchRow = {
+  id:             string;
+  tenantId:       string;
+  migrationDate:  string;   // ISO date string — safe for RSC → client serialisation
+  status:         "DRAFT" | "FINALISED";
+  notes:          string | null;
+  finalisedAt:    string | null;
+  finalisedById:  string | null;
+  journalEntryId: string | null;
+  createdAt:      string;
+  updatedAt:      string;
+  lines:          OpeningBalanceLineRow[];
+};
+
+export type OpeningBalanceSummary = {
+  totalDebit:  number;
+  totalCredit: number;
+  difference:  number;
+  isBalanced:  boolean;
+};
+
+export type CreateOpeningBalanceDraftInput = {
+  migrationDate: string;   // ISO date string
+  notes?:        string;
+};
+
+export type UpdateOpeningBalanceDraftInput = {
+  migrationDate?: string;
+  notes?:         string;
+};
+
+export type AddOpeningBalanceLineInput = {
+  lineType:        string;
+  accountId?:      string | null;
+  customerId?:     string | null;
+  vendorId?:       string | null;
+  bankAccountId?:  string | null;
+  label:           string;
+  accountCategory?: string | null;
+  currency?:       string;
+  exchangeRate?:   number;
+  debit?:          number;
+  credit?:         number;
+};
+
+export type UpdateOpeningBalanceLineInput = {
+  accountId?:      string | null;
+  customerId?:     string | null;
+  vendorId?:       string | null;
+  bankAccountId?:  string | null;
+  label?:          string;
+  accountCategory?: string | null;
+  currency?:       string;
+  exchangeRate?:   number;
+  debit?:          number;
+  credit?:         number;
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function lineToRow(line: {
+  id: string;
+  batchId: string;
+  tenantId: string;
+  accountId: string | null;
+  lineType: string;
+  customerId: string | null;
+  vendorId: string | null;
+  bankAccountId: string | null;
+  label: string;
+  accountCategory: string | null;
+  currency: string;
+  exchangeRate: { toNumber(): number } | number;
+  debit: { toNumber(): number } | number;
+  credit: { toNumber(): number } | number;
+  createdAt: Date;
+  updatedAt: Date;
+}): OpeningBalanceLineRow {
+  return {
+    id:              line.id,
+    batchId:         line.batchId,
+    tenantId:        line.tenantId,
+    accountId:       line.accountId,
+    lineType:        line.lineType,
+    customerId:      line.customerId,
+    vendorId:        line.vendorId,
+    bankAccountId:   line.bankAccountId,
+    label:           line.label,
+    accountCategory: line.accountCategory,
+    currency:        line.currency,
+    exchangeRate:    typeof line.exchangeRate === "number"
+                       ? line.exchangeRate
+                       : (line.exchangeRate as { toNumber(): number }).toNumber(),
+    debit:           typeof line.debit === "number"
+                       ? line.debit
+                       : (line.debit as { toNumber(): number }).toNumber(),
+    credit:          typeof line.credit === "number"
+                       ? line.credit
+                       : (line.credit as { toNumber(): number }).toNumber(),
+    createdAt:       line.createdAt.toISOString(),
+    updatedAt:       line.updatedAt.toISOString(),
+  };
+}
+
+function batchToRow(batch: {
+  id: string;
+  tenantId: string;
+  migrationDate: Date;
+  status: string;
+  notes: string | null;
+  finalisedAt: Date | null;
+  finalisedById: string | null;
+  journalEntryId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lines: Parameters<typeof lineToRow>[0][];
+}): OpeningBalanceBatchRow {
+  return {
+    id:             batch.id,
+    tenantId:       batch.tenantId,
+    migrationDate:  batch.migrationDate.toISOString(),
+    status:         batch.status as "DRAFT" | "FINALISED",
+    notes:          batch.notes,
+    finalisedAt:    batch.finalisedAt?.toISOString() ?? null,
+    finalisedById:  batch.finalisedById,
+    journalEntryId: batch.journalEntryId,
+    createdAt:      batch.createdAt.toISOString(),
+    updatedAt:      batch.updatedAt.toISOString(),
+    lines:          batch.lines.map(lineToRow),
+  };
+}
+
+/** Returns total debit/credit/difference across all lines. */
+export function validateOpeningBalance(
+  lines: Pick<OpeningBalanceLineRow, "debit" | "credit">[],
+): OpeningBalanceSummary {
+  const totalDebit  = lines.reduce((s, l) => s + l.debit,  0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+  const difference  = Math.abs(totalDebit - totalCredit);
+  return { totalDebit, totalCredit, difference, isBalanced: difference < 0.005 };
+}
+
+// ── Reads ─────────────────────────────────────────────────────────────────────
+
+/** Returns the tenant's current opening balance batch (most recent) with all lines. */
+export async function getOpeningBalance(
+  tenantId: string,
+): Promise<OpeningBalanceBatchRow | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const batch = await (prisma as any).openingBalanceBatch.findFirst({
+    where:   { tenantId },
+    include: { lines: { orderBy: { createdAt: "asc" } } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!batch) return null;
+  return batchToRow(batch);
+}
+
+/** Returns lines for a specific account category within the latest batch. */
+export async function getOpeningBalanceAccountDetails(
+  tenantId:        string,
+  accountCategory: string,
+): Promise<OpeningBalanceLineRow[]> {
+  const batch = await getOpeningBalance(tenantId);
+  if (!batch) return [];
+  return batch.lines.filter(
+    (l) => (l.accountCategory ?? "").toLowerCase() === accountCategory.toLowerCase(),
+  );
+}
+
+// ── Writes ────────────────────────────────────────────────────────────────────
+
+/** Creates a new DRAFT opening balance batch.
+ *  Only one active batch per tenant is recommended; a second call will succeed
+ *  but the UI surfaces only the latest. */
+export async function createOpeningBalanceDraft(
+  tenantId: string,
+  data:     CreateOpeningBalanceDraftInput,
+): Promise<OpeningBalanceBatchRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const batch = await (prisma as any).openingBalanceBatch.create({
+    data: {
+      tenantId,
+      migrationDate: new Date(data.migrationDate),
+      status:        "DRAFT",
+      notes:         data.notes ?? null,
+    },
+    include: { lines: true },
+  });
+  return batchToRow(batch);
+}
+
+/** Updates migration date / notes on a DRAFT batch. */
+export async function updateOpeningBalanceDraft(
+  tenantId: string,
+  batchId:  string,
+  data:     UpdateOpeningBalanceDraftInput,
+): Promise<OpeningBalanceBatchRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const existing = await (prisma as any).openingBalanceBatch.findFirst({
+    where: { id: batchId, tenantId },
+  });
+  if (!existing) throw new Error("Opening balance not found.");
+  if (existing.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be edited.");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const batch = await (prisma as any).openingBalanceBatch.update({
+    where: { id: batchId },
+    data: {
+      ...(data.migrationDate !== undefined && {
+        migrationDate: new Date(data.migrationDate),
+      }),
+      ...(data.notes !== undefined && { notes: data.notes }),
+    },
+    include: { lines: { orderBy: { createdAt: "asc" } } },
+  });
+  return batchToRow(batch);
+}
+
+/** Adds a line to a DRAFT batch. */
+export async function addOpeningBalanceLine(
+  tenantId: string,
+  batchId:  string,
+  data:     AddOpeningBalanceLineInput,
+): Promise<OpeningBalanceLineRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const batch = await (prisma as any).openingBalanceBatch.findFirst({
+    where: { id: batchId, tenantId },
+  });
+  if (!batch) throw new Error("Opening balance not found.");
+  if (batch.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be edited.");
+
+  const debit  = data.debit  ?? 0;
+  const credit = data.credit ?? 0;
+  if (debit < 0 || credit < 0)    throw new Error("Debit and credit must be non-negative.");
+  if (debit > 0 && credit > 0)    throw new Error("A line cannot have both a debit and a credit value.");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const line = await (prisma as any).openingBalanceLine.create({
+    data: {
+      batchId,
+      tenantId,
+      lineType:        data.lineType ?? "ACCOUNT",
+      accountId:       data.accountId    ?? null,
+      customerId:      data.customerId   ?? null,
+      vendorId:        data.vendorId     ?? null,
+      bankAccountId:   data.bankAccountId ?? null,
+      label:           data.label,
+      accountCategory: data.accountCategory ?? null,
+      currency:        data.currency     ?? "NGN",
+      exchangeRate:    data.exchangeRate ?? 1,
+      debit,
+      credit,
+    },
+  });
+  return lineToRow(line);
+}
+
+/** Updates a single line on a DRAFT batch. */
+export async function updateOpeningBalanceLine(
+  tenantId: string,
+  batchId:  string,
+  lineId:   string,
+  data:     UpdateOpeningBalanceLineInput,
+): Promise<OpeningBalanceLineRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const line = await (prisma as any).openingBalanceLine.findFirst({
+    where: { id: lineId, batchId, tenantId },
+    include: { batch: { select: { status: true } } },
+  });
+  if (!line) throw new Error("Opening balance line not found.");
+  if (line.batch.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be edited.");
+
+  const newDebit  = data.debit  !== undefined ? data.debit  : Number(line.debit);
+  const newCredit = data.credit !== undefined ? data.credit : Number(line.credit);
+  if (newDebit < 0 || newCredit < 0)      throw new Error("Debit and credit must be non-negative.");
+  if (newDebit > 0 && newCredit > 0)      throw new Error("A line cannot have both a debit and a credit value.");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = await (prisma as any).openingBalanceLine.update({
+    where: { id: lineId },
+    data: {
+      ...(data.accountId      !== undefined && { accountId:      data.accountId      }),
+      ...(data.customerId     !== undefined && { customerId:     data.customerId     }),
+      ...(data.vendorId       !== undefined && { vendorId:       data.vendorId       }),
+      ...(data.bankAccountId  !== undefined && { bankAccountId:  data.bankAccountId  }),
+      ...(data.label          !== undefined && { label:          data.label          }),
+      ...(data.accountCategory !== undefined && { accountCategory: data.accountCategory }),
+      ...(data.currency       !== undefined && { currency:       data.currency       }),
+      ...(data.exchangeRate   !== undefined && { exchangeRate:   data.exchangeRate   }),
+      debit:  newDebit,
+      credit: newCredit,
+    },
+  });
+  return lineToRow(updated);
+}
+
+/** Deletes a line from a DRAFT batch. */
+export async function deleteOpeningBalanceLine(
+  tenantId: string,
+  batchId:  string,
+  lineId:   string,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const line = await (prisma as any).openingBalanceLine.findFirst({
+    where: { id: lineId, batchId, tenantId },
+    include: { batch: { select: { status: true } } },
+  });
+  if (!line) throw new Error("Opening balance line not found.");
+  if (line.batch.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be edited.");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (prisma as any).openingBalanceLine.delete({ where: { id: lineId } });
+}
+
+/**
+ * Finalises the opening balance:
+ * 1. Validates balance (DR = CR).
+ * 2. Verifies all lines have an accountId.
+ * 3. Posts a balanced opening journal entry via lib/accounting/journals.
+ * 4. Marks the batch FINALISED.
+ *
+ * Throws with clear error messages for each invariant violation.
+ */
+export async function finaliseOpeningBalance(
+  tenantId: string,
+  batchId:  string,
+  userId:   string,
+): Promise<OpeningBalanceBatchRow> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = await (prisma as any).openingBalanceBatch.findFirst({
+    where:   { id: batchId, tenantId },
+    include: { lines: true },
+  });
+  if (!raw) throw new Error("Opening balance not found.");
+  if (raw.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be finalised.");
+
+  const lines = (raw.lines as Parameters<typeof lineToRow>[0][]).map(lineToRow);
+
+  if (lines.length === 0) {
+    throw new Error("Cannot finalise: no lines have been entered.");
+  }
+
+  const validation = validateOpeningBalance(lines);
+  if (!validation.isBalanced) {
+    throw new Error(
+      `Opening balances are not balanced. Difference: ${validation.difference.toFixed(2)} ` +
+      `(Debit ${validation.totalDebit.toFixed(2)} vs Credit ${validation.totalCredit.toFixed(2)}).`,
+    );
+  }
+
+  // Verify all lines have accountId before posting to ledger
+  const missingAccount = lines.filter((l) => !l.accountId);
+  if (missingAccount.length > 0) {
+    const names = missingAccount.slice(0, 3).map((l) => `"${l.label}"`).join(", ");
+    throw new Error(
+      `${missingAccount.length} line(s) have no account assigned: ${names}. ` +
+      "Assign a Chart of Accounts entry to every line before finalising.",
+    );
+  }
+
+  // Build canonical journal lines
+  const migrationDate    = raw.migrationDate as Date;
+  const recognitionPeriod =
+    `${migrationDate.getFullYear()}-${String(migrationDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const journalLines: JournalLineInput[] = [];
+  for (const line of lines) {
+    const rate   = line.exchangeRate;
+    const amtNgn = (amount: number) => Math.round(amount * rate * 100) / 100;
+
+    if (line.debit > 0) {
+      journalLines.push({
+        accountId:   line.accountId!,
+        direction:   "DR",
+        amountNgn:   amtNgn(line.debit),
+        description: line.label,
+      });
+    }
+    if (line.credit > 0) {
+      journalLines.push({
+        accountId:   line.accountId!,
+        direction:   "CR",
+        amountNgn:   amtNgn(line.credit),
+        description: line.label,
+      });
+    }
+  }
+
+  // Post journal entry — throws if period is closed or lines unbalanced
+  const entry = await postJournalEntry({
+    tenantId,
+    createdBy:         userId,
+    entryDate:         migrationDate,
+    reference:         "OPENING-BAL",
+    description:       "Opening Balances",
+    recognitionPeriod,
+    source:            "opening_balance",
+    sourceId:          batchId,
+    lines:             journalLines,
+  });
+
+  // Mark batch finalised
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updated = await (prisma as any).openingBalanceBatch.update({
+    where: { id: batchId },
+    data: {
+      status:         "FINALISED",
+      finalisedAt:    new Date(),
+      finalisedById:  userId,
+      journalEntryId: entry.id,
+    },
+    include: { lines: { orderBy: { createdAt: "asc" } } },
+  });
+  return batchToRow(updated);
+}
+
+/**
+ * Deletes a DRAFT opening balance batch and all its lines.
+ * Finalised batches cannot be deleted this way — reverse via journal if needed.
+ */
+export async function deleteOpeningBalanceDraft(
+  tenantId: string,
+  batchId:  string,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const batch = await (prisma as any).openingBalanceBatch.findFirst({
+    where: { id: batchId, tenantId },
+  });
+  if (!batch) throw new Error("Opening balance not found.");
+  if (batch.status !== "DRAFT") {
+    throw new Error(
+      "Finalised opening balances cannot be deleted. " +
+      "Reverse the opening journal entry from the Journal Entries module.",
+    );
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (prisma as any).openingBalanceBatch.delete({ where: { id: batchId } });
 }
