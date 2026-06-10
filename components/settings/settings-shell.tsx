@@ -70,7 +70,15 @@ export const SIDEBAR_NAV: NavSection[] = [
           { id: "setup-vendor-portal",     label: "Vendor Portal",    href: "/settings/setup-configurations/vendor-portal"    },
         ],
       },
-      { id: "customization", label: "Customization",          icon: Palette,   href: "/settings/customization" },
+      {
+        id: "customization", label: "Customization", icon: Palette,
+        children: [
+          { id: "customization-transaction-numbers", label: "Transaction Number Series", href: "/settings/customization/transaction-number-series" },
+          { id: "customization-pdf-templates",       label: "PDF Templates",             href: "/settings/customization/pdf-templates"             },
+          { id: "customization-email-templates",     label: "Email Templates",           href: "/settings/customization/email-templates"           },
+          { id: "customization-reporting-tags",      label: "Reporting Tags",            href: "/settings/customization/reporting-tags"            },
+        ],
+      },
       { id: "automation",    label: "Automation",             icon: Zap,       href: "/settings/automation"    },
     ],
   },

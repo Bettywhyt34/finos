@@ -99,7 +99,7 @@ const SETTINGS: SettingSection[] = [
         headerText:   "text-amber-700",
         headerBorder: "border-amber-100",
         items: [
-          { label: "Transaction Numbers", href: "/settings/transaction-numbers" },
+          { label: "Transaction Numbers", href: "/settings/customization/transaction-number-series" },
           { label: "PDF Templates",       href: "/settings/pdf-templates" },
           { label: "Email Templates",     href: "/settings/email-templates" },
           { label: "Reporting Tags",      href: "/settings/reporting-tags" },

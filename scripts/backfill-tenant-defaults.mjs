@@ -4,6 +4,7 @@
  * Covers:
  *   - 7 system payment terms (including Net 30 as default)
  *   - 10 system reminder rules
+ *   - 10 transaction number series (one per module)
  *
  * IDEMPOTENT — uses createMany({ skipDuplicates: true }) for every tenant.
  * The DB uniqueness constraints prevent duplicates; no counting/skipping logic
@@ -11,7 +12,7 @@
  * silently unchanged; tenants with partial records get the missing rows.
  *
  * Usage:
- *   node scripts/backfill-tenant-defaults.mjs
+ *   node --env-file=.env.local scripts/backfill-tenant-defaults.mjs
  *
  * Requires DATABASE_URL or DIRECT_URL in the environment (port 5432 session pooler).
  */
@@ -40,12 +41,12 @@ try {
 // ─── Default data ─────────────────────────────────────────────────────────────
 
 const PAYMENT_TERMS = [
-  { name: "Due on Receipt",        dueType: "DUE_ON_RECEIPT",  dueInDays: null, appliesTo: "BOTH", isDefault: false },
-  { name: "Net 15",                dueType: "FIXED_DAYS",      dueInDays: 15,   appliesTo: "BOTH", isDefault: false },
-  { name: "Net 30",                dueType: "FIXED_DAYS",      dueInDays: 30,   appliesTo: "BOTH", isDefault: true  },
-  { name: "Net 60",                dueType: "FIXED_DAYS",      dueInDays: 60,   appliesTo: "BOTH", isDefault: false },
-  { name: "Net 90",                dueType: "FIXED_DAYS",      dueInDays: 90,   appliesTo: "BOTH", isDefault: false },
-  { name: "Due end of the month",  dueType: "END_OF_MONTH",    dueInDays: null, appliesTo: "BOTH", isDefault: false },
+  { name: "Due on Receipt",        dueType: "DUE_ON_RECEIPT",    dueInDays: null, appliesTo: "BOTH", isDefault: false },
+  { name: "Net 15",                dueType: "FIXED_DAYS",        dueInDays: 15,   appliesTo: "BOTH", isDefault: false },
+  { name: "Net 30",                dueType: "FIXED_DAYS",        dueInDays: 30,   appliesTo: "BOTH", isDefault: true  },
+  { name: "Net 60",                dueType: "FIXED_DAYS",        dueInDays: 60,   appliesTo: "BOTH", isDefault: false },
+  { name: "Net 90",                dueType: "FIXED_DAYS",        dueInDays: 90,   appliesTo: "BOTH", isDefault: false },
+  { name: "Due end of the month",  dueType: "END_OF_MONTH",      dueInDays: null, appliesTo: "BOTH", isDefault: false },
   { name: "Due end of next month", dueType: "END_OF_NEXT_MONTH", dueInDays: null, appliesTo: "BOTH", isDefault: false },
 ];
 
@@ -62,10 +63,23 @@ const REMINDER_RULES = [
   { entityType: "BILL",    kind: "AUTOMATED", name: "Overdue Bill Reminder",         triggerBasis: "DUE_DATE",              direction: "AFTER",   offsetDays: 1  },
 ];
 
+const TRANSACTION_NUMBER_SERIES = [
+  { module: "INVOICE",          prefix: "INV",  nextNumber: 1, padLength: 5 },
+  { module: "CUSTOMER_PAYMENT", prefix: "PAY",  nextNumber: 1, padLength: 5 },
+  { module: "CREDIT_NOTE",      prefix: "CN",   nextNumber: 1, padLength: 5 },
+  { module: "BILL",             prefix: "BILL", nextNumber: 1, padLength: 5 },
+  { module: "VENDOR_PAYMENT",   prefix: "VPAY", nextNumber: 1, padLength: 5 },
+  { module: "JOURNAL",          prefix: "JNL",  nextNumber: 1, padLength: 5 },
+  { module: "ESTIMATE",         prefix: "EST",  nextNumber: 1, padLength: 5 },
+  { module: "PURCHASE_ORDER",   prefix: "PO",   nextNumber: 1, padLength: 5 },
+  { module: "VENDOR_CREDIT",    prefix: "VC",   nextNumber: 1, padLength: 5 },
+  { module: "DEBIT_NOTE",       prefix: "DN",   nextNumber: 1, padLength: 5 },
+];
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("=== Backfill: tenant defaults (payment terms + reminder rules) ===\n");
+  console.log("=== Backfill: tenant defaults (payment terms + reminder rules + transaction number series) ===\n");
 
   const tenants = await prisma.tenant.findMany({
     select: { id: true, name: true },
@@ -78,6 +92,8 @@ async function main() {
   let totalPtSkipped  = 0;
   let totalRrCreated  = 0;
   let totalRrSkipped  = 0;
+  let totalTnsCreated = 0;
+  let totalTnsSkipped = 0;
 
   for (const tenant of tenants) {
     // ── Payment terms ────────────────────────────────────────────────────────
@@ -121,20 +137,43 @@ async function main() {
     totalRrCreated += rrCreated;
     totalRrSkipped += rrSkipped;
 
+    // ── Transaction number series ─────────────────────────────────────────────
+    const tnsResult = await prisma.transactionNumberSeries.createMany({
+      skipDuplicates: true,
+      data: TRANSACTION_NUMBER_SERIES.map((s) => ({
+        tenantId:    tenant.id,
+        module:      s.module,
+        prefix:      s.prefix,
+        nextNumber:  s.nextNumber,
+        padLength:   s.padLength,
+        restartFreq: "NEVER",
+        isEnabled:   true,
+      })),
+    });
+
+    const tnsCreated = tnsResult.count;
+    const tnsSkipped = TRANSACTION_NUMBER_SERIES.length - tnsCreated;
+    totalTnsCreated += tnsCreated;
+    totalTnsSkipped += tnsSkipped;
+
     // ── Per-tenant summary ───────────────────────────────────────────────────
-    const ptStatus = ptCreated === 0 ? "already complete" : `${ptCreated} created`;
-    const rrStatus = rrCreated === 0 ? "already complete" : `${rrCreated} created`;
+    const ptStatus  = ptCreated  === 0 ? "already complete" : `${ptCreated} created`;
+    const rrStatus  = rrCreated  === 0 ? "already complete" : `${rrCreated} created`;
+    const tnsStatus = tnsCreated === 0 ? "already complete" : `${tnsCreated} created`;
     console.log(`  ${tenant.name} (${tenant.id.slice(0, 8)}…)`);
-    console.log(`    payment terms  : ${ptStatus}${ptSkipped > 0 ? `, ${ptSkipped} skipped` : ""}`);
-    console.log(`    reminder rules : ${rrStatus}${rrSkipped > 0 ? `, ${rrSkipped} skipped` : ""}`);
+    console.log(`    payment terms     : ${ptStatus}${ptSkipped   > 0 ? `, ${ptSkipped} skipped`   : ""}`);
+    console.log(`    reminder rules    : ${rrStatus}${rrSkipped   > 0 ? `, ${rrSkipped} skipped`   : ""}`);
+    console.log(`    number series     : ${tnsStatus}${tnsSkipped > 0 ? `, ${tnsSkipped} skipped`  : ""}`);
   }
 
   console.log("\n=== Summary ===");
-  console.log(`Tenants processed       : ${tenants.length}`);
-  console.log(`Payment terms  created  : ${totalPtCreated}`);
-  console.log(`Payment terms  skipped  : ${totalPtSkipped}`);
-  console.log(`Reminder rules created  : ${totalRrCreated}`);
-  console.log(`Reminder rules skipped  : ${totalRrSkipped}`);
+  console.log(`Tenants processed             : ${tenants.length}`);
+  console.log(`Payment terms  created        : ${totalPtCreated}`);
+  console.log(`Payment terms  skipped        : ${totalPtSkipped}`);
+  console.log(`Reminder rules created        : ${totalRrCreated}`);
+  console.log(`Reminder rules skipped        : ${totalRrSkipped}`);
+  console.log(`Transaction series created    : ${totalTnsCreated}`);
+  console.log(`Transaction series skipped    : ${totalTnsSkipped}`);
   console.log("\nBackfill complete.\n");
 }
 

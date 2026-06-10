@@ -21,8 +21,9 @@ import { prisma } from "@/lib/prisma";
 // because both expose the same model delegates.
 
 type DbClient = {
-  paymentTerm: Pick<typeof prisma.paymentTerm, "createMany">;
-  reminderRule: Pick<typeof prisma.reminderRule, "createMany">;
+  paymentTerm:             Pick<typeof prisma.paymentTerm,  "createMany">;
+  reminderRule:            Pick<typeof prisma.reminderRule, "createMany">;
+  transactionNumberSeries: Pick<typeof prisma.transactionNumberSeries, "createMany">;
 };
 
 // ─── Payment Terms ────────────────────────────────────────────────────────────
@@ -247,6 +248,34 @@ export async function seedDefaultReminderRulesForTenant(
   });
 }
 
+// ─── Transaction Number Series ────────────────────────────────────────────────
+
+/**
+ * Seeds the 10 default transaction number series for a tenant.
+ * Matches the rows inserted by scripts/migration-transaction-number-series.sql.
+ * Unique constraint: (tenantId, module).
+ */
+export async function seedDefaultTransactionNumberSeriesForTenant(
+  tenantId: string,
+  db: DbClient = prisma,
+): Promise<void> {
+  await db.transactionNumberSeries.createMany({
+    skipDuplicates: true,
+    data: [
+      { tenantId, module: "INVOICE" as never,          prefix: "INV",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "CUSTOMER_PAYMENT" as never, prefix: "PAY",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "CREDIT_NOTE" as never,      prefix: "CN",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "BILL" as never,             prefix: "BILL", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "VENDOR_PAYMENT" as never,   prefix: "VPAY", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "JOURNAL" as never,          prefix: "JNL",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "ESTIMATE" as never,         prefix: "EST",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "PURCHASE_ORDER" as never,   prefix: "PO",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "VENDOR_CREDIT" as never,    prefix: "VC",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "DEBIT_NOTE" as never,       prefix: "DN",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+    ],
+  });
+}
+
 // ─── Combined entry point ─────────────────────────────────────────────────────
 
 /**
@@ -268,4 +297,5 @@ export async function seedTenantDefaults(
 ): Promise<void> {
   await seedDefaultPaymentTermsForTenant(tenantId, db);
   await seedDefaultReminderRulesForTenant(tenantId, db);
+  await seedDefaultTransactionNumberSeriesForTenant(tenantId, db);
 }

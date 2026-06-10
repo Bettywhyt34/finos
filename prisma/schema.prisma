@@ -130,7 +130,8 @@ model Tenant {
   invitations            TenantInvitation[]
   paymentTerms           PaymentTerm[]
   openingBalanceBatches  OpeningBalanceBatch[]
-  reminderRules          ReminderRule[]
+  reminderRules               ReminderRule[]
+  transactionNumberSeries     TransactionNumberSeries[]
 
   @@map("tenants")
 }
@@ -1428,4 +1429,50 @@ model ReminderRule {
   @@index([tenantId, entityType])
   @@index([tenantId, isActive])
   @@map("reminder_rules")
+}
+
+// ─── Customization: Transaction Number Series ─────────────────────────────────
+
+enum TransactionModule {
+  INVOICE
+  CUSTOMER_PAYMENT
+  CREDIT_NOTE
+  BILL
+  VENDOR_PAYMENT
+  JOURNAL
+  ESTIMATE
+  PURCHASE_ORDER
+  VENDOR_CREDIT
+  DEBIT_NOTE
+
+  @@map("transaction_module_enum")
+}
+
+enum NumberRestartFrequency {
+  NEVER
+  MONTHLY
+  YEARLY
+
+  @@map("number_restart_frequency_enum")
+}
+
+model TransactionNumberSeries {
+  id            String                 @id @default(uuid())
+  tenantId      String                 @map("tenant_id")
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  module        TransactionModule      @map("module")
+  prefix        String                 @default("")
+  nextNumber    Int                    @default(1)  @map("next_number")
+  padLength     Int                    @default(5)  @map("pad_length")
+  restartFreq   NumberRestartFrequency @default(NEVER) @map("restart_freq")
+  lastResetDate DateTime?              @map("last_reset_date")
+  isEnabled     Boolean                @default(true) @map("is_enabled")
+
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, module])
+  @@index([tenantId])
+  @@map("transaction_number_series")
 }
