@@ -23,7 +23,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS opening_balance_batches (
   id                TEXT                            NOT NULL PRIMARY KEY,
-  tenant_id         TEXT                            NOT NULL
+  tenant_id         UUID                            NOT NULL
                       REFERENCES tenants(id) ON DELETE CASCADE,
   migration_date    TIMESTAMPTZ                     NOT NULL,
   status            opening_balance_status_enum     NOT NULL DEFAULT 'DRAFT',
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS opening_balance_lines (
   id               TEXT                               NOT NULL PRIMARY KEY,
   batch_id         TEXT                               NOT NULL
                      REFERENCES opening_balance_batches(id) ON DELETE CASCADE,
-  tenant_id        TEXT                               NOT NULL,
+  tenant_id        UUID                               NOT NULL,
   account_id       TEXT,                              -- FK to chart_of_accounts (optional until finalise)
   line_type        opening_balance_line_type_enum     NOT NULL DEFAULT 'ACCOUNT',
   customer_id      TEXT,                              -- FK to customers (CUSTOMER type)
@@ -100,14 +100,14 @@ ALTER TABLE opening_balance_lines   ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "ob_batches_tenant_isolation"
     ON opening_balance_batches
-    USING (tenant_id = current_setting('app.current_tenant', TRUE));
+    USING (tenant_id = current_setting('app.current_tenant', TRUE)::uuid);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 DO $$ BEGIN
   CREATE POLICY "ob_lines_tenant_isolation"
     ON opening_balance_lines
-    USING (tenant_id = current_setting('app.current_tenant', TRUE));
+    USING (tenant_id = current_setting('app.current_tenant', TRUE)::uuid);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

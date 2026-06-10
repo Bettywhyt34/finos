@@ -777,3 +777,220 @@ export async function deleteOpeningBalanceDraft(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (prisma as any).openingBalanceBatch.delete({ where: { id: batchId } });
 }
+
+// ─── Reminder Rules ───────────────────────────────────────────────────────────
+
+export type ReminderRuleRow = {
+  id:           string;
+  tenantId:     string;
+  entityType:   string;   // "INVOICE" | "BILL"
+  kind:         string;   // "MANUAL" | "AUTOMATED"
+  name:         string;
+  description:  string | null;
+  triggerBasis: string;   // "DUE_DATE" | "EXPECTED_PAYMENT_DATE" | "ISSUE_DATE"
+  direction:    string;   // "BEFORE" | "AFTER" | "ON_DATE"
+  offsetDays:   number;
+  isSystem:     boolean;
+  isActive:     boolean;
+  subject:      string | null;
+  body:         string | null;
+  createdAt:    string;
+  updatedAt:    string;
+};
+
+export type CreateReminderRuleInput = {
+  entityType:   string;
+  kind:         string;
+  name:         string;
+  description?: string | null;
+  triggerBasis: string;
+  direction:    string;
+  offsetDays:   number;
+  subject?:     string | null;
+  body?:        string | null;
+  isActive?:    boolean;
+};
+
+export type UpdateReminderRuleInput = {
+  name?:         string;
+  description?:  string | null;
+  triggerBasis?: string;
+  direction?:    string;
+  offsetDays?:   number;
+  subject?:      string | null;
+  body?:         string | null;
+  isActive?:     boolean;
+};
+
+function ruleToRow(r: {
+  id: string;
+  tenantId: string;
+  entityType: string;
+  kind: string;
+  name: string;
+  description: string | null;
+  triggerBasis: string;
+  direction: string;
+  offsetDays: number;
+  isSystem: boolean;
+  isActive: boolean;
+  subject: string | null;
+  body: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): ReminderRuleRow {
+  return {
+    id:           r.id,
+    tenantId:     r.tenantId,
+    entityType:   r.entityType as string,
+    kind:         r.kind as string,
+    name:         r.name,
+    description:  r.description,
+    triggerBasis: r.triggerBasis as string,
+    direction:    r.direction as string,
+    offsetDays:   r.offsetDays,
+    isSystem:     r.isSystem,
+    isActive:     r.isActive,
+    subject:      r.subject,
+    body:         r.body,
+    createdAt:    r.createdAt.toISOString(),
+    updatedAt:    r.updatedAt.toISOString(),
+  };
+}
+
+/** Returns all reminder rules for the tenant, optionally filtered by entityType. */
+export async function getReminderRules(
+  tenantId:    string,
+  entityType?: string,
+): Promise<ReminderRuleRow[]> {
+  const rows = await prisma.reminderRule.findMany({
+    where: {
+      tenantId,
+      ...(entityType ? { entityType: entityType as never } : {}),
+    },
+    orderBy: [
+      { isSystem: "desc" },
+      { entityType: "asc" },
+      { kind: "asc" },
+      { offsetDays: "asc" },
+      { name: "asc" },
+    ],
+  });
+  return rows.map(ruleToRow);
+}
+
+/** Creates a custom reminder rule. */
+export async function createReminderRule(
+  tenantId: string,
+  data:     CreateReminderRuleInput,
+): Promise<ReminderRuleRow> {
+  const row = await prisma.reminderRule.create({
+    data: {
+      tenantId,
+      entityType:   data.entityType   as never,
+      kind:         data.kind         as never,
+      name:         data.name,
+      description:  data.description  ?? null,
+      triggerBasis: data.triggerBasis as never,
+      direction:    data.direction    as never,
+      offsetDays:   data.offsetDays,
+      isSystem:     false,
+      isActive:     data.isActive     ?? false,
+      subject:      data.subject      ?? null,
+      body:         data.body         ?? null,
+    },
+  });
+  return ruleToRow(row);
+}
+
+/**
+ * Updates a reminder rule.
+ * System rules: only isActive / subject / body can be changed.
+ * Custom rules: full edit.
+ */
+export async function updateReminderRule(
+  tenantId: string,
+  ruleId:   string,
+  data:     UpdateReminderRuleInput,
+): Promise<ReminderRuleRow> {
+  const existing = await prisma.reminderRule.findFirst({
+    where: { id: ruleId, tenantId },
+  });
+  if (!existing) throw new Error("Reminder rule not found.");
+
+  if (existing.isSystem) {
+    const systemAllowed: (keyof UpdateReminderRuleInput)[] = ["isActive", "subject", "body"];
+    const badKey = (Object.keys(data) as (keyof UpdateReminderRuleInput)[])
+      .find((k) => !systemAllowed.includes(k) && data[k] !== undefined);
+    if (badKey) {
+      throw new Error("System reminder rules cannot have their core settings changed.");
+    }
+  }
+
+  const row = await prisma.reminderRule.update({
+    where: { id: ruleId },
+    data: {
+      ...(data.name         !== undefined && !existing.isSystem && { name:         data.name                   }),
+      ...(data.description  !== undefined && !existing.isSystem && { description:  data.description            }),
+      ...(data.triggerBasis !== undefined && !existing.isSystem && { triggerBasis: data.triggerBasis as never  }),
+      ...(data.direction    !== undefined && !existing.isSystem && { direction:    data.direction   as never   }),
+      ...(data.offsetDays   !== undefined && !existing.isSystem && { offsetDays:   data.offsetDays             }),
+      ...(data.isActive     !== undefined                       && { isActive:     data.isActive               }),
+      ...(data.subject      !== undefined                       && { subject:      data.subject                }),
+      ...(data.body         !== undefined                       && { body:         data.body                   }),
+    },
+  });
+  return ruleToRow(row);
+}
+
+/** Hard-deletes a custom reminder rule. System rules cannot be deleted. */
+export async function deleteReminderRule(
+  tenantId: string,
+  ruleId:   string,
+): Promise<void> {
+  const existing = await prisma.reminderRule.findFirst({
+    where: { id: ruleId, tenantId },
+  });
+  if (!existing) throw new Error("Reminder rule not found.");
+  if (existing.isSystem) throw new Error("System reminder rules cannot be deleted.");
+
+  await prisma.reminderRule.delete({ where: { id: ruleId } });
+}
+
+/** Toggles the isActive flag on any reminder rule (system or custom). */
+export async function toggleReminderRule(
+  tenantId: string,
+  ruleId:   string,
+  isActive: boolean,
+): Promise<ReminderRuleRow> {
+  const existing = await prisma.reminderRule.findFirst({
+    where: { id: ruleId, tenantId },
+  });
+  if (!existing) throw new Error("Reminder rule not found.");
+
+  const row = await prisma.reminderRule.update({
+    where: { id: ruleId },
+    data:  { isActive },
+  });
+  return ruleToRow(row);
+}
+
+/**
+ * Calculates the reminder trigger date from a base date and rule settings.
+ *
+ * BEFORE X days → baseDate − X days
+ * ON_DATE       → baseDate
+ * AFTER  X days → baseDate + X days
+ */
+export function calculateReminderDate(
+  baseDate:   Date,
+  rule: { direction: string; offsetDays: number },
+): Date {
+  const d = new Date(baseDate);
+  switch (rule.direction) {
+    case "BEFORE":  d.setDate(d.getDate() - rule.offsetDays); return d;
+    case "ON_DATE": return d;
+    case "AFTER":   d.setDate(d.getDate() + rule.offsetDays); return d;
+    default:        return d;
+  }
+}

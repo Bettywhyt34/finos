@@ -130,6 +130,7 @@ model Tenant {
   invitations            TenantInvitation[]
   paymentTerms           PaymentTerm[]
   openingBalanceBatches  OpeningBalanceBatch[]
+  reminderRules          ReminderRule[]
 
   @@map("tenants")
 }
@@ -1364,4 +1365,67 @@ model OpeningBalanceLine {
   @@index([batchId])
   @@index([accountId])
   @@map("opening_balance_lines")
+}
+
+// ─── Reminder enums ───────────────────────────────────────────────────────────
+
+enum ReminderEntityType {
+  INVOICE
+  BILL
+
+  @@map("reminder_entity_type_enum")
+}
+
+enum ReminderKind {
+  MANUAL
+  AUTOMATED
+
+  @@map("reminder_kind_enum")
+}
+
+enum ReminderTriggerBasis {
+  DUE_DATE
+  EXPECTED_PAYMENT_DATE
+  ISSUE_DATE
+
+  @@map("reminder_trigger_basis_enum")
+}
+
+enum ReminderDirection {
+  BEFORE
+  AFTER
+  ON_DATE
+
+  @@map("reminder_direction_enum")
+}
+
+// ─── ReminderRule model ───────────────────────────────────────────────────────
+
+model ReminderRule {
+  id            String               @id @default(cuid())
+  tenantId      String               @map("tenant_id")
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  entityType    ReminderEntityType   @map("entity_type")
+  kind          ReminderKind         @default(AUTOMATED) @map("kind")
+  name          String
+  description   String?
+  triggerBasis  ReminderTriggerBasis @default(DUE_DATE) @map("trigger_basis")
+  direction     ReminderDirection    @default(AFTER) @map("direction")
+  offsetDays    Int                  @default(0) @map("offset_days")
+
+  isSystem      Boolean              @default(false) @map("is_system")
+  isActive      Boolean              @default(false) @map("is_active")
+
+  subject       String?
+  body          String?
+
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, entityType, name])
+  @@index([tenantId])
+  @@index([tenantId, entityType])
+  @@index([tenantId, isActive])
+  @@map("reminder_rules")
 }
