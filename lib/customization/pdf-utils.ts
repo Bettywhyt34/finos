@@ -74,8 +74,27 @@ export const PDF_DOC_TYPE_ORDER: PdfTemplateDocumentTypeValue[] = [
 ];
 
 export const LAYOUT_KEYS: { value: string; label: string }[] = [
-  { value: "standard", label: "Standard" },
-  { value: "compact",  label: "Compact"  },
-  { value: "modern",   label: "Modern"   },
-  { value: "classic",  label: "Classic"  },
+  { value: "standard",                   label: "Standard"             },
+  { value: "compact",                    label: "Compact"              },
+  { value: "modern",                     label: "Modern"               },
+  { value: "classic",                    label: "Classic"              },
+  { value: "professional_branded_invoice", label: "Professional Branded" },
 ];
+
+/**
+ * Config schema for the Professional Branded Invoice template.
+ * Semantic colour keys resolved at render time from org branding.
+ * Do NOT store the resolved hex colour here — only flags and fallbacks.
+ */
+export const PROFESSIONAL_BRANDED_CONFIG = {
+  useBrandAccent:                true,
+  primaryColorFallback:          "#1B3A6B",
+  tableHeaderUsesBrandAccent:    true,
+  sectionHeadingUsesBrandAccent: true,
+  alternateRowColor:             "#EBF1FA",
+  borderColor:                   "#CCCCCC",
+  showSubject:                   true,
+  showNotes:                     true,
+  showPaymentTerms:              true,
+  showWarranty:                  true,
+} as const;

@@ -205,6 +205,33 @@ async function main() {
     totalPdfCreated += pdfCreated;
     totalPdfSkipped += pdfSkipped;
 
+    // Professional Branded Invoice (INVOICE only)
+    await prisma.pdfTemplate.createMany({
+      skipDuplicates: true,
+      data: [{
+        tenantId:    tenant.id,
+        documentType: "INVOICE",
+        name:        "Professional Branded Invoice",
+        description: "EJC-style structured invoice: branded header, bill-to, item table, totals, notes, payment terms, warranty. Colours resolve from organisation branding.",
+        layoutKey:   "professional_branded_invoice",
+        isSystem:    true,
+        isDefault:   false,
+        isActive:    true,
+        config: {
+          useBrandAccent: true,
+          primaryColorFallback: "#1B3A6B",
+          tableHeaderUsesBrandAccent: true,
+          sectionHeadingUsesBrandAccent: true,
+          alternateRowColor: "#EBF1FA",
+          borderColor: "#CCCCCC",
+          showSubject: true,
+          showNotes: true,
+          showPaymentTerms: true,
+          showWarranty: true,
+        },
+      }],
+    });
+
     // ── Per-tenant summary ───────────────────────────────────────────────────
     const ptStatus  = ptCreated  === 0 ? "already complete" : `${ptCreated} created`;
     const rrStatus  = rrCreated  === 0 ? "already complete" : `${rrCreated} created`;

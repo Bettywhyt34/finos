@@ -309,6 +309,7 @@ export async function seedDefaultPdfTemplatesForTenant(
   tenantId: string,
   db: DbClient = prisma,
 ): Promise<void> {
+  // One "Standard Template" per document type (default)
   await db.pdfTemplate.createMany({
     skipDuplicates: true,
     data: PDF_TEMPLATE_DOCUMENT_TYPES.map((documentType) => ({
@@ -321,6 +322,33 @@ export async function seedDefaultPdfTemplatesForTenant(
       isDefault:    true,
       isActive:     true,
     })),
+  });
+
+  // Professional Branded Invoice — INVOICE only, not default, branded layout
+  await db.pdfTemplate.createMany({
+    skipDuplicates: true,
+    data: [{
+      tenantId,
+      documentType: "INVOICE" as never,
+      name:         "Professional Branded Invoice",
+      description:  "EJC-style structured invoice: branded header, bill-to, item table, totals, notes, payment terms, warranty. Colours resolve from organisation branding.",
+      layoutKey:    "professional_branded_invoice",
+      isSystem:     true,
+      isDefault:    false,
+      isActive:     true,
+      config:       {
+        useBrandAccent:                true,
+        primaryColorFallback:          "#1B3A6B",
+        tableHeaderUsesBrandAccent:    true,
+        sectionHeadingUsesBrandAccent: true,
+        alternateRowColor:             "#EBF1FA",
+        borderColor:                   "#CCCCCC",
+        showSubject:                   true,
+        showNotes:                     true,
+        showPaymentTerms:              true,
+        showWarranty:                  true,
+      } as never,
+    }],
   });
 }
 

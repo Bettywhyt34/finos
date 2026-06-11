@@ -27,7 +27,118 @@ interface Props {
 
 // ─── Mini document preview ─────────────────────────────────────────────────────
 
-function MiniDocPreview({ layoutKey }: { layoutKey: string }) {
+/** Professional Branded Invoice — branded header band, structured sections. */
+function MiniDocPreviewProfessional() {
+  return (
+    <div className="w-full aspect-[210/297] bg-white flex flex-col overflow-hidden select-none pointer-events-none text-[0px]">
+      {/* Full-width brand header band */}
+      <div
+        className="shrink-0 px-2 py-2"
+        style={{ backgroundColor: "var(--finos-accent)" }}
+      >
+        <div className="flex items-start justify-between gap-1">
+          {/* Company name area */}
+          <div className="space-y-[3px]">
+            <div className="h-[6px] w-14 bg-white/70 rounded" />
+            <div className="h-[3px] w-9 bg-white/40 rounded" />
+            <div className="h-[3px] w-10 bg-white/30 rounded" />
+          </div>
+          {/* INVOICE title + ref */}
+          <div className="text-right space-y-[3px]">
+            <div className="h-[7px] w-12 bg-white/80 rounded" />
+            <div className="h-[3px] w-8 bg-white/50 rounded ml-auto" />
+          </div>
+        </div>
+        {/* Balance Due inside header */}
+        <div className="mt-2 flex items-center justify-end gap-1.5">
+          <div className="h-[3px] w-10 bg-white/40 rounded" />
+          <div className="h-[5px] w-14 bg-white/65 rounded" />
+        </div>
+      </div>
+
+      {/* Thin divider line */}
+      <div className="h-[2px] bg-slate-100" />
+
+      {/* Bill To + meta row */}
+      <div className="px-2 py-1.5 flex gap-2">
+        <div className="flex-1 space-y-[3px]">
+          <div className="h-[3px] w-5 bg-slate-300 rounded" />
+          <div className="h-[4px] w-12 bg-slate-400 rounded" />
+        </div>
+        <div className="space-y-[3px]">
+          <div className="h-[3px] w-14 bg-slate-200 rounded" />
+          <div className="h-[3px] w-14 bg-slate-200 rounded" />
+          <div className="h-[3px] w-14 bg-slate-200 rounded" />
+        </div>
+      </div>
+
+      {/* Subject line */}
+      <div className="px-2 pb-1">
+        <div className="h-[3px] w-20 bg-slate-100 rounded" />
+      </div>
+
+      <div className="border-t border-slate-100 mx-2" />
+
+      {/* Table header — brand colour */}
+      <div className="mx-2 mt-1">
+        <div
+          className="flex gap-[2px] rounded-t overflow-hidden"
+          style={{ backgroundColor: "var(--finos-accent)" }}
+        >
+          <div className="h-[5px] w-2" />
+          <div className="h-[5px] flex-1" />
+          <div className="h-[5px] w-3" />
+          <div className="h-[5px] w-4" />
+          <div className="h-[5px] w-4" />
+        </div>
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className={cn("flex gap-[2px]", i % 2 === 0 ? "bg-white" : "bg-[#EBF1FA]")}
+          >
+            <div className="h-[4px] w-2 bg-slate-200" />
+            <div className="h-[4px] flex-1 bg-slate-100" />
+            <div className="h-[4px] w-3 bg-slate-100" />
+            <div className="h-[4px] w-4 bg-slate-100" />
+            <div className="h-[4px] w-4 bg-slate-100" />
+          </div>
+        ))}
+      </div>
+
+      {/* Totals */}
+      <div className="px-2 pt-1.5 border-t border-slate-100 mx-2 space-y-[3px]">
+        {["w-5", "w-5"].map((w, i) => (
+          <div key={i} className="flex justify-end gap-2">
+            <div className="h-[3px] w-8 bg-slate-200 rounded" />
+            <div className={cn("h-[3px] bg-slate-200 rounded", w)} />
+          </div>
+        ))}
+        {/* Total row */}
+        <div className="flex justify-end gap-2">
+          <div className="h-[4px] w-8 rounded bg-[var(--finos-accent)]/30" />
+          <div className="h-[4px] w-6 rounded bg-[var(--finos-accent)]/30" />
+        </div>
+      </div>
+
+      {/* Notes + Payment Terms headings */}
+      <div className="px-2 mt-1.5 space-y-2 flex-1">
+        {["w-6", "w-10"].map((w, i) => (
+          <div key={i}>
+            <div
+              className={cn("h-[4px] rounded mb-[3px]", w)}
+              style={{ backgroundColor: "var(--finos-accent)", opacity: 0.7 }}
+            />
+            <div className="h-[3px] w-20 bg-slate-100 rounded mb-[2px]" />
+            <div className="h-[3px] w-14 bg-slate-100 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Standard / compact / modern / classic layouts. */
+function MiniDocPreviewGeneric({ layoutKey }: { layoutKey: string }) {
   const isModern  = layoutKey === "modern";
   const isCompact = layoutKey === "compact";
   return (
@@ -48,7 +159,7 @@ function MiniDocPreview({ layoutKey }: { layoutKey: string }) {
       {/* Doc title bar */}
       <div className={cn(
         "rounded bg-[var(--finos-accent)]/20",
-        isModern  ? "h-[7px] rounded-full"  : "h-[6px]",
+        isModern  ? "h-[7px] rounded-full" : "h-[6px]",
         isCompact && "h-[5px]",
       )} />
 
@@ -61,7 +172,6 @@ function MiniDocPreview({ layoutKey }: { layoutKey: string }) {
 
       {/* Line items */}
       <div className="mt-1 border-t border-slate-100 pt-1 space-y-[3px] flex-1">
-        {/* Header row */}
         <div className="flex gap-[3px]">
           <div className="h-[4px] bg-slate-200 rounded flex-1" />
           <div className="h-[4px] bg-slate-200 rounded w-4" />
@@ -89,6 +199,13 @@ function MiniDocPreview({ layoutKey }: { layoutKey: string }) {
       </div>
     </div>
   );
+}
+
+function MiniDocPreview({ layoutKey }: { layoutKey: string }) {
+  if (layoutKey === "professional_branded_invoice") {
+    return <MiniDocPreviewProfessional />;
+  }
+  return <MiniDocPreviewGeneric layoutKey={layoutKey} />;
 }
 
 // ─── Template card ────────────────────────────────────────────────────────────
