@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse }     from "next/server";
-import { auth }                          from "@/lib/auth";
 import { z }                             from "zod";
+import { requireAuth, requireMutationRole } from "@/lib/auth/guards";
 import {
   getPdfTemplateById,
   updatePdfTemplate,
@@ -19,13 +19,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { templateId: string } },
 ) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { ctx, response } = await requireAuth();
+  if (!ctx) return response;
 
   try {
-    const row = await getPdfTemplateById(session.user.tenantId!, params.templateId);
+    const row = await getPdfTemplateById(ctx.tenantId, params.templateId);
     if (!row) return NextResponse.json({ error: "Template not found." }, { status: 404 });
     return NextResponse.json({ data: row });
   } catch (err) {
@@ -39,15 +37,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { templateId: string } },
 ) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const role = (session.user as any).role as string | undefined;
-  if (role !== "OWNER" && role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
+  if (!ctx) return response;
 
   let body: unknown;
   try { body = await req.json(); } catch {
@@ -60,7 +51,7 @@ export async function PATCH(
   }
 
   try {
-    const row = await updatePdfTemplate(session.user.tenantId!, params.templateId, parsed.data);
+    const row = await updatePdfTemplate(ctx.tenantId, params.templateId, parsed.data);
     return NextResponse.json({ data: row });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -74,18 +65,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { templateId: string } },
 ) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const role = (session.user as any).role as string | undefined;
-  if (role !== "OWNER" && role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
+  if (!ctx) return response;
 
   try {
-    await deletePdfTemplate(session.user.tenantId!, params.templateId);
+    await deletePdfTemplate(ctx.tenantId, params.templateId);
     return NextResponse.json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse }             from "next/server";
-import { auth }                                 from "@/lib/auth";
 import { z }                                    from "zod";
+import { requireMutationRole }                  from "@/lib/auth/guards";
 import { updateTransactionNumberSeries }        from "@/lib/customization/service";
 
 const PatchSchema = z.object({
@@ -19,15 +19,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { seriesId: string } },
 ) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const role = (session.user as any).role as string | undefined;
-  if (role !== "OWNER" && role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
+  if (!ctx) return response;
 
   let body: unknown;
   try {
@@ -46,7 +39,7 @@ export async function PATCH(
 
   try {
     const updated = await updateTransactionNumberSeries(
-      session.user.tenantId!,
+      ctx.tenantId,
       params.seriesId,
       parsed.data,
     );

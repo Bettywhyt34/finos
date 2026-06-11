@@ -8,8 +8,9 @@
  *   Finalisation posts a balanced opening journal entry via lib/accounting/journals.ts.
  */
 
-import { prisma }           from "@/lib/prisma";
-import { CURRENCY_SYMBOLS } from "@/lib/fx";
+import { prisma }                      from "@/lib/prisma";
+import { OpeningBalanceLineType }       from "@prisma/client";
+import { CURRENCY_SYMBOLS }            from "@/lib/fx";
 import {
   postJournalEntry,
   type JournalLineInput,
@@ -486,8 +487,7 @@ export function validateOpeningBalance(
 export async function getOpeningBalance(
   tenantId: string,
 ): Promise<OpeningBalanceBatchRow | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const batch = await (prisma as any).openingBalanceBatch.findFirst({
+  const batch = await prisma.openingBalanceBatch.findFirst({
     where:   { tenantId },
     include: { lines: { orderBy: { createdAt: "asc" } } },
     orderBy: { createdAt: "desc" },
@@ -517,8 +517,7 @@ export async function createOpeningBalanceDraft(
   tenantId: string,
   data:     CreateOpeningBalanceDraftInput,
 ): Promise<OpeningBalanceBatchRow> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const batch = await (prisma as any).openingBalanceBatch.create({
+  const batch = await prisma.openingBalanceBatch.create({
     data: {
       tenantId,
       migrationDate: new Date(data.migrationDate),
@@ -536,15 +535,13 @@ export async function updateOpeningBalanceDraft(
   batchId:  string,
   data:     UpdateOpeningBalanceDraftInput,
 ): Promise<OpeningBalanceBatchRow> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const existing = await (prisma as any).openingBalanceBatch.findFirst({
+  const existing = await prisma.openingBalanceBatch.findFirst({
     where: { id: batchId, tenantId },
   });
   if (!existing) throw new Error("Opening balance not found.");
   if (existing.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be edited.");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const batch = await (prisma as any).openingBalanceBatch.update({
+  const batch = await prisma.openingBalanceBatch.update({
     where: { id: batchId },
     data: {
       ...(data.migrationDate !== undefined && {
@@ -563,8 +560,7 @@ export async function addOpeningBalanceLine(
   batchId:  string,
   data:     AddOpeningBalanceLineInput,
 ): Promise<OpeningBalanceLineRow> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const batch = await (prisma as any).openingBalanceBatch.findFirst({
+  const batch = await prisma.openingBalanceBatch.findFirst({
     where: { id: batchId, tenantId },
   });
   if (!batch) throw new Error("Opening balance not found.");
@@ -575,12 +571,11 @@ export async function addOpeningBalanceLine(
   if (debit < 0 || credit < 0)    throw new Error("Debit and credit must be non-negative.");
   if (debit > 0 && credit > 0)    throw new Error("A line cannot have both a debit and a credit value.");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const line = await (prisma as any).openingBalanceLine.create({
+  const line = await prisma.openingBalanceLine.create({
     data: {
       batchId,
       tenantId,
-      lineType:        data.lineType ?? "ACCOUNT",
+      lineType:        (data.lineType ?? "ACCOUNT") as OpeningBalanceLineType,
       accountId:       data.accountId    ?? null,
       customerId:      data.customerId   ?? null,
       vendorId:        data.vendorId     ?? null,
@@ -603,8 +598,7 @@ export async function updateOpeningBalanceLine(
   lineId:   string,
   data:     UpdateOpeningBalanceLineInput,
 ): Promise<OpeningBalanceLineRow> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const line = await (prisma as any).openingBalanceLine.findFirst({
+  const line = await prisma.openingBalanceLine.findFirst({
     where: { id: lineId, batchId, tenantId },
     include: { batch: { select: { status: true } } },
   });
@@ -616,8 +610,7 @@ export async function updateOpeningBalanceLine(
   if (newDebit < 0 || newCredit < 0)      throw new Error("Debit and credit must be non-negative.");
   if (newDebit > 0 && newCredit > 0)      throw new Error("A line cannot have both a debit and a credit value.");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updated = await (prisma as any).openingBalanceLine.update({
+  const updated = await prisma.openingBalanceLine.update({
     where: { id: lineId },
     data: {
       ...(data.accountId      !== undefined && { accountId:      data.accountId      }),
@@ -641,16 +634,14 @@ export async function deleteOpeningBalanceLine(
   batchId:  string,
   lineId:   string,
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const line = await (prisma as any).openingBalanceLine.findFirst({
+  const line = await prisma.openingBalanceLine.findFirst({
     where: { id: lineId, batchId, tenantId },
     include: { batch: { select: { status: true } } },
   });
   if (!line) throw new Error("Opening balance line not found.");
   if (line.batch.status !== "DRAFT") throw new Error("Only DRAFT opening balances can be edited.");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (prisma as any).openingBalanceLine.delete({ where: { id: lineId } });
+  await prisma.openingBalanceLine.delete({ where: { id: lineId } });
 }
 
 /**
@@ -667,8 +658,7 @@ export async function finaliseOpeningBalance(
   batchId:  string,
   userId:   string,
 ): Promise<OpeningBalanceBatchRow> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const raw = await (prisma as any).openingBalanceBatch.findFirst({
+  const raw = await prisma.openingBalanceBatch.findFirst({
     where:   { id: batchId, tenantId },
     include: { lines: true },
   });
@@ -741,8 +731,7 @@ export async function finaliseOpeningBalance(
   });
 
   // Mark batch finalised
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updated = await (prisma as any).openingBalanceBatch.update({
+  const updated = await prisma.openingBalanceBatch.update({
     where: { id: batchId },
     data: {
       status:         "FINALISED",
@@ -763,8 +752,7 @@ export async function deleteOpeningBalanceDraft(
   tenantId: string,
   batchId:  string,
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const batch = await (prisma as any).openingBalanceBatch.findFirst({
+  const batch = await prisma.openingBalanceBatch.findFirst({
     where: { id: batchId, tenantId },
   });
   if (!batch) throw new Error("Opening balance not found.");
@@ -774,8 +762,7 @@ export async function deleteOpeningBalanceDraft(
       "Reverse the opening journal entry from the Journal Entries module.",
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (prisma as any).openingBalanceBatch.delete({ where: { id: batchId } });
+  await prisma.openingBalanceBatch.delete({ where: { id: batchId } });
 }
 
 // ─── Reminder Rules ───────────────────────────────────────────────────────────

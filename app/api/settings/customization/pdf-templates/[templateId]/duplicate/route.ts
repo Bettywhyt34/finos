@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse }  from "next/server";
-import { auth }                       from "@/lib/auth";
-import { duplicatePdfTemplate }       from "@/lib/customization/pdf-service";
+import { requireMutationRole }       from "@/lib/auth/guards";
+import { duplicatePdfTemplate }      from "@/lib/customization/pdf-service";
 
 // POST /api/settings/customization/pdf-templates/[templateId]/duplicate
 export async function POST(
   _req: NextRequest,
   { params }: { params: { templateId: string } },
 ) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const role = (session.user as any).role as string | undefined;
-  if (role !== "OWNER" && role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
+  if (!ctx) return response;
 
   try {
-    const row = await duplicatePdfTemplate(session.user.tenantId!, params.templateId);
+    const row = await duplicatePdfTemplate(ctx.tenantId, params.templateId);
     return NextResponse.json({ data: row }, { status: 201 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
