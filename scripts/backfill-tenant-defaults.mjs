@@ -100,10 +100,87 @@ const PDF_TEMPLATE_DESCRIPTIONS = {
   ADDITIONAL_INFORMATION: "Default additional information template",
 };
 
+// ─── Email notification templates data ────────────────────────────────────────
+
+const EMAIL_NOTIFICATION_TEMPLATES = [
+  // SALES
+  { category: "SALES",     event: "INVOICE_SENT",              name: "Invoice Sent",                      isConnected: false,
+    subject: "Invoice {{invoice.number}} from {{organisation.name}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>Please find attached invoice {{invoice.number}} for {{invoice.total}}.</p><p>Balance due: {{invoice.balance_due}}<br>Due date: {{invoice.due_date}}</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{invoice.number}}","{{invoice.date}}","{{invoice.due_date}}","{{invoice.total}}","{{invoice.balance_due}}","{{customer.name}}","{{customer.company_name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}","{{organisation.address}}"] },
+  { category: "SALES",     event: "ESTIMATE_SENT",             name: "Estimate Sent",                     isConnected: false,
+    subject: "Estimate {{estimate.number}} from {{organisation.name}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>Please find attached estimate {{estimate.number}} for {{estimate.total}}.</p><p>This estimate is valid for 30 days. To accept, please reply to this email or contact us directly.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{estimate.number}}","{{estimate.date}}","{{estimate.total}}","{{customer.name}}","{{customer.company_name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}"] },
+  { category: "SALES",     event: "PAYMENT_RECEIPT_SENT",      name: "Payment Receipt Sent",              isConnected: false,
+    subject: "Payment received \u2013 Invoice {{invoice.number}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>We have received your payment of {{payment.amount}} on {{payment.date}} for invoice {{invoice.number}}.</p><p>Payment reference: {{payment.reference}}</p><p>Thank you for your prompt payment.</p><p>{{organisation.name}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{invoice.number}}","{{payment.amount}}","{{payment.date}}","{{payment.reference}}","{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}"] },
+  { category: "SALES",     event: "CREDIT_NOTE_SENT",          name: "Credit Note Sent",                  isConnected: false,
+    subject: "Credit Note {{credit_note.number}} from {{organisation.name}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>Please find attached credit note {{credit_note.number}} for {{credit_note.total}}.</p><p>This credit will be applied to your outstanding balance or refunded as agreed.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{credit_note.number}}","{{credit_note.total}}","{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}"] },
+  { category: "SALES",     event: "CUSTOMER_STATEMENT_SENT",   name: "Customer Statement Sent",           isConnected: false,
+    subject: "Account Statement from {{organisation.name}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>Please find attached your account statement as of {{statement.date}}.</p><p>Currency: {{tenant.currency}}</p><p>If you have any questions about your account, please contact us.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{statement.date}}","{{tenant.currency}}","{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}"] },
+  // PURCHASES
+  { category: "PURCHASES", event: "PURCHASE_ORDER_SENT",       name: "Purchase Order Sent",               isConnected: false,
+    subject: "Purchase Order {{purchase_order.number}} from {{organisation.name}}",
+    bodyHtml: "<p>Dear {{vendor.name}},</p><p>Please find attached purchase order {{purchase_order.number}} for your reference.</p><p>Total: {{purchase_order.total}}</p><p>Kindly confirm receipt and advise the expected delivery date.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{purchase_order.number}}","{{purchase_order.total}}","{{vendor.name}}","{{vendor.company_name}}","{{vendor.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}"] },
+  { category: "PURCHASES", event: "BILL_REMINDER",             name: "Bill Reminder",                     isConnected: false,
+    subject: "Payment Reminder \u2013 {{bill.number}}",
+    bodyHtml: "<p>Dear {{vendor.name}},</p><p>This is a reminder that bill {{bill.number}} for {{bill.total}} is due on {{bill.due_date}}.</p><p>Please ensure payment is arranged on time to avoid delays.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{bill.number}}","{{bill.date}}","{{bill.due_date}}","{{bill.total}}","{{bill.balance_due}}","{{vendor.name}}","{{vendor.email}}","{{organisation.name}}","{{organisation.email}}"] },
+  { category: "PURCHASES", event: "VENDOR_PAYMENT_ADVICE",     name: "Vendor Payment Advice",             isConnected: false,
+    subject: "Payment Advice \u2013 {{bill.number}} from {{organisation.name}}",
+    bodyHtml: "<p>Dear {{vendor.name}},</p><p>We are pleased to advise that payment of {{payment.amount}} has been processed on {{payment.date}} in settlement of bill {{bill.number}}.</p><p>Payment reference: {{payment.reference}}</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{bill.number}}","{{bill.total}}","{{payment.amount}}","{{payment.date}}","{{payment.reference}}","{{vendor.name}}","{{vendor.email}}","{{organisation.name}}","{{organisation.email}}"] },
+  { category: "PURCHASES", event: "VENDOR_CREDIT_SENT",        name: "Vendor Credit Sent",                isConnected: false,
+    subject: "Vendor Credit {{vendor_credit.number}} from {{organisation.name}}",
+    bodyHtml: "<p>Dear {{vendor.name}},</p><p>Please find attached vendor credit note {{vendor_credit.number}} for {{vendor_credit.total}}.</p><p>This credit has been raised on your account.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{vendor_credit.number}}","{{vendor_credit.total}}","{{vendor.name}}","{{vendor.email}}","{{organisation.name}}","{{organisation.email}}"] },
+  // REMINDERS
+  { category: "REMINDERS", event: "INVOICE_REMINDER_BEFORE_DUE", name: "Invoice Reminder - Before Due",     isConnected: false,
+    subject: "Reminder: Invoice {{invoice.number}} is due on {{invoice.due_date}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>This is a friendly reminder that invoice {{invoice.number}} for {{invoice.total}} is due on {{invoice.due_date}}.</p><p>Outstanding balance: {{invoice.balance_due}}</p><p>Please disregard this message if payment has already been made.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{invoice.number}}","{{invoice.date}}","{{invoice.due_date}}","{{invoice.total}}","{{invoice.balance_due}}","{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}"] },
+  { category: "REMINDERS", event: "INVOICE_REMINDER_ON_DUE",     name: "Invoice Reminder - On Due Date",    isConnected: false,
+    subject: "Due Today: Invoice {{invoice.number}} \u2013 {{invoice.balance_due}} outstanding",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>Invoice {{invoice.number}} for {{invoice.balance_due}} is due today, {{invoice.due_date}}.</p><p>Please arrange payment at your earliest convenience.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{invoice.number}}","{{invoice.due_date}}","{{invoice.total}}","{{invoice.balance_due}}","{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}"] },
+  { category: "REMINDERS", event: "INVOICE_REMINDER_AFTER_DUE",  name: "Invoice Reminder - After Due Date", isConnected: false,
+    subject: "Overdue: Invoice {{invoice.number}} was due on {{invoice.due_date}}",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>Invoice {{invoice.number}} for {{invoice.balance_due}} was due on {{invoice.due_date}} and remains unpaid.</p><p>Please arrange payment immediately or contact us to discuss.</p><p>Thank you,<br>{{organisation.name}}<br>{{organisation.phone}}<br>{{organisation.email}}</p>",
+    availableVariables: ["{{invoice.number}}","{{invoice.due_date}}","{{invoice.total}}","{{invoice.balance_due}}","{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{organisation.email}}","{{organisation.phone}}"] },
+  { category: "REMINDERS", event: "BILL_REMINDER_BEFORE_DUE",    name: "Bill Reminder - Before Due",        isConnected: false,
+    subject: "Upcoming Bill: {{bill.number}} is due on {{bill.due_date}}",
+    bodyHtml: "<p>Internal reminder: Bill {{bill.number}} from {{vendor.name}} for {{bill.total}} is due on {{bill.due_date}}.</p><p>Outstanding: {{bill.balance_due}}</p><p>Please ensure payment is arranged on time.</p><p>{{organisation.name}}</p>",
+    availableVariables: ["{{bill.number}}","{{bill.date}}","{{bill.due_date}}","{{bill.total}}","{{bill.balance_due}}","{{vendor.name}}","{{organisation.name}}"] },
+  { category: "REMINDERS", event: "BILL_REMINDER_ON_DUE",        name: "Bill Reminder - On Due Date",       isConnected: false,
+    subject: "Bill Due Today: {{bill.number}} \u2013 {{bill.balance_due}}",
+    bodyHtml: "<p>Internal reminder: Bill {{bill.number}} from {{vendor.name}} for {{bill.balance_due}} is due today.</p><p>Please process payment as soon as possible to avoid late fees.</p><p>{{organisation.name}}</p>",
+    availableVariables: ["{{bill.number}}","{{bill.due_date}}","{{bill.total}}","{{bill.balance_due}}","{{vendor.name}}","{{organisation.name}}"] },
+  { category: "REMINDERS", event: "BILL_REMINDER_AFTER_DUE",     name: "Bill Reminder - After Due Date",    isConnected: false,
+    subject: "Overdue Bill: {{bill.number}} \u2013 Immediate Payment Required",
+    bodyHtml: "<p>Internal alert: Bill {{bill.number}} from {{vendor.name}} for {{bill.balance_due}} was due on {{bill.due_date}} and has not been paid.</p><p>Please arrange payment immediately to avoid penalties.</p><p>{{organisation.name}}</p>",
+    availableVariables: ["{{bill.number}}","{{bill.due_date}}","{{bill.total}}","{{bill.balance_due}}","{{vendor.name}}","{{organisation.name}}"] },
+  // GENERAL
+  { category: "GENERAL",   event: "USER_INVITATION",           name: "User Invitation",                   isConnected: true,
+    subject: "You have been invited to join {{organisation.name}} on FINOS",
+    bodyHtml: "<p>Hello,</p><p>You have been invited to join {{organisation.name}} on FINOS.</p><p>Click the link below to accept your invitation and set up your account. This link expires in 48 hours.</p><p>{{invitation.link}}</p><p>If you did not expect this invitation, you can safely ignore this email.</p><p>{{organisation.name}}</p>",
+    availableVariables: ["{{organisation.name}}","{{organisation.email}}","{{invitation.link}}"] },
+  { category: "GENERAL",   event: "ORGANISATION_INVITATION",   name: "Organisation Invitation",           isConnected: false,
+    subject: "You are invited to access the {{organisation.name}} portal",
+    bodyHtml: "<p>Hello {{customer.name}},</p><p>You have been invited to access the {{organisation.name}} client portal on FINOS.</p><p>Click the link below to accept your invitation. This link expires in 48 hours.</p><p>{{invitation.link}}</p><p>If you did not expect this invitation, please ignore this email.</p><p>{{organisation.name}}</p>",
+    availableVariables: ["{{customer.name}}","{{customer.email}}","{{organisation.name}}","{{invitation.link}}"] },
+];
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("=== Backfill: tenant defaults (payment terms + reminder rules + TNS + PDF templates) ===\n");
+  console.log("=== Backfill: tenant defaults (payment terms + reminder rules + TNS + PDF templates + email notifications) ===\n");
 
   const tenants = await prisma.tenant.findMany({
     select: { id: true, name: true },
@@ -112,14 +189,16 @@ async function main() {
 
   console.log(`Tenants found: ${tenants.length}\n`);
 
-  let totalPtCreated  = 0;
-  let totalPtSkipped  = 0;
-  let totalRrCreated  = 0;
-  let totalRrSkipped  = 0;
-  let totalTnsCreated = 0;
-  let totalTnsSkipped = 0;
-  let totalPdfCreated = 0;
-  let totalPdfSkipped = 0;
+  let totalPtCreated   = 0;
+  let totalPtSkipped   = 0;
+  let totalRrCreated   = 0;
+  let totalRrSkipped   = 0;
+  let totalTnsCreated  = 0;
+  let totalTnsSkipped  = 0;
+  let totalPdfCreated  = 0;
+  let totalPdfSkipped  = 0;
+  let totalEntCreated  = 0;
+  let totalEntSkipped  = 0;
 
   for (const tenant of tenants) {
     // ── Payment terms ────────────────────────────────────────────────────────
@@ -232,16 +311,41 @@ async function main() {
       }],
     });
 
+    // ── Email notification templates ─────────────────────────────────────────
+    const entResult = await prisma.emailNotificationTemplate.createMany({
+      skipDuplicates: true,
+      data: EMAIL_NOTIFICATION_TEMPLATES.map((t) => ({
+        tenantId:           tenant.id,
+        category:           t.category,
+        event:              t.event,
+        name:               t.name,
+        subject:            t.subject,
+        bodyHtml:           t.bodyHtml,
+        isEnabled:          true,
+        isSystem:           true,
+        isCustomised:       false,
+        isConnected:        t.isConnected,
+        availableVariables: t.availableVariables,
+      })),
+    });
+
+    const entCreated = entResult.count;
+    const entSkipped = EMAIL_NOTIFICATION_TEMPLATES.length - entCreated;
+    totalEntCreated += entCreated;
+    totalEntSkipped += entSkipped;
+
     // ── Per-tenant summary ───────────────────────────────────────────────────
     const ptStatus  = ptCreated  === 0 ? "already complete" : `${ptCreated} created`;
     const rrStatus  = rrCreated  === 0 ? "already complete" : `${rrCreated} created`;
     const tnsStatus = tnsCreated === 0 ? "already complete" : `${tnsCreated} created`;
     const pdfStatus = pdfCreated === 0 ? "already complete" : `${pdfCreated} created`;
+    const entStatus = entCreated === 0 ? "already complete" : `${entCreated} created`;
     console.log(`  ${tenant.name} (${tenant.id.slice(0, 8)}…)`);
     console.log(`    payment terms     : ${ptStatus}${ptSkipped   > 0 ? `, ${ptSkipped} skipped`   : ""}`);
     console.log(`    reminder rules    : ${rrStatus}${rrSkipped   > 0 ? `, ${rrSkipped} skipped`   : ""}`);
     console.log(`    number series     : ${tnsStatus}${tnsSkipped > 0 ? `, ${tnsSkipped} skipped`  : ""}`);
     console.log(`    pdf templates     : ${pdfStatus}${pdfSkipped > 0 ? `, ${pdfSkipped} skipped`  : ""}`);
+    console.log(`    email notifs      : ${entStatus}${entSkipped > 0 ? `, ${entSkipped} skipped`  : ""}`);
   }
 
   console.log("\n=== Summary ===");
@@ -254,6 +358,8 @@ async function main() {
   console.log(`Transaction series skipped    : ${totalTnsSkipped}`);
   console.log(`PDF templates  created        : ${totalPdfCreated}`);
   console.log(`PDF templates  skipped        : ${totalPdfSkipped}`);
+  console.log(`Email notifs   created        : ${totalEntCreated}`);
+  console.log(`Email notifs   skipped        : ${totalEntSkipped}`);
   console.log("\nBackfill complete.\n");
 }
 

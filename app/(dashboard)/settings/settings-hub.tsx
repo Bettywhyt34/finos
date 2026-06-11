@@ -101,7 +101,7 @@ const SETTINGS: SettingSection[] = [
         items: [
           { label: "Transaction Numbers", href: "/settings/customization/transaction-number-series" },
           { label: "PDF Templates",       href: "/settings/customization/pdf-templates" },
-          { label: "Email Templates",     href: "/settings/customization/email-templates" },
+          { label: "Email Notifications", href: "/settings/customization/email-notifications" },
           { label: "Reporting Tags",      href: "/settings/customization/reporting-tags" },
         ],
       },

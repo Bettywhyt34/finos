@@ -10,7 +10,7 @@ function getActiveItem(pathname: string): string {
   if (pathname.includes("/customization/pdf-templates")) {
     return "customization-pdf-templates";
   }
-  if (pathname.includes("/customization/email-templates")) {
+  if (pathname.includes("/customization/email-notifications")) {
     return "customization-email-templates";
   }
   if (pathname.includes("/customization/reporting-tags")) {
@@ -22,7 +22,7 @@ function getActiveItem(pathname: string): string {
 const BREADCRUMBS: Record<string, string> = {
   "customization-transaction-numbers": "Transaction Number Series",
   "customization-pdf-templates":       "PDF Templates",
-  "customization-email-templates":     "Email Templates",
+  "customization-email-templates":     "Email Notifications",
   "customization-reporting-tags":      "Reporting Tags",
 };
 

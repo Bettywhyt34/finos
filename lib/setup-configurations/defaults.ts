@@ -13,6 +13,11 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import {
+  SYSTEM_EMAIL_DEFAULTS,
+  VARIABLES_BY_EVENT,
+} from "@/lib/email-notifications/template-renderer";
+import type { EmailNotificationEvent } from "@/lib/email-notifications/template-renderer";
 
 // ─── Shared db type ───────────────────────────────────────────────────────────
 //
@@ -352,6 +357,63 @@ export async function seedDefaultPdfTemplatesForTenant(
   });
 }
 
+// ─── Email Notification Templates ─────────────────────────────────────────────
+
+const EMAIL_EVENT_META: {
+  event:       EmailNotificationEvent;
+  category:    string;
+  name:        string;
+  isConnected: boolean;
+}[] = [
+  { event: "INVOICE_SENT",                category: "SALES",     name: "Invoice Sent",                      isConnected: false },
+  { event: "ESTIMATE_SENT",               category: "SALES",     name: "Estimate Sent",                     isConnected: false },
+  { event: "PAYMENT_RECEIPT_SENT",        category: "SALES",     name: "Payment Receipt Sent",              isConnected: false },
+  { event: "CREDIT_NOTE_SENT",            category: "SALES",     name: "Credit Note Sent",                  isConnected: false },
+  { event: "CUSTOMER_STATEMENT_SENT",     category: "SALES",     name: "Customer Statement Sent",           isConnected: false },
+  { event: "PURCHASE_ORDER_SENT",         category: "PURCHASES", name: "Purchase Order Sent",               isConnected: false },
+  { event: "BILL_REMINDER",               category: "PURCHASES", name: "Bill Reminder",                     isConnected: false },
+  { event: "VENDOR_PAYMENT_ADVICE",       category: "PURCHASES", name: "Vendor Payment Advice",             isConnected: false },
+  { event: "VENDOR_CREDIT_SENT",          category: "PURCHASES", name: "Vendor Credit Sent",                isConnected: false },
+  { event: "INVOICE_REMINDER_BEFORE_DUE", category: "REMINDERS", name: "Invoice Reminder - Before Due",     isConnected: false },
+  { event: "INVOICE_REMINDER_ON_DUE",     category: "REMINDERS", name: "Invoice Reminder - On Due Date",    isConnected: false },
+  { event: "INVOICE_REMINDER_AFTER_DUE",  category: "REMINDERS", name: "Invoice Reminder - After Due Date", isConnected: false },
+  { event: "BILL_REMINDER_BEFORE_DUE",    category: "REMINDERS", name: "Bill Reminder - Before Due",        isConnected: false },
+  { event: "BILL_REMINDER_ON_DUE",        category: "REMINDERS", name: "Bill Reminder - On Due Date",       isConnected: false },
+  { event: "BILL_REMINDER_AFTER_DUE",     category: "REMINDERS", name: "Bill Reminder - After Due Date",    isConnected: false },
+  { event: "USER_INVITATION",             category: "GENERAL",   name: "User Invitation",                   isConnected: true  },
+  { event: "ORGANISATION_INVITATION",     category: "GENERAL",   name: "Organisation Invitation",           isConnected: false },
+];
+
+/**
+ * Seeds the 17 system email notification templates for a tenant.
+ * Unique constraint: (tenantId, event).
+ */
+export async function seedDefaultEmailNotificationTemplatesForTenant(
+  tenantId: string,
+  db: DbClient = prisma,
+): Promise<void> {
+  await (db as any).emailNotificationTemplate.createMany({
+    skipDuplicates: true,
+    data: EMAIL_EVENT_META.map((meta) => {
+      const defaults = SYSTEM_EMAIL_DEFAULTS[meta.event];
+      const vars     = VARIABLES_BY_EVENT[meta.event] ?? [];
+      return {
+        tenantId,
+        category:           meta.category as never,
+        event:              meta.event    as never,
+        name:               meta.name,
+        subject:            defaults.subject,
+        bodyHtml:           defaults.bodyHtml,
+        isEnabled:          true,
+        isSystem:           true,
+        isCustomised:       false,
+        isConnected:        meta.isConnected,
+        availableVariables: vars,
+      };
+    }),
+  });
+}
+
 // ─── Combined entry point ─────────────────────────────────────────────────────
 
 /**
@@ -375,4 +437,5 @@ export async function seedTenantDefaults(
   await seedDefaultReminderRulesForTenant(tenantId, db);
   await seedDefaultTransactionNumberSeriesForTenant(tenantId, db);
   await seedDefaultPdfTemplatesForTenant(tenantId, db);
+  await seedDefaultEmailNotificationTemplatesForTenant(tenantId, db);
 }

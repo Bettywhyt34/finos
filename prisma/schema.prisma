@@ -133,6 +133,7 @@ model Tenant {
   reminderRules               ReminderRule[]
   transactionNumberSeries     TransactionNumberSeries[]
   pdfTemplates                PdfTemplate[]
+  emailNotificationTemplates  EmailNotificationTemplate[]
 
   @@map("tenants")
 }
@@ -1524,4 +1525,66 @@ model PdfTemplate {
   @@index([tenantId])
   @@index([tenantId, documentType])
   @@map("pdf_templates")
+}
+
+// ─── Email Notification Templates ─────────────────────────────────────────────
+
+enum EmailNotificationCategory {
+  SALES
+  PURCHASES
+  REMINDERS
+  GENERAL
+
+  @@map("email_notification_category_enum")
+}
+
+enum EmailNotificationEvent {
+  ESTIMATE_SENT
+  INVOICE_SENT
+  PAYMENT_RECEIPT_SENT
+  CREDIT_NOTE_SENT
+  CUSTOMER_STATEMENT_SENT
+  PURCHASE_ORDER_SENT
+  BILL_REMINDER
+  VENDOR_PAYMENT_ADVICE
+  VENDOR_CREDIT_SENT
+  INVOICE_REMINDER_BEFORE_DUE
+  INVOICE_REMINDER_ON_DUE
+  INVOICE_REMINDER_AFTER_DUE
+  BILL_REMINDER_BEFORE_DUE
+  BILL_REMINDER_ON_DUE
+  BILL_REMINDER_AFTER_DUE
+  USER_INVITATION
+  ORGANISATION_INVITATION
+
+  @@map("email_notification_event_enum")
+}
+
+model EmailNotificationTemplate {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  category EmailNotificationCategory
+  event    EmailNotificationEvent
+  name     String
+  subject  String
+  bodyHtml String  @map("body_html")
+  bodyText String? @map("body_text")
+
+  isEnabled    Boolean @default(true)  @map("is_enabled")
+  isSystem     Boolean @default(true)  @map("is_system")
+  isCustomised Boolean @default(false) @map("is_customised")
+  isConnected  Boolean @default(false) @map("is_connected")
+
+  availableVariables Json @default("[]") @map("available_variables")
+  config             Json @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, event])
+  @@index([tenantId])
+  @@index([tenantId, category])
+  @@map("email_notification_templates")
 }

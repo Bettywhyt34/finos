@@ -75,7 +75,7 @@ export const SIDEBAR_NAV: NavSection[] = [
         children: [
           { id: "customization-transaction-numbers", label: "Transaction Number Series", href: "/settings/customization/transaction-number-series" },
           { id: "customization-pdf-templates",       label: "PDF Templates",             href: "/settings/customization/pdf-templates"             },
-          { id: "customization-email-templates",     label: "Email Templates",           href: "/settings/customization/email-templates"           },
+          { id: "customization-email-templates",     label: "Email Notifications",       href: "/settings/customization/email-notifications"       },
           { id: "customization-reporting-tags",      label: "Reporting Tags",            href: "/settings/customization/reporting-tags"            },
         ],
       },
