@@ -75,7 +75,7 @@ ALTER TABLE email_notification_templates ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS ent_tenant_isolation ON email_notification_templates;
 CREATE POLICY ent_tenant_isolation ON email_notification_templates
-  USING (tenant_id = current_setting('app.current_tenant', true));
+  USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 -- ─── updated_at trigger ───────────────────────────────────────────────────────
 
