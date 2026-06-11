@@ -133,8 +133,17 @@ export async function sendInvoice(id: string, dateSent?: string) {
     data: { status: "SENT", sentAt },
   });
 
-  // Fire-and-forget: email failure must not block the status update
-  void sendInvoiceEmail({ tenantId: orgId, invoiceId: id }).catch(() => {});
+  // Fire-and-forget: email failure must not block the status update.
+  // TODO: replace console logs with email delivery log table (future audit improvement).
+  void sendInvoiceEmail({ tenantId: orgId, invoiceId: id })
+    .then((result) => {
+      if (!result.sent) {
+        console.warn(`[INVOICE_SENT] Email not sent for invoice ${id}: ${result.reason}`);
+      }
+    })
+    .catch((err: unknown) => {
+      console.error(`[INVOICE_SENT] Unexpected error sending email for invoice ${id}:`, err);
+    });
 
   revalidatePath(`/sales/invoices/${id}`);
   revalidatePath("/sales/invoices");
