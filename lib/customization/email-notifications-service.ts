@@ -45,10 +45,10 @@ export async function getEmailNotificationTemplates(
   tenantId:  string,
   category?: string,
 ): Promise<EmailNotificationTemplateRow[]> {
-  const rows = await (prisma as any).emailNotificationTemplate.findMany({
+  const rows = await prisma.emailNotificationTemplate.findMany({
     where: {
       tenantId,
-      ...(category ? { category } : {}),
+      ...(category ? { category: category as EmailNotificationCategory } : {}),
     },
     orderBy: [{ category: "asc" }, { name: "asc" }],
   });
@@ -59,7 +59,7 @@ export async function getEmailNotificationTemplateById(
   tenantId:   string,
   templateId: string,
 ): Promise<EmailNotificationTemplateRow | null> {
-  const row = await (prisma as any).emailNotificationTemplate.findFirst({
+  const row = await prisma.emailNotificationTemplate.findFirst({
     where: { id: templateId, tenantId },
   });
   return row ? rowToPublic(row) : null;
@@ -72,7 +72,7 @@ export async function updateEmailNotificationTemplate(
   templateId: string,
   data:       UpdateEmailNotificationInput,
 ): Promise<EmailNotificationTemplateRow> {
-  const existing = await (prisma as any).emailNotificationTemplate.findFirst({
+  const existing = await prisma.emailNotificationTemplate.findFirst({
     where: { id: templateId, tenantId },
   });
   if (!existing) throw new Error("Template not found.");
@@ -82,7 +82,7 @@ export async function updateEmailNotificationTemplate(
     data.bodyHtml !== undefined ||
     data.bodyText !== undefined;
 
-  const row = await (prisma as any).emailNotificationTemplate.update({
+  const row = await prisma.emailNotificationTemplate.update({
     where: { id: templateId },
     data: {
       ...(data.subject   !== undefined ? { subject:  data.subject.trim()           } : {}),
@@ -99,12 +99,12 @@ export async function toggleEmailNotificationTemplate(
   tenantId:   string,
   templateId: string,
 ): Promise<EmailNotificationTemplateRow> {
-  const existing = await (prisma as any).emailNotificationTemplate.findFirst({
+  const existing = await prisma.emailNotificationTemplate.findFirst({
     where: { id: templateId, tenantId },
   });
   if (!existing) throw new Error("Template not found.");
 
-  const row = await (prisma as any).emailNotificationTemplate.update({
+  const row = await prisma.emailNotificationTemplate.update({
     where: { id: templateId },
     data:  { isEnabled: !existing.isEnabled },
   });
@@ -115,7 +115,7 @@ export async function restoreEmailNotificationTemplateDefault(
   tenantId:   string,
   templateId: string,
 ): Promise<EmailNotificationTemplateRow> {
-  const existing = await (prisma as any).emailNotificationTemplate.findFirst({
+  const existing = await prisma.emailNotificationTemplate.findFirst({
     where: { id: templateId, tenantId },
   });
   if (!existing) throw new Error("Template not found.");
@@ -124,7 +124,7 @@ export async function restoreEmailNotificationTemplateDefault(
   const defaults = SYSTEM_EMAIL_DEFAULTS[existing.event as EmailNotificationEvent];
   if (!defaults) throw new Error("System defaults not found for this event.");
 
-  const row = await (prisma as any).emailNotificationTemplate.update({
+  const row = await prisma.emailNotificationTemplate.update({
     where: { id: templateId },
     data: {
       subject:     defaults.subject,
@@ -140,7 +140,7 @@ export async function previewEmailNotificationTemplate(
   tenantId:   string,
   templateId: string,
 ): Promise<{ subject: string; bodyHtml: string }> {
-  const row = await (prisma as any).emailNotificationTemplate.findFirst({
+  const row = await prisma.emailNotificationTemplate.findFirst({
     where: { id: templateId, tenantId },
   });
   if (!row) throw new Error("Template not found.");

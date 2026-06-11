@@ -5,7 +5,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { postJournalEntry } from "@/lib/journal";
 import { getRecognitionPeriod, toNGN } from "@/lib/utils";
-import { sendToBettywhyt } from "@/lib/integrations/bettywhyt/webhook-sender";
+import { sendToBettywhyt }   from "@/lib/integrations/bettywhyt/webhook-sender";
+import { sendInvoiceEmail }  from "@/lib/email-notifications/senders/invoice-sent";
 
 async function getNextInvoiceNumber(orgId: string): Promise<string> {
   const count = await prisma.invoice.count({ where: { tenantId: orgId } });
@@ -131,6 +132,10 @@ export async function sendInvoice(id: string, dateSent?: string) {
     where: { id, tenantId: orgId },
     data: { status: "SENT", sentAt },
   });
+
+  // Fire-and-forget: email failure must not block the status update
+  void sendInvoiceEmail({ tenantId: orgId, invoiceId: id }).catch(() => {});
+
   revalidatePath(`/sales/invoices/${id}`);
   revalidatePath("/sales/invoices");
   return { success: true };

@@ -4,7 +4,7 @@ import { useState }  from "react";
 import Link          from "next/link";
 import {
   Pencil, Eye, RotateCcw, Info, AlertTriangle, X,
-  ChevronRight, ChevronDown, Check, Mail,
+  ChevronRight, ChevronDown, Check, Mail, Send,
 } from "lucide-react";
 import { toast }     from "sonner";
 import { cn }        from "@/lib/utils";
@@ -43,6 +43,7 @@ export function EmailNotificationsClient({ initialTemplates, initialCategory }: 
   const [saving, setSaving]         = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [sendingTest, setSendingTest] = useState<string | null>(null);
 
   // Preview state
   const [preview, setPreview] = useState<{ subject: string; bodyHtml: string } | null>(null);
@@ -138,6 +139,20 @@ export function EmailNotificationsClient({ initialTemplates, initialCategory }: 
       setDrawerError(e instanceof Error ? e.message : "Unexpected error.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleTestSend(templateId: string) {
+    setSendingTest(templateId);
+    try {
+      const res  = await fetch(`/api/settings/customization/email-notifications/${templateId}/test-send`, { method: "POST" });
+      const json = await res.json() as { message?: string; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed.");
+      toast.success(json.message ?? "Test email sent to your email address.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send test email.");
+    } finally {
+      setSendingTest(null);
     }
   }
 
@@ -476,6 +491,15 @@ export function EmailNotificationsClient({ initialTemplates, initialCategory }: 
                 </button>
                 <button
                   type="button"
+                  disabled={sendingTest === selected.id}
+                  onClick={() => handleTestSend(selected.id)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  {sendingTest === selected.id ? "Sending…" : "Send test"}
+                </button>
+                <button
+                  type="button"
                   onClick={handleSave}
                   disabled={saving}
                   className="px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-60"
@@ -551,13 +575,24 @@ export function EmailNotificationsClient({ initialTemplates, initialCategory }: 
               >
                 Edit Template
               </button>
-              <button
-                type="button"
-                onClick={closeDrawer}
-                className="px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] rounded-lg hover:opacity-90 transition-opacity"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={sendingTest === selected.id}
+                  onClick={() => handleTestSend(selected.id)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  {sendingTest === selected.id ? "Sending…" : "Send test"}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeDrawer}
+                  className="px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] rounded-lg hover:opacity-90 transition-opacity"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
