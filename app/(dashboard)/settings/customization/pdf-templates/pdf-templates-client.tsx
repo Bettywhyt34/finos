@@ -8,13 +8,13 @@ import {
 } from "lucide-react";
 import { toast }                                          from "sonner";
 import { cn }                                             from "@/lib/utils";
-import type { PdfTemplateRow }                            from "@/lib/customization/pdf-service";
+import type { PdfTemplateRow }                            from "@/lib/customization/pdf-utils";
 import {
   PDF_DOC_TYPE_LABELS,
   PDF_DOC_TYPE_SINGULAR,
   PDF_DOC_TYPE_ORDER,
   LAYOUT_KEYS,
-} from "@/lib/customization/pdf-service";
+} from "@/lib/customization/pdf-utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 

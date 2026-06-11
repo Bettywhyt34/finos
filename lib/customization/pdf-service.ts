@@ -8,28 +8,20 @@
 
 import { prisma } from "@/lib/prisma";
 
+// Re-export pure helpers so server-side callers can import from one place.
+export {
+  PDF_DOC_TYPE_LABELS,
+  PDF_DOC_TYPE_SINGULAR,
+  PDF_DOC_TYPE_ORDER,
+  LAYOUT_KEYS,
+  type PdfTemplateRow,
+  type PdfTemplateDocumentTypeValue,
+} from "./pdf-utils";
+
+import type { PdfTemplateRow, PdfTemplateDocumentTypeValue } from "./pdf-utils";
+import { PDF_DOC_TYPE_ORDER } from "./pdf-utils";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-export type PdfTemplateDocumentTypeValue =
-  | "ESTIMATE" | "INVOICE" | "SALES_RECEIPT" | "CREDIT_NOTE"
-  | "PAYMENT_RECEIPT" | "CUSTOMER_STATEMENT" | "BILL" | "VENDOR_CREDIT"
-  | "VENDOR_PAYMENT" | "VENDOR_STATEMENT" | "JOURNAL" | "ADDITIONAL_INFORMATION";
-
-export type PdfTemplateRow = {
-  id:              string;
-  tenantId:        string;
-  documentType:    string;
-  name:            string;
-  description:     string | null;
-  layoutKey:       string;
-  isSystem:        boolean;
-  isDefault:       boolean;
-  isActive:        boolean;
-  config:          Record<string, unknown>;
-  previewImageUrl: string | null;
-  createdAt:       Date;
-  updatedAt:       Date;
-};
 
 export type CreatePdfTemplateInput = {
   documentType: string;
@@ -44,60 +36,6 @@ export type UpdatePdfTemplateInput = {
   layoutKey?:   string;
   isActive?:    boolean;
 };
-
-// ─── Document type display helpers ───────────────────────────────────────────
-
-export const PDF_DOC_TYPE_LABELS: Record<string, string> = {
-  ESTIMATE:             "Estimates",
-  INVOICE:              "Invoices",
-  SALES_RECEIPT:        "Sales Receipts",
-  CREDIT_NOTE:          "Credit Notes",
-  PAYMENT_RECEIPT:      "Payment Receipts",
-  CUSTOMER_STATEMENT:   "Customer Statements",
-  BILL:                 "Bills",
-  VENDOR_CREDIT:        "Vendor Credits",
-  VENDOR_PAYMENT:       "Vendor Payments",
-  VENDOR_STATEMENT:     "Vendor Statements",
-  JOURNAL:              "Journals",
-  ADDITIONAL_INFORMATION: "Additional Information",
-};
-
-export const PDF_DOC_TYPE_SINGULAR: Record<string, string> = {
-  ESTIMATE:             "Estimate",
-  INVOICE:              "Invoice",
-  SALES_RECEIPT:        "Sales Receipt",
-  CREDIT_NOTE:          "Credit Note",
-  PAYMENT_RECEIPT:      "Payment Receipt",
-  CUSTOMER_STATEMENT:   "Customer Statement",
-  BILL:                 "Bill",
-  VENDOR_CREDIT:        "Vendor Credit",
-  VENDOR_PAYMENT:       "Vendor Payment",
-  VENDOR_STATEMENT:     "Vendor Statement",
-  JOURNAL:              "Journal",
-  ADDITIONAL_INFORMATION: "Additional Information",
-};
-
-export const PDF_DOC_TYPE_ORDER: PdfTemplateDocumentTypeValue[] = [
-  "ESTIMATE",
-  "INVOICE",
-  "SALES_RECEIPT",
-  "CREDIT_NOTE",
-  "PAYMENT_RECEIPT",
-  "CUSTOMER_STATEMENT",
-  "BILL",
-  "VENDOR_CREDIT",
-  "VENDOR_PAYMENT",
-  "VENDOR_STATEMENT",
-  "JOURNAL",
-  "ADDITIONAL_INFORMATION",
-];
-
-export const LAYOUT_KEYS = [
-  { value: "standard",  label: "Standard" },
-  { value: "compact",   label: "Compact" },
-  { value: "modern",    label: "Modern" },
-  { value: "classic",   label: "Classic" },
-];
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
