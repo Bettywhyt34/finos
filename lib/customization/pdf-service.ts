@@ -102,8 +102,14 @@ export async function updatePdfTemplate(
     where: { id: templateId, tenantId },
   });
   if (!existing) throw new Error("Template not found.");
-  if (existing.isSystem && (data.name || data.layoutKey !== undefined)) {
-    throw new Error("System templates cannot be edited. Duplicate the template to customise it.");
+  if (existing.isSystem) {
+    const isDestructive =
+      data.name      !== undefined ||
+      data.layoutKey !== undefined ||
+      data.isActive  === false;
+    if (isDestructive) {
+      throw new Error("System templates cannot be deactivated or destructively edited.");
+    }
   }
 
   const row = await prisma.pdfTemplate.update({
