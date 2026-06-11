@@ -1561,7 +1561,7 @@ enum EmailNotificationEvent {
 }
 
 model EmailNotificationTemplate {
-  id       String @id @default(cuid())
+  id       String @id @default(uuid())
   tenantId String @map("tenant_id")
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
