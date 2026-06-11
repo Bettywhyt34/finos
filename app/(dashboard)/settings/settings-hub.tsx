@@ -100,9 +100,9 @@ const SETTINGS: SettingSection[] = [
         headerBorder: "border-amber-100",
         items: [
           { label: "Transaction Numbers", href: "/settings/customization/transaction-number-series" },
-          { label: "PDF Templates",       href: "/settings/pdf-templates" },
-          { label: "Email Templates",     href: "/settings/email-templates" },
-          { label: "Reporting Tags",      href: "/settings/reporting-tags" },
+          { label: "PDF Templates",       href: "/settings/customization/pdf-templates" },
+          { label: "Email Templates",     href: "/settings/customization/email-templates" },
+          { label: "Reporting Tags",      href: "/settings/customization/reporting-tags" },
         ],
       },
       {

@@ -21,9 +21,10 @@ import { prisma } from "@/lib/prisma";
 // because both expose the same model delegates.
 
 type DbClient = {
-  paymentTerm:             Pick<typeof prisma.paymentTerm,  "createMany">;
-  reminderRule:            Pick<typeof prisma.reminderRule, "createMany">;
+  paymentTerm:             Pick<typeof prisma.paymentTerm,             "createMany">;
+  reminderRule:            Pick<typeof prisma.reminderRule,            "createMany">;
   transactionNumberSeries: Pick<typeof prisma.transactionNumberSeries, "createMany">;
+  pdfTemplate:             Pick<typeof prisma.pdfTemplate,             "createMany">;
 };
 
 // ─── Payment Terms ────────────────────────────────────────────────────────────
@@ -262,17 +263,64 @@ export async function seedDefaultTransactionNumberSeriesForTenant(
   await db.transactionNumberSeries.createMany({
     skipDuplicates: true,
     data: [
-      { tenantId, module: "INVOICE" as never,          prefix: "INV",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "CUSTOMER_PAYMENT" as never, prefix: "PAY",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "CREDIT_NOTE" as never,      prefix: "CN",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "BILL" as never,             prefix: "BILL", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "VENDOR_PAYMENT" as never,   prefix: "VPAY", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "JOURNAL" as never,          prefix: "JNL",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "ESTIMATE" as never,         prefix: "EST",  nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "PURCHASE_ORDER" as never,   prefix: "PO",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "VENDOR_CREDIT" as never,    prefix: "VC",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
-      { tenantId, module: "DEBIT_NOTE" as never,       prefix: "DN",   nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true },
+      { tenantId, module: "INVOICE" as never,          prefix: "INV",  suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "CUSTOMER_PAYMENT" as never, prefix: "PAY",  suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "CREDIT_NOTE" as never,      prefix: "CN",   suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "BILL" as never,             prefix: "BILL", suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "VENDOR_PAYMENT" as never,   prefix: "VPAY", suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "JOURNAL" as never,          prefix: "JNL",  suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "ESTIMATE" as never,         prefix: "EST",  suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "PURCHASE_ORDER" as never,   prefix: "PO",   suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "VENDOR_CREDIT" as never,    prefix: "VC",   suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
+      { tenantId, module: "DEBIT_NOTE" as never,       prefix: "DN",   suffix: "", nextNumber: 1, padLength: 5, restartFreq: "NEVER" as never, isEnabled: true, allowManualOverride: true, preventDuplicates: true },
     ],
+  });
+}
+
+// ─── PDF Templates ────────────────────────────────────────────────────────────
+
+const PDF_TEMPLATE_DOCUMENT_TYPES = [
+  "ESTIMATE", "INVOICE", "SALES_RECEIPT", "CREDIT_NOTE",
+  "PAYMENT_RECEIPT", "CUSTOMER_STATEMENT", "BILL", "VENDOR_CREDIT",
+  "VENDOR_PAYMENT", "VENDOR_STATEMENT", "JOURNAL", "ADDITIONAL_INFORMATION",
+] as const;
+
+const PDF_TEMPLATE_DESCRIPTIONS: Record<string, string> = {
+  ESTIMATE:             "Default estimate template",
+  INVOICE:              "Default invoice template",
+  SALES_RECEIPT:        "Default sales receipt template",
+  CREDIT_NOTE:          "Default credit note template",
+  PAYMENT_RECEIPT:      "Default payment receipt template",
+  CUSTOMER_STATEMENT:   "Default customer statement template",
+  BILL:                 "Default bill template",
+  VENDOR_CREDIT:        "Default vendor credit template",
+  VENDOR_PAYMENT:       "Default vendor payment template",
+  VENDOR_STATEMENT:     "Default vendor statement template",
+  JOURNAL:              "Default journal template",
+  ADDITIONAL_INFORMATION: "Default additional information template",
+};
+
+/**
+ * Seeds one system "Standard Template" per document type for a tenant.
+ * Matches the rows inserted by scripts/migration-pdf-templates.sql.
+ * Unique constraint: (tenantId, documentType, name).
+ */
+export async function seedDefaultPdfTemplatesForTenant(
+  tenantId: string,
+  db: DbClient = prisma,
+): Promise<void> {
+  await db.pdfTemplate.createMany({
+    skipDuplicates: true,
+    data: PDF_TEMPLATE_DOCUMENT_TYPES.map((documentType) => ({
+      tenantId,
+      documentType: documentType as never,
+      name:         "Standard Template",
+      description:  PDF_TEMPLATE_DESCRIPTIONS[documentType] ?? null,
+      layoutKey:    "standard",
+      isSystem:     true,
+      isDefault:    true,
+      isActive:     true,
+    })),
   });
 }
 
@@ -298,4 +346,5 @@ export async function seedTenantDefaults(
   await seedDefaultPaymentTermsForTenant(tenantId, db);
   await seedDefaultReminderRulesForTenant(tenantId, db);
   await seedDefaultTransactionNumberSeriesForTenant(tenantId, db);
+  await seedDefaultPdfTemplatesForTenant(tenantId, db);
 }

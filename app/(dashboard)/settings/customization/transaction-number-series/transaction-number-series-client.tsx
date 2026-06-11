@@ -33,21 +33,27 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
   // Drawer form fields
-  const [fieldPrefix,      setFieldPrefix]      = useState("");
-  const [fieldNextNumber,  setFieldNextNumber]  = useState("");
-  const [fieldPadLength,   setFieldPadLength]   = useState("");
-  const [fieldRestartFreq, setFieldRestartFreq] = useState("NEVER");
-  const [fieldIsEnabled,   setFieldIsEnabled]   = useState(true);
+  const [fieldPrefix,               setFieldPrefix]               = useState("");
+  const [fieldSuffix,               setFieldSuffix]               = useState("");
+  const [fieldNextNumber,           setFieldNextNumber]           = useState("");
+  const [fieldPadLength,            setFieldPadLength]            = useState("");
+  const [fieldRestartFreq,          setFieldRestartFreq]          = useState("NEVER");
+  const [fieldIsEnabled,            setFieldIsEnabled]            = useState(true);
+  const [fieldAllowManualOverride,  setFieldAllowManualOverride]  = useState(true);
+  const [fieldPreventDuplicates,    setFieldPreventDuplicates]    = useState(true);
 
   // ── Open / close ────────────────────────────────────────────────────────────
 
   function openEdit(row: TransactionNumberSeriesRow) {
     setSelected(row);
     setFieldPrefix(row.prefix);
+    setFieldSuffix(row.suffix);
     setFieldNextNumber(String(row.nextNumber));
     setFieldPadLength(String(row.padLength));
     setFieldRestartFreq(row.restartFreq);
     setFieldIsEnabled(row.isEnabled);
+    setFieldAllowManualOverride(row.allowManualOverride);
+    setFieldPreventDuplicates(row.preventDuplicates);
     setDrawerError(null);
     setDrawerMode("edit");
   }
@@ -62,6 +68,7 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
 
   const drawerPreview = previewTransactionNumber({
     prefix:     fieldPrefix.trim(),
+    suffix:     fieldSuffix.trim(),
     nextNumber: parseInt(fieldNextNumber, 10) || 1,
     padLength:  parseInt(fieldPadLength, 10)  || 5,
   });
@@ -72,8 +79,9 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
     const next = parseInt(fieldNextNumber, 10);
     const pad  = parseInt(fieldPadLength, 10);
     if (isNaN(next) || next < 1)       return "Next number must be at least 1.";
-    if (isNaN(pad) || pad < 1 || pad > 10) return "Pad length must be between 1 and 10.";
+    if (isNaN(pad) || pad < 1 || pad > 10) return "Padding must be between 1 and 10.";
     if (fieldPrefix.trim().length > 20) return "Prefix must be 20 characters or fewer.";
+    if (fieldSuffix.trim().length > 20) return "Suffix must be 20 characters or fewer.";
     return null;
   }
 
@@ -92,11 +100,14 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
           method:  "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prefix:      fieldPrefix.trim(),
-            nextNumber:  parseInt(fieldNextNumber, 10),
-            padLength:   parseInt(fieldPadLength, 10),
-            restartFreq: fieldRestartFreq,
-            isEnabled:   fieldIsEnabled,
+            prefix:              fieldPrefix.trim(),
+            suffix:              fieldSuffix.trim(),
+            nextNumber:          parseInt(fieldNextNumber, 10),
+            padLength:           parseInt(fieldPadLength, 10),
+            restartFreq:         fieldRestartFreq,
+            isEnabled:           fieldIsEnabled,
+            allowManualOverride: fieldAllowManualOverride,
+            preventDuplicates:   fieldPreventDuplicates,
           }),
         },
       );
@@ -136,7 +147,7 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
         <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
         <p className="text-sm text-blue-700">
           Existing transactions are not renumbered when you change the series.
-          Set the <span className="font-medium">Next Number</span> to a value
+          Set the <span className="font-medium">Starting Number</span> to a value
           higher than your current highest transaction number to avoid collisions.
         </p>
       </div>
@@ -153,23 +164,23 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
               </h2>
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[560px]">
+                  <table className="w-full text-sm min-w-[600px]">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50">
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                          Transaction
+                          Module
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
                           Prefix
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
-                          Next No.
+                          Starting Number
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+                          Restart Numbering
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                          Example
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                          Status
+                          Preview
                         </th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">
                           Actions
@@ -186,7 +197,14 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                           )}
                         >
                           <td className="px-4 py-3 font-medium text-slate-800">
-                            {moduleDisplayLabel(row.module)}
+                            <div className="flex items-center gap-2">
+                              {moduleDisplayLabel(row.module)}
+                              {!row.isEnabled && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                                  Off
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <code className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono">
@@ -196,20 +214,13 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                           <td className="px-4 py-3 text-slate-600 tabular-nums">
                             {row.nextNumber.toLocaleString()}
                           </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {RESTART_FREQ_LABELS[row.restartFreq] ?? row.restartFreq}
+                          </td>
                           <td className="px-4 py-3">
                             <code className="text-xs text-[var(--finos-accent)] font-mono font-medium">
                               {previewTransactionNumber(row)}
                             </code>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={cn(
-                              "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                              row.isEnabled
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-slate-100 text-slate-500"
-                            )}>
-                              {row.isEnabled ? "Enabled" : "Disabled"}
-                            </span>
                           </td>
                           <td className="px-4 py-3 text-right">
                             <button
@@ -269,7 +280,7 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
 
               {/* Live preview */}
               <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
-                <span className="text-sm text-slate-500">Example number:</span>
+                <span className="text-sm text-slate-500">Preview:</span>
                 <code className="text-sm font-mono font-semibold text-[var(--finos-accent)]">
                   {drawerPreview}
                 </code>
@@ -293,10 +304,28 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                 </p>
               </div>
 
-              {/* Next Number */}
+              {/* Suffix */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Next Number <span className="text-red-500">*</span>
+                  Suffix
+                </label>
+                <input
+                  type="text"
+                  value={fieldSuffix}
+                  onChange={(e) => setFieldSuffix(e.target.value)}
+                  maxLength={20}
+                  placeholder="e.g. NG"
+                  className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Optional text appended after the number. Max 20 characters.
+                </p>
+              </div>
+
+              {/* Starting Number */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Starting Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -310,10 +339,10 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                 </p>
               </div>
 
-              {/* Pad Length */}
+              {/* Padding */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Pad Length <span className="text-red-500">*</span>
+                  Padding <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -324,14 +353,14 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                   className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--finos-accent)]/25"
                 />
                 <p className="mt-1 text-xs text-slate-400">
-                  Zero-pad the number to this many digits (1–10). e.g. pad 5 → 00001.
+                  Zero-pad the number to this many digits (1–10). e.g. padding 5 → 00001.
                 </p>
               </div>
 
-              {/* Restart Frequency */}
+              {/* Restart Numbering */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Reset Sequence
+                  Restart Numbering
                 </label>
                 <select
                   value={fieldRestartFreq}
@@ -344,7 +373,10 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                 </select>
               </div>
 
-              {/* Enabled toggle */}
+              {/* Divider */}
+              <div className="border-t border-slate-100 pt-1" />
+
+              {/* Auto-numbering enabled */}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -352,9 +384,50 @@ export function TransactionNumberSeriesClient({ initialSeries }: Props) {
                   onChange={(e) => setFieldIsEnabled(e.target.checked)}
                   className="mt-0.5 accent-[var(--finos-accent)]"
                 />
-                <span className="text-sm text-slate-700">
-                  Enable auto-numbering for this module
-                </span>
+                <div>
+                  <span className="text-sm font-medium text-slate-700">
+                    Enable auto-numbering
+                  </span>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    When off, a number must be entered manually on each transaction.
+                  </p>
+                </div>
+              </label>
+
+              {/* Allow manual override */}
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fieldAllowManualOverride}
+                  onChange={(e) => setFieldAllowManualOverride(e.target.checked)}
+                  className="mt-0.5 accent-[var(--finos-accent)]"
+                />
+                <div>
+                  <span className="text-sm font-medium text-slate-700">
+                    Allow manual override
+                  </span>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Users can type a custom number instead of accepting the auto-generated one.
+                  </p>
+                </div>
+              </label>
+
+              {/* Prevent duplicates */}
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fieldPreventDuplicates}
+                  onChange={(e) => setFieldPreventDuplicates(e.target.checked)}
+                  className="mt-0.5 accent-[var(--finos-accent)]"
+                />
+                <div>
+                  <span className="text-sm font-medium text-slate-700">
+                    Prevent duplicate numbers
+                  </span>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    System checks that the number does not already exist before saving.
+                  </p>
+                </div>
               </label>
             </div>
 

@@ -28,11 +28,14 @@ import { moduleDisplayLabel, previewTransactionNumber } from "./utils";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export type UpdateTransactionNumberSeriesInput = {
-  prefix?:      string;
-  nextNumber?:  number;
-  padLength?:   number;
-  restartFreq?: string;
-  isEnabled?:   boolean;
+  prefix?:               string;
+  suffix?:               string;
+  nextNumber?:           number;
+  padLength?:            number;
+  restartFreq?:          string;
+  isEnabled?:            boolean;
+  allowManualOverride?:  boolean;
+  preventDuplicates?:    boolean;
 };
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -69,11 +72,14 @@ export async function updateTransactionNumberSeries(
   const updated = await prisma.transactionNumberSeries.update({
     where: { id: seriesId },
     data: {
-      ...(data.prefix      !== undefined ? { prefix:      data.prefix.trim()                                  } : {}),
-      ...(data.nextNumber  !== undefined ? { nextNumber:  data.nextNumber                                     } : {}),
-      ...(data.padLength   !== undefined ? { padLength:   data.padLength                                      } : {}),
-      ...(data.restartFreq !== undefined ? { restartFreq: data.restartFreq as "NEVER" | "MONTHLY" | "YEARLY" } : {}),
-      ...(data.isEnabled   !== undefined ? { isEnabled:   data.isEnabled                                      } : {}),
+      ...(data.prefix               !== undefined ? { prefix:               data.prefix.trim()                                  } : {}),
+      ...(data.suffix               !== undefined ? { suffix:               data.suffix.trim()                                  } : {}),
+      ...(data.nextNumber           !== undefined ? { nextNumber:           data.nextNumber                                     } : {}),
+      ...(data.padLength            !== undefined ? { padLength:            data.padLength                                      } : {}),
+      ...(data.restartFreq          !== undefined ? { restartFreq:          data.restartFreq as "NEVER" | "MONTHLY" | "YEARLY" } : {}),
+      ...(data.isEnabled            !== undefined ? { isEnabled:            data.isEnabled                                      } : {}),
+      ...(data.allowManualOverride  !== undefined ? { allowManualOverride:  data.allowManualOverride                            } : {}),
+      ...(data.preventDuplicates    !== undefined ? { preventDuplicates:    data.preventDuplicates                              } : {}),
     },
   });
   return rowToPublic(updated);
@@ -175,19 +181,23 @@ export async function validateTransactionNumber(
 // ─── Internal helper ──────────────────────────────────────────────────────────
 
 function rowToPublic(r: {
-  id: string; module: string; prefix: string; nextNumber: number;
+  id: string; module: string; prefix: string; suffix: string; nextNumber: number;
   padLength: number; restartFreq: string; lastResetDate: Date | null;
-  isEnabled: boolean; updatedAt: Date;
+  isEnabled: boolean; allowManualOverride: boolean; preventDuplicates: boolean;
+  updatedAt: Date;
 }): TransactionNumberSeriesRow {
   return {
-    id:            r.id,
-    module:        r.module,
-    prefix:        r.prefix,
-    nextNumber:    r.nextNumber,
-    padLength:     r.padLength,
-    restartFreq:   r.restartFreq,
-    lastResetDate: r.lastResetDate,
-    isEnabled:     r.isEnabled,
-    updatedAt:     r.updatedAt,
+    id:                   r.id,
+    module:               r.module,
+    prefix:               r.prefix,
+    suffix:               r.suffix,
+    nextNumber:           r.nextNumber,
+    padLength:            r.padLength,
+    restartFreq:          r.restartFreq,
+    lastResetDate:        r.lastResetDate,
+    isEnabled:            r.isEnabled,
+    allowManualOverride:  r.allowManualOverride,
+    preventDuplicates:    r.preventDuplicates,
+    updatedAt:            r.updatedAt,
   };
 }

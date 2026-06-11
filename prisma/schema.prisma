@@ -132,6 +132,7 @@ model Tenant {
   openingBalanceBatches  OpeningBalanceBatch[]
   reminderRules               ReminderRule[]
   transactionNumberSeries     TransactionNumberSeries[]
+  pdfTemplates                PdfTemplate[]
 
   @@map("tenants")
 }
@@ -1463,11 +1464,14 @@ model TransactionNumberSeries {
 
   module        TransactionModule      @map("module")
   prefix        String                 @default("")
+  suffix        String                 @default("")
   nextNumber    Int                    @default(1)  @map("next_number")
   padLength     Int                    @default(5)  @map("pad_length")
-  restartFreq   NumberRestartFrequency @default(NEVER) @map("restart_freq")
-  lastResetDate DateTime?              @map("last_reset_date")
-  isEnabled     Boolean                @default(true) @map("is_enabled")
+  restartFreq         NumberRestartFrequency @default(NEVER) @map("restart_freq")
+  lastResetDate       DateTime?              @map("last_reset_date")
+  isEnabled           Boolean                @default(true)  @map("is_enabled")
+  allowManualOverride Boolean                @default(true)  @map("allow_manual_override")
+  preventDuplicates   Boolean                @default(true)  @map("prevent_duplicates")
 
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt      @map("updated_at")
@@ -1475,4 +1479,49 @@ model TransactionNumberSeries {
   @@unique([tenantId, module])
   @@index([tenantId])
   @@map("transaction_number_series")
+}
+
+// ─── PDF Templates ────────────────────────────────────────────────────────────
+
+enum PdfTemplateDocumentType {
+  ESTIMATE
+  INVOICE
+  SALES_RECEIPT
+  CREDIT_NOTE
+  PAYMENT_RECEIPT
+  CUSTOMER_STATEMENT
+  BILL
+  VENDOR_CREDIT
+  VENDOR_PAYMENT
+  VENDOR_STATEMENT
+  JOURNAL
+  ADDITIONAL_INFORMATION
+
+  @@map("pdf_template_document_type_enum")
+}
+
+model PdfTemplate {
+  id              String                  @id @default(cuid())
+  tenantId        String                  @map("tenant_id")
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  documentType    PdfTemplateDocumentType @map("document_type")
+  name            String
+  description     String?
+  layoutKey       String                  @default("standard") @map("layout_key")
+
+  isSystem        Boolean                 @default(false) @map("is_system")
+  isDefault       Boolean                 @default(false) @map("is_default")
+  isActive        Boolean                 @default(true)  @map("is_active")
+
+  config          Json                    @default("{}")
+  previewImageUrl String?                 @map("preview_image_url")
+
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, documentType, name])
+  @@index([tenantId])
+  @@index([tenantId, documentType])
+  @@map("pdf_templates")
 }

@@ -4,11 +4,14 @@ import { z }                                    from "zod";
 import { updateTransactionNumberSeries }        from "@/lib/customization/service";
 
 const PatchSchema = z.object({
-  prefix:      z.string().max(20).optional(),
-  nextNumber:  z.number().int().min(1).optional(),
-  padLength:   z.number().int().min(1).max(10).optional(),
-  restartFreq: z.enum(["NEVER", "MONTHLY", "YEARLY"]).optional(),
-  isEnabled:   z.boolean().optional(),
+  prefix:               z.string().max(20).optional(),
+  suffix:               z.string().max(20).optional(),
+  nextNumber:           z.number().int().min(1).optional(),
+  padLength:            z.number().int().min(1).max(10).optional(),
+  restartFreq:          z.enum(["NEVER", "MONTHLY", "YEARLY"]).optional(),
+  isEnabled:            z.boolean().optional(),
+  allowManualOverride:  z.boolean().optional(),
+  preventDuplicates:    z.boolean().optional(),
 });
 
 // PATCH /api/settings/customization/transaction-number-series/[seriesId]

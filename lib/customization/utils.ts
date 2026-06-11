@@ -6,15 +6,18 @@
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export type TransactionNumberSeriesRow = {
-  id:            string;
-  module:        string;
-  prefix:        string;
-  nextNumber:    number;
-  padLength:     number;
-  restartFreq:   string;
-  lastResetDate: Date | null;
-  isEnabled:     boolean;
-  updatedAt:     Date;
+  id:                   string;
+  module:               string;
+  prefix:               string;
+  suffix:               string;
+  nextNumber:           number;
+  padLength:            number;
+  restartFreq:          string;
+  lastResetDate:        Date | null;
+  isEnabled:            boolean;
+  allowManualOverride:  boolean;
+  preventDuplicates:    boolean;
+  updatedAt:            Date;
 };
 
 // ─── Display labels ────────────────────────────────────────────────────────────
@@ -64,9 +67,10 @@ export const MODULE_GROUPS: { label: string; modules: string[] }[] = [
  */
 export function previewTransactionNumber(series: {
   prefix:     string;
+  suffix?:    string;
   nextNumber: number;
   padLength:  number;
 }): string {
   const padded = String(series.nextNumber).padStart(series.padLength, "0");
-  return series.prefix ? `${series.prefix}-${padded}` : padded;
+  return [series.prefix, padded, series.suffix].filter(Boolean).join("-");
 }

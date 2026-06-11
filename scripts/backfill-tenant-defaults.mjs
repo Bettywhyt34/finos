@@ -76,10 +76,34 @@ const TRANSACTION_NUMBER_SERIES = [
   { module: "DEBIT_NOTE",       prefix: "DN",   nextNumber: 1, padLength: 5 },
 ];
 
+// Default values for new columns added post-initial migration.
+const TNS_BOOL_DEFAULTS = { suffix: "", allowManualOverride: true, preventDuplicates: true };
+
+const PDF_TEMPLATE_DOC_TYPES = [
+  "ESTIMATE", "INVOICE", "SALES_RECEIPT", "CREDIT_NOTE",
+  "PAYMENT_RECEIPT", "CUSTOMER_STATEMENT", "BILL", "VENDOR_CREDIT",
+  "VENDOR_PAYMENT", "VENDOR_STATEMENT", "JOURNAL", "ADDITIONAL_INFORMATION",
+];
+
+const PDF_TEMPLATE_DESCRIPTIONS = {
+  ESTIMATE:             "Default estimate template",
+  INVOICE:              "Default invoice template",
+  SALES_RECEIPT:        "Default sales receipt template",
+  CREDIT_NOTE:          "Default credit note template",
+  PAYMENT_RECEIPT:      "Default payment receipt template",
+  CUSTOMER_STATEMENT:   "Default customer statement template",
+  BILL:                 "Default bill template",
+  VENDOR_CREDIT:        "Default vendor credit template",
+  VENDOR_PAYMENT:       "Default vendor payment template",
+  VENDOR_STATEMENT:     "Default vendor statement template",
+  JOURNAL:              "Default journal template",
+  ADDITIONAL_INFORMATION: "Default additional information template",
+};
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("=== Backfill: tenant defaults (payment terms + reminder rules + transaction number series) ===\n");
+  console.log("=== Backfill: tenant defaults (payment terms + reminder rules + TNS + PDF templates) ===\n");
 
   const tenants = await prisma.tenant.findMany({
     select: { id: true, name: true },
@@ -94,6 +118,8 @@ async function main() {
   let totalRrSkipped  = 0;
   let totalTnsCreated = 0;
   let totalTnsSkipped = 0;
+  let totalPdfCreated = 0;
+  let totalPdfSkipped = 0;
 
   for (const tenant of tenants) {
     // ── Payment terms ────────────────────────────────────────────────────────
@@ -141,13 +167,16 @@ async function main() {
     const tnsResult = await prisma.transactionNumberSeries.createMany({
       skipDuplicates: true,
       data: TRANSACTION_NUMBER_SERIES.map((s) => ({
-        tenantId:    tenant.id,
-        module:      s.module,
-        prefix:      s.prefix,
-        nextNumber:  s.nextNumber,
-        padLength:   s.padLength,
-        restartFreq: "NEVER",
-        isEnabled:   true,
+        tenantId:            tenant.id,
+        module:              s.module,
+        prefix:              s.prefix,
+        suffix:              TNS_BOOL_DEFAULTS.suffix,
+        nextNumber:          s.nextNumber,
+        padLength:           s.padLength,
+        restartFreq:         "NEVER",
+        isEnabled:           true,
+        allowManualOverride: TNS_BOOL_DEFAULTS.allowManualOverride,
+        preventDuplicates:   TNS_BOOL_DEFAULTS.preventDuplicates,
       })),
     });
 
@@ -156,14 +185,36 @@ async function main() {
     totalTnsCreated += tnsCreated;
     totalTnsSkipped += tnsSkipped;
 
+    // ── PDF templates ─────────────────────────────────────────────────────────
+    const pdfResult = await prisma.pdfTemplate.createMany({
+      skipDuplicates: true,
+      data: PDF_TEMPLATE_DOC_TYPES.map((documentType) => ({
+        tenantId:    tenant.id,
+        documentType,
+        name:        "Standard Template",
+        description: PDF_TEMPLATE_DESCRIPTIONS[documentType] ?? null,
+        layoutKey:   "standard",
+        isSystem:    true,
+        isDefault:   true,
+        isActive:    true,
+      })),
+    });
+
+    const pdfCreated = pdfResult.count;
+    const pdfSkipped = PDF_TEMPLATE_DOC_TYPES.length - pdfCreated;
+    totalPdfCreated += pdfCreated;
+    totalPdfSkipped += pdfSkipped;
+
     // ── Per-tenant summary ───────────────────────────────────────────────────
     const ptStatus  = ptCreated  === 0 ? "already complete" : `${ptCreated} created`;
     const rrStatus  = rrCreated  === 0 ? "already complete" : `${rrCreated} created`;
     const tnsStatus = tnsCreated === 0 ? "already complete" : `${tnsCreated} created`;
+    const pdfStatus = pdfCreated === 0 ? "already complete" : `${pdfCreated} created`;
     console.log(`  ${tenant.name} (${tenant.id.slice(0, 8)}…)`);
     console.log(`    payment terms     : ${ptStatus}${ptSkipped   > 0 ? `, ${ptSkipped} skipped`   : ""}`);
     console.log(`    reminder rules    : ${rrStatus}${rrSkipped   > 0 ? `, ${rrSkipped} skipped`   : ""}`);
     console.log(`    number series     : ${tnsStatus}${tnsSkipped > 0 ? `, ${tnsSkipped} skipped`  : ""}`);
+    console.log(`    pdf templates     : ${pdfStatus}${pdfSkipped > 0 ? `, ${pdfSkipped} skipped`  : ""}`);
   }
 
   console.log("\n=== Summary ===");
@@ -174,6 +225,8 @@ async function main() {
   console.log(`Reminder rules skipped        : ${totalRrSkipped}`);
   console.log(`Transaction series created    : ${totalTnsCreated}`);
   console.log(`Transaction series skipped    : ${totalTnsSkipped}`);
+  console.log(`PDF templates  created        : ${totalPdfCreated}`);
+  console.log(`PDF templates  skipped        : ${totalPdfSkipped}`);
   console.log("\nBackfill complete.\n");
 }
 
