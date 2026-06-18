@@ -2,14 +2,14 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, RefreshCw, FileText, AlignLeft, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { updateDraftInvoice } from "../../actions";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/fx";
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
@@ -46,6 +46,21 @@ function addDays(d: string, n: number) {
 function getMonthPeriod(d: string) {
   const dt = new Date(d);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Small accent bar used in section headings */
+function AccentBar() {
+  return (
+    <div
+      className="w-0.5 self-stretch rounded-full flex-shrink-0"
+      style={{ backgroundColor: "var(--finos-accent)" }}
+    />
+  );
+}
+
+/** Red asterisk for required fields */
+function Req() {
+  return <span className="text-red-500 ml-0.5">*</span>;
 }
 
 export function InvoiceEditForm({ invoiceId, initialData, customers, items, allowManualOverride }: Props) {
@@ -133,7 +148,6 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
 
     const result = await updateDraftInvoice(invoiceId, {
       customerId,
-      // Only pass invoice number if manually overridden and changed
       invoiceNumber: invoiceNumberTouched ? invoiceNumber.trim() : undefined,
       reference:     reference || undefined,
       issueDate,
@@ -158,106 +172,140 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
     router.push(`/sales/invoices/${invoiceId}`);
   }
 
+  // Derived display labels (fixes @base-ui SelectValue not resolving label from item text)
+  const selectedCustomerName = customerId
+    ? (customers.find((c) => c.id === customerId)?.companyName ?? "Unknown customer")
+    : null;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-5">
 
-      {/* Header fields */}
-      <div className="border border-slate-200 rounded-xl p-5 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Customer *</Label>
-            <Select value={customerId} onValueChange={(v) => handleCustomerChange(v ?? "")}>
-              <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-              <SelectContent>
-                {customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="reference">Reference (optional)</Label>
-            <Input
-              id="reference"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="PO-12345"
-            />
-          </div>
+      {/* ── 1. Invoice Details ──────────────────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
+          <AccentBar />
+          <FileText className="h-4 w-4 text-slate-400 flex-shrink-0" />
+          <span className="font-semibold text-slate-800 text-sm">Invoice Details</span>
         </div>
 
-        {/* Invoice Number */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="invoiceNumber">Invoice Number</Label>
-            {allowManualOverride ? (
-              <>
-                <Input
-                  id="invoiceNumber"
-                  value={invoiceNumber}
-                  onChange={(e) => { setInvoiceNumber(e.target.value); setInvoiceNumberTouched(true); }}
-                  className="font-mono"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Manual override enabled. The series counter will not advance.
-                </p>
-              </>
-            ) : (
-              <>
-                <Input
-                  id="invoiceNumber"
-                  value={invoiceNumber}
-                  readOnly
-                  className="font-mono bg-slate-50 text-slate-600 cursor-not-allowed"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Invoice number is fixed. Enable manual override in Settings to change it.
-                </p>
-              </>
-            )}
+        <div className="p-5 space-y-4">
+          {/* Customer + Reference */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Customer<Req /></Label>
+              {/*
+                @base-ui SelectPrimitive.Value does not auto-resolve the label
+                from child SelectItem text. We explicitly show the customer name
+                derived from the customerId state; the Select still tracks and
+                emits the UUID internally.
+              */}
+              <Select value={customerId} onValueChange={(v) => handleCustomerChange(v ?? "")}>
+                <SelectTrigger className="w-full">
+                  <span className={cn(
+                    "flex-1 truncate text-left text-sm",
+                    !selectedCustomerName && "text-muted-foreground"
+                  )}>
+                    {selectedCustomerName ?? "Select customer"}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reference">Reference <span className="text-slate-400 font-normal text-xs">(optional)</span></Label>
+              <Input
+                id="reference"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="PO-12345"
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Currency + Period */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Invoice Currency</Label>
-            <Select value={currency} onValueChange={(v) => handleCurrencyChange(v ?? "NGN")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {SUPPORTED_CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          {/* Invoice Number + Currency */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="invoiceNumber">Invoice Number</Label>
+              {allowManualOverride ? (
+                <>
+                  <Input
+                    id="invoiceNumber"
+                    value={invoiceNumber}
+                    onChange={(e) => { setInvoiceNumber(e.target.value); setInvoiceNumberTouched(true); }}
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Manual override is enabled. Editing this number will not advance the series counter.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Input
+                    id="invoiceNumber"
+                    value={invoiceNumber}
+                    readOnly
+                    className="font-mono bg-slate-50 text-slate-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Invoice number is locked by your numbering settings.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Currency<Req /></Label>
+              <Select value={currency} onValueChange={(v) => handleCurrencyChange(v ?? "NGN")}>
+                <SelectTrigger className="w-full">
+                  <span className="flex-1 text-left text-sm">{currency}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Recognition Period</Label>
-            <Input
-              value={recognitionPeriod}
-              onChange={(e) => setRecognitionPeriod(e.target.value)}
-              placeholder="YYYY-MM"
-            />
-          </div>
-        </div>
 
-        {/* Dates */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>Issue Date</Label>
-            <Input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Due Date</Label>
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          {/* Issue Date + Due Date + Recognition Period */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label>Issue Date<Req /></Label>
+              <Input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Due Date<Req /></Label>
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Recognition Period<Req /></Label>
+              <Input
+                value={recognitionPeriod}
+                onChange={(e) => setRecognitionPeriod(e.target.value)}
+                placeholder="YYYY-MM"
+                className="font-mono"
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* FX Rate — shown only for non-NGN currency */}
+      {/* ── 2. Exchange Rate (non-NGN only) ────────────────────────────── */}
       {!isNGN && (
         <div className="border border-amber-200 bg-amber-50 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-amber-900">Exchange Rate</h2>
             <div className="flex items-center gap-2">
-              {rateLoading && <span className="text-xs text-amber-600 animate-pulse">Fetching live rate…</span>}
-              {rateFetched && !rateLoading && <span className="text-xs text-green-600 font-medium">✓ Live rate</span>}
+              {rateLoading && (
+                <span className="text-xs text-amber-600 animate-pulse">Fetching live rate…</span>
+              )}
+              {rateFetched && !rateLoading && (
+                <span className="text-xs text-green-700 font-medium">✓ Live rate</span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -276,135 +324,257 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
               disabled={rateLoading}
               className="whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-100"
             >
-              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${rateLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", rateLoading && "animate-spin")} />
               Refresh
             </Button>
           </div>
           {exchangeRate > 0 && total > 0 && (
-            <div className="bg-white rounded-lg px-4 py-3 text-xs border border-amber-100 space-y-1">
+            <div className="bg-white rounded-lg px-4 py-3 text-xs border border-amber-100">
               <div className="flex justify-between text-slate-500">
                 <span>Total (NGN equivalent)</span>
-                <span className="font-mono font-semibold text-slate-700">{formatCurrency(total * exchangeRate)}</span>
+                <span className="font-mono font-semibold text-slate-700">
+                  {formatCurrency(total * exchangeRate)}
+                </span>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Line items */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden">
-        <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
-          <span className="font-medium text-sm text-slate-700">
-            Line Items <span className="text-slate-400 font-normal">(prices in {currency})</span>
-          </span>
-          <Button type="button" variant="ghost" size="sm" onClick={() =>
-            setLines((p) => [...p, { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 }])
-          }>
-            <Plus className="h-3.5 w-3.5 mr-1" />Add line
+      {/* ── 3. Line Items ──────────────────────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        {/* Section heading */}
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AccentBar />
+            <Receipt className="h-4 w-4 text-slate-400 flex-shrink-0" />
+            <span className="font-semibold text-slate-800 text-sm">
+              Line Items
+              <span className="ml-2 text-slate-400 font-normal text-xs">prices in {currency}</span>
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() =>
+              setLines((p) => [
+                ...p,
+                { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 },
+              ])
+            }
+          >
+            <Plus className="h-3.5 w-3.5" /> Add Line
           </Button>
         </div>
-        <div className="divide-y divide-slate-100">
-          {lines.map((line, idx) => (
-            <div key={line.id} className="p-4 grid grid-cols-12 gap-3 items-start">
-              <div className="col-span-3">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Item</Label>}
-                <Select value={line.itemId} onValueChange={(v) => handleItemSelect(line.id, v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select item" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Custom</SelectItem>
-                    {items.map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-3">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Description</Label>}
-                <Input className="h-8 text-xs" value={line.description}
-                  onChange={(e) => updateLine(line.id, "description", e.target.value)}
-                  placeholder="Description" />
-              </div>
-              <div className="col-span-1">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Qty</Label>}
-                <Input className="h-8 text-xs" type="number" min="0" step="0.01" value={line.quantity}
-                  onChange={(e) => updateLine(line.id, "quantity", parseFloat(e.target.value) || 0)} />
-              </div>
-              <div className="col-span-2">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Rate ({currency})</Label>}
-                <Input className="h-8 text-xs font-mono" type="number" min="0" step="0.01" value={line.rate}
-                  onChange={(e) => updateLine(line.id, "rate", parseFloat(e.target.value) || 0)} />
-              </div>
-              <div className="col-span-1">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Tax%</Label>}
-                <Input className="h-8 text-xs" type="number" min="0" max="100" step="0.5" value={line.taxRate}
-                  onChange={(e) => updateLine(line.id, "taxRate", parseFloat(e.target.value) || 0)} />
-              </div>
-              <div className="col-span-1">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Amount</Label>}
-                <div className="h-8 flex items-center text-xs font-mono text-slate-600">
+
+        {/* Column headers */}
+        <div
+          className="grid grid-cols-12 gap-3 px-4 py-2 border-b border-slate-100 text-xs font-medium text-slate-500"
+          style={{ backgroundColor: "color-mix(in srgb, var(--finos-accent) 5%, white)" }}
+        >
+          <div className="col-span-3">Item</div>
+          <div className="col-span-3">Description<Req /></div>
+          <div className="col-span-1 text-center">Qty<Req /></div>
+          <div className="col-span-2">Rate ({currency})<Req /></div>
+          <div className="col-span-1 text-center">Tax %</div>
+          <div className="col-span-1 text-right">Amount</div>
+          <div className="col-span-1" />
+        </div>
+
+        {/* Line rows */}
+        <div className="divide-y divide-slate-50">
+          {lines.map((line) => {
+            const lineItemName = line.itemId
+              ? (items.find((i) => i.id === line.itemId)?.name ?? "Custom")
+              : null;
+
+            return (
+              <div key={line.id} className="grid grid-cols-12 gap-3 px-4 py-3 items-center hover:bg-slate-50/50 transition-colors">
+                {/* Item select */}
+                <div className="col-span-3">
+                  <Select
+                    value={line.itemId}
+                    onValueChange={(v) => handleItemSelect(line.id, v ?? "")}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-full">
+                      <span className={cn(
+                        "flex-1 truncate text-left",
+                        !lineItemName && "text-muted-foreground"
+                      )}>
+                        {lineItemName ?? "Select item"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Custom</SelectItem>
+                      {items.map((i) => (
+                        <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Description */}
+                <div className="col-span-3">
+                  <Input
+                    className="h-8 text-xs"
+                    value={line.description}
+                    onChange={(e) => updateLine(line.id, "description", e.target.value)}
+                    placeholder="Description"
+                  />
+                </div>
+
+                {/* Quantity */}
+                <div className="col-span-1">
+                  <Input
+                    className="h-8 text-xs text-center"
+                    type="number" min="0" step="0.01"
+                    value={line.quantity}
+                    onChange={(e) => updateLine(line.id, "quantity", parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+
+                {/* Rate */}
+                <div className="col-span-2">
+                  <Input
+                    className="h-8 text-xs font-mono"
+                    type="number" min="0" step="0.01"
+                    value={line.rate}
+                    onChange={(e) => updateLine(line.id, "rate", parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+
+                {/* Tax % */}
+                <div className="col-span-1">
+                  <Input
+                    className="h-8 text-xs text-center"
+                    type="number" min="0" max="100" step="0.5"
+                    value={line.taxRate}
+                    onChange={(e) => updateLine(line.id, "taxRate", parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+
+                {/* Amount */}
+                <div className="col-span-1 text-right font-mono text-xs text-slate-600 tabular-nums">
                   {formatCurrency(line.quantity * line.rate, currency)}
                 </div>
+
+                {/* Delete */}
+                <div className="col-span-1 flex justify-center">
+                  <button
+                    type="button"
+                    className={cn(
+                      "h-7 w-7 flex items-center justify-center rounded-md text-slate-300 transition-colors",
+                      lines.length > 1
+                        ? "hover:text-red-500 hover:bg-red-50 cursor-pointer"
+                        : "opacity-30 cursor-not-allowed"
+                    )}
+                    onClick={() => lines.length > 1 && setLines((p) => p.filter((l) => l.id !== line.id))}
+                    disabled={lines.length === 1}
+                    aria-label="Remove line"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="col-span-1 flex items-end">
-                <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-red-500"
-                  onClick={() => lines.length > 1 && setLines((p) => p.filter((l) => l.id !== line.id))}
-                  disabled={lines.length === 1}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Totals */}
-        <div className="border-t border-slate-200 p-4 bg-slate-50">
-          <div className="flex flex-col items-end gap-1.5 text-sm">
-            <div className="flex gap-8">
-              <span className="text-slate-500">Subtotal</span>
-              <span className="font-mono w-32 text-right">{formatCurrency(subtotal, currency)}</span>
+        <div className="border-t border-slate-200 bg-slate-50/60 px-5 py-4">
+          <div className="flex flex-col items-end gap-2 text-sm">
+            <div className="flex items-center gap-6">
+              <span className="text-slate-500 w-28 text-right">Subtotal</span>
+              <span className="font-mono w-36 text-right tabular-nums">
+                {formatCurrency(subtotal, currency)}
+              </span>
             </div>
-            <div className="flex gap-8 items-center">
-              <span className="text-slate-500">Discount</span>
-              <Input type="number" min="0" step="0.01" value={discountAmount}
+            <div className="flex items-center gap-6">
+              <span className="text-slate-500 w-28 text-right">Discount</span>
+              <Input
+                type="number" min="0" step="0.01"
+                value={discountAmount}
                 onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                className="h-6 w-32 text-xs text-right font-mono" />
+                className="h-6 w-36 text-xs text-right font-mono"
+              />
             </div>
             {taxAmount > 0 && (
-              <div className="flex gap-8">
-                <span className="text-slate-500">Tax</span>
-                <span className="font-mono w-32 text-right">{formatCurrency(taxAmount, currency)}</span>
+              <div className="flex items-center gap-6">
+                <span className="text-slate-500 w-28 text-right">Tax</span>
+                <span className="font-mono w-36 text-right tabular-nums">
+                  {formatCurrency(taxAmount, currency)}
+                </span>
               </div>
             )}
-            <div className="flex gap-8 pt-1 border-t border-slate-300 mt-1">
-              <span className="font-semibold text-slate-900">Total</span>
-              <span className="font-bold font-mono w-32 text-right text-slate-900">{formatCurrency(total, currency)}</span>
+            {/* Total row — accent colour */}
+            <div className="flex items-center gap-6 pt-2 border-t border-slate-200 mt-1">
+              <span
+                className="font-semibold w-28 text-right"
+                style={{ color: "var(--finos-accent)" }}
+              >
+                Total
+              </span>
+              <span
+                className="font-bold font-mono w-36 text-right tabular-nums"
+                style={{ color: "var(--finos-accent)" }}
+              >
+                {formatCurrency(total, currency)}
+              </span>
             </div>
             {!isNGN && exchangeRate > 0 && (
-              <div className="flex gap-8 text-xs text-slate-400 border-t border-dashed border-slate-200 pt-1 mt-0.5">
-                <span>≈ NGN equivalent</span>
-                <span className="font-mono w-32 text-right">{formatCurrency(total * exchangeRate)}</span>
+              <div className="flex items-center gap-6 text-xs text-slate-400 border-t border-dashed border-slate-200 pt-1.5 mt-0.5">
+                <span className="w-28 text-right">≈ NGN equivalent</span>
+                <span className="font-mono w-36 text-right tabular-nums">
+                  {formatCurrency(total * exchangeRate)}
+                </span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Notes */}
-      <div className="space-y-1.5">
-        <Label htmlFor="notes">Notes</Label>
-        <Input
-          id="notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Payment instructions, terms, etc."
-        />
+      {/* ── 4. Notes ───────────────────────────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
+          <AccentBar />
+          <AlignLeft className="h-4 w-4 text-slate-400 flex-shrink-0" />
+          <span className="font-semibold text-slate-800 text-sm">Notes</span>
+          <span className="text-slate-400 font-normal text-xs">(optional)</span>
+        </div>
+        <div className="p-5">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Payment instructions, terms, or any notes for the customer…"
+            rows={3}
+            className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[80px]"
+          />
+        </div>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {/* ── 5. Actions ─────────────────────────────────────────────────── */}
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
+          {error}
+        </p>
+      )}
 
-      <div className="flex gap-3">
-        <Button type="submit" disabled={loading || (!isNGN && rateLoading)}>
+      <div className="flex items-center gap-3 pb-2">
+        <Button
+          type="submit"
+          disabled={loading || (!isNGN && rateLoading)}
+          style={{ backgroundColor: "var(--finos-accent)", color: "white" }}
+          className="hover:opacity-90 transition-opacity"
+        >
           {loading ? "Saving…" : "Save Changes"}
         </Button>
-        <Button type="button" variant="outline" onClick={() => router.push(`/sales/invoices/${invoiceId}`)}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => router.push(`/sales/invoices/${invoiceId}`)}
+        >
           Cancel
         </Button>
       </div>

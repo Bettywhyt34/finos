@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { buttonVariants } from "@/components/ui/button";
@@ -56,25 +56,38 @@ export default async function InvoiceEditPage({
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-3">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-slate-500">
         <Link
           href={`/sales/invoices/${id}`}
-          className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+          className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1 -ml-2")}
         >
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Invoice
+          <ArrowLeft className="h-4 w-4" /> Back to Invoice
         </Link>
         <span className="text-slate-300">/</span>
-        <span className="font-mono text-sm font-semibold">{invoice.invoiceNumber}</span>
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+        <span className="font-mono text-slate-700 font-medium">{invoice.invoiceNumber}</span>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
           DRAFT
         </span>
       </div>
 
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Edit Draft Invoice</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          You can edit all fields of a draft invoice. Invoice number will not be regenerated.
-        </p>
+      {/* Page heading */}
+      <div className="flex items-start gap-4">
+        <div
+          className="mt-0.5 h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: "color-mix(in srgb, var(--finos-accent) 10%, white)", border: "1px solid color-mix(in srgb, var(--finos-accent) 20%, white)" }}
+        >
+          <Pencil
+            className="h-4 w-4"
+            style={{ color: "var(--finos-accent)" }}
+          />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Edit Draft Invoice</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Draft invoices remain fully editable. No accounting entry is posted until the invoice is marked as sent.
+          </p>
+        </div>
       </div>
 
       <InvoiceEditForm
