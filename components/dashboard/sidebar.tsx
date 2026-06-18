@@ -225,7 +225,7 @@ export function Sidebar({ orgName, showBettywhyt, showFinosPos }: SidebarProps) 
                   <span className="flex-1 text-left">{section.label}</span>
                 </AccordionTrigger>
 
-                <AccordionContent className="pb-0 pt-0.5 [&>div]:h-auto [&>div]:pb-0">
+                <AccordionContent className="pb-0 pt-0.5 [&>div]:h-auto [&>div]:pb-0 [&_a]:!no-underline [&_a]:hover:!text-[var(--sidebar-active-text)]">
                   <div className="ml-6 space-y-0.5 border-l border-[var(--sidebar-border)] pl-3">
                     {section.children!.map((child) => {
                       const active = pathname === child.href || pathname.startsWith(child.href + "/");
