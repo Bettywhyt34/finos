@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -8,45 +8,68 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createInvoice } from "../actions";
+import { updateDraftInvoice } from "../../actions";
 import { formatCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/fx";
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
 interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; }
-interface Account { id: string; code: string; name: string; }
 interface LineItem { id: string; itemId: string; description: string; quantity: number; rate: number; taxRate: number; }
 
-function today() { return new Date().toISOString().split("T")[0]; }
-function addDays(d: string, n: number) { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
-function getMonthPeriod(d: string) { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`; }
+interface InitialData {
+  customerId:        string;
+  invoiceNumber:     string;
+  reference:         string;
+  issueDate:         string;
+  dueDate:           string;
+  recognitionPeriod: string;
+  currency:          string;
+  exchangeRate:      number;
+  discountAmount:    number;
+  notes:             string;
+  lines: { itemId: string; description: string; quantity: number; rate: number; taxRate: number; }[];
+}
 
-export function InvoiceForm({ customers, items, accounts: _accounts }: { customers: Customer[]; items: Item[]; accounts: Account[]; }) {
+interface Props {
+  invoiceId:           string;
+  initialData:         InitialData;
+  customers:           Customer[];
+  items:               Item[];
+  allowManualOverride: boolean;
+}
+
+function addDays(d: string, n: number) {
+  const dt = new Date(d);
+  dt.setDate(dt.getDate() + n);
+  return dt.toISOString().split("T")[0];
+}
+function getMonthPeriod(d: string) {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function InvoiceEditForm({ invoiceId, initialData, customers, items, allowManualOverride }: Props) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState("");
-  const [issueDate, setIssueDate] = useState(today());
-  const [dueDate, setDueDate] = useState(addDays(today(), 30));
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [recognitionPeriod, setRecognitionPeriod] = useState(getMonthPeriod(today()));
-  const [currency, setCurrency] = useState("NGN");
-  const [exchangeRate, setExchangeRate] = useState(1);
-  const [rateLoading, setRateLoading] = useState(false);
-  const [rateFetched, setRateFetched] = useState(false);
-  const [invoiceNumber, setInvoiceNumber]       = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [customerId, setCustomerId]               = useState(initialData.customerId);
+  const [invoiceNumber, setInvoiceNumber]         = useState(initialData.invoiceNumber);
   const [invoiceNumberTouched, setInvoiceNumberTouched] = useState(false);
-  const [numberLoading, setNumberLoading]   = useState(true);
-  const [numberConfig, setNumberConfig]     = useState<{
-    suggestedNumber:     string | null;
-    allowManualOverride: boolean;
-    preventDuplicates:   boolean;
-    isEnabled:           boolean;
-    helperText:          string;
-  } | null>(null);
-  const [lines, setLines] = useState<LineItem[]>([
-    { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 },
-  ]);
+  const [reference, setReference]                 = useState(initialData.reference);
+  const [issueDate, setIssueDate]                 = useState(initialData.issueDate);
+  const [dueDate, setDueDate]                     = useState(initialData.dueDate);
+  const [recognitionPeriod, setRecognitionPeriod] = useState(initialData.recognitionPeriod);
+  const [currency, setCurrency]                   = useState(initialData.currency);
+  const [exchangeRate, setExchangeRate]           = useState(initialData.exchangeRate);
+  const [rateLoading, setRateLoading]             = useState(false);
+  const [rateFetched, setRateFetched]             = useState(false);
+  const [discountAmount, setDiscountAmount]       = useState(initialData.discountAmount);
+  const [notes, setNotes]                         = useState(initialData.notes);
+  const [lines, setLines] = useState<LineItem[]>(
+    initialData.lines.length > 0
+      ? initialData.lines.map((l) => ({ ...l, id: crypto.randomUUID() }))
+      : [{ id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 }]
+  );
 
   const isNGN = currency === "NGN";
 
@@ -55,7 +78,7 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     setRateLoading(true);
     setRateFetched(false);
     try {
-      const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=NGN`);
+      const res  = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=NGN`);
       const json = await res.json() as { rates?: Record<string, number> };
       const rate = json.rates?.NGN;
       if (rate) { setExchangeRate(rate); setRateFetched(true); }
@@ -66,30 +89,10 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     }
   }, []);
 
-  // Auto-fetch when currency changes
-  useEffect(() => { fetchRate(currency); }, [currency, fetchRate]);
-
-  // Fetch suggested invoice number on mount (pure preview — does NOT advance counter)
-  useEffect(() => {
-    async function load() {
-      try {
-        const res  = await fetch("/api/invoices/next-number");
-        const json = await res.json() as {
-          data: { suggestedNumber: string | null; allowManualOverride: boolean;
-                  preventDuplicates: boolean; isEnabled: boolean; helperText: string; };
-        };
-        setNumberConfig(json.data);
-        if (json.data.suggestedNumber) setInvoiceNumber(json.data.suggestedNumber);
-      } catch { /* silently ignore — user can enter manually */ }
-      finally   { setNumberLoading(false); }
-    }
-    load();
-  }, []);
-
   function handleCurrencyChange(val: string) {
     setCurrency(val);
-    setExchangeRate(1);
-    setRateFetched(false);
+    if (val === "NGN") { setExchangeRate(1); setRateFetched(false); }
+    else void fetchRate(val);
   }
 
   function handleCustomerChange(id: string) {
@@ -117,9 +120,9 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)));
   }
 
-  const subtotal = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
+  const subtotal  = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
   const taxAmount = lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
-  const total = subtotal - discountAmount + taxAmount;
+  const total     = subtotal - discountAmount + taxAmount;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -127,14 +130,12 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     if (!isNGN && exchangeRate <= 0) { setError("Please enter a valid exchange rate"); return; }
     setLoading(true);
     setError(null);
-    const fd = new FormData(e.currentTarget as HTMLFormElement);
-    const result = await createInvoice({
+
+    const result = await updateDraftInvoice(invoiceId, {
       customerId,
-      // Only pass invoiceNumber when the user actively typed a new value.
-      // Untouched auto-populated fields and read-only fields submit undefined,
-      // so the backend always auto-generates and atomically advances the counter.
-      invoiceNumber: invoiceNumberTouched ? (invoiceNumber.trim() || undefined) : undefined,
-      reference: String(fd.get("reference") || ""),
+      // Only pass invoice number if manually overridden and changed
+      invoiceNumber: invoiceNumberTouched ? invoiceNumber.trim() : undefined,
+      reference:     reference || undefined,
       issueDate,
       dueDate,
       discountAmount,
@@ -142,22 +143,25 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
       currency,
       exchangeRate: isNGN ? 1 : exchangeRate,
       lines: lines.map((l) => ({
-        itemId: l.itemId || undefined,
+        itemId:      l.itemId || undefined,
         description: l.description,
-        quantity: l.quantity,
-        rate: l.rate,
-        taxRate: l.taxRate,
+        quantity:    l.quantity,
+        rate:        l.rate,
+        taxRate:     l.taxRate,
       })),
+      notes: notes || undefined,
     });
+
     setLoading(false);
     if (result?.error) { setError(result.error); return; }
-    toast.success("Invoice created");
-    router.push(`/sales/invoices/${result.id}`);
+    toast.success("Draft invoice updated");
+    router.push(`/sales/invoices/${invoiceId}`);
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Header */}
+
+      {/* Header fields */}
       <div className="border border-slate-200 rounded-xl p-5 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -171,29 +175,32 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="reference">Reference (optional)</Label>
-            <Input id="reference" name="reference" placeholder="PO-12345" />
+            <Input
+              id="reference"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="PO-12345"
+            />
           </div>
         </div>
-        {/* Invoice Number — wired to Transaction Number Series */}
+
+        {/* Invoice Number */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="invoiceNumber">Invoice Number</Label>
-            {numberLoading ? (
-              <div className="h-9 flex items-center text-sm text-slate-400 animate-pulse">Loading…</div>
-            ) : !numberConfig?.isEnabled ? (
+            {allowManualOverride ? (
               <>
                 <Input
                   id="invoiceNumber"
                   value={invoiceNumber}
                   onChange={(e) => { setInvoiceNumber(e.target.value); setInvoiceNumberTouched(true); }}
-                  placeholder="Enter invoice number"
                   className="font-mono"
                 />
-                <p className="text-xs text-amber-600 mt-1">
-                  {numberConfig?.helperText ?? "Invoice numbering is not configured."}
+                <p className="text-xs text-slate-500 mt-1">
+                  Manual override enabled. The series counter will not advance.
                 </p>
               </>
-            ) : !numberConfig.allowManualOverride ? (
+            ) : (
               <>
                 <Input
                   id="invoiceNumber"
@@ -201,28 +208,15 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
                   readOnly
                   className="font-mono bg-slate-50 text-slate-600 cursor-not-allowed"
                 />
-                <p className="text-xs text-slate-500 mt-1">{numberConfig.helperText}</p>
-              </>
-            ) : (
-              <>
-                <Input
-                  id="invoiceNumber"
-                  value={invoiceNumber}
-                  onChange={(e) => { setInvoiceNumber(e.target.value); setInvoiceNumberTouched(true); }}
-                  placeholder="e.g. INV-00001"
-                  className="font-mono"
-                />
-                <p className="text-xs text-slate-500 mt-1">{numberConfig.helperText}</p>
-                {!numberConfig.preventDuplicates && (
-                  <p className="text-xs text-amber-600 mt-0.5">
-                    Duplicate invoice numbers are allowed by your current settings.
-                  </p>
-                )}
+                <p className="text-xs text-slate-500 mt-1">
+                  Invoice number is fixed. Enable manual override in Settings to change it.
+                </p>
               </>
             )}
           </div>
         </div>
 
+        {/* Currency + Period */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>Invoice Currency</Label>
@@ -235,9 +229,15 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
           </div>
           <div className="space-y-1.5">
             <Label>Recognition Period</Label>
-            <Input value={recognitionPeriod} onChange={(e) => setRecognitionPeriod(e.target.value)} placeholder="YYYY-MM" />
+            <Input
+              value={recognitionPeriod}
+              onChange={(e) => setRecognitionPeriod(e.target.value)}
+              placeholder="YYYY-MM"
+            />
           </div>
         </div>
+
+        {/* Dates */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label>Issue Date</Label>
@@ -263,9 +263,7 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
           <div className="flex items-center gap-2">
             <span className="text-sm text-amber-800 whitespace-nowrap">1 {currency} =</span>
             <Input
-              type="number"
-              min="0.0001"
-              step="0.0001"
+              type="number" min="0.0001" step="0.0001"
               value={exchangeRate}
               onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1)}
               className="font-mono"
@@ -273,10 +271,8 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
             />
             <span className="text-sm text-amber-800">NGN</span>
             <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fetchRate(currency)}
+              type="button" variant="outline" size="sm"
+              onClick={() => void fetchRate(currency)}
               disabled={rateLoading}
               className="whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-100"
             >
@@ -284,26 +280,12 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
               Refresh
             </Button>
           </div>
-          <p className="text-xs text-amber-600">
-            Auto-fetched from Frankfurter. Override with your contracted rate.
-          </p>
           {exchangeRate > 0 && total > 0 && (
-            <div className="bg-white rounded-lg px-4 py-3 space-y-1 text-xs border border-amber-100">
+            <div className="bg-white rounded-lg px-4 py-3 text-xs border border-amber-100 space-y-1">
               <div className="flex justify-between text-slate-500">
-                <span>Subtotal (NGN equivalent)</span>
-                <span className="font-mono font-medium text-slate-700">{formatCurrency(subtotal * exchangeRate)}</span>
-              </div>
-              {taxAmount > 0 && (
-                <div className="flex justify-between text-slate-500">
-                  <span>Tax (NGN equivalent)</span>
-                  <span className="font-mono font-medium text-slate-700">{formatCurrency(taxAmount * exchangeRate)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-slate-200">
                 <span>Total (NGN equivalent)</span>
-                <span className="font-mono">{formatCurrency(total * exchangeRate)}</span>
+                <span className="font-mono font-semibold text-slate-700">{formatCurrency(total * exchangeRate)}</span>
               </div>
-              <p className="text-slate-400 pt-1">Journal entries will post at this NGN equivalent.</p>
             </div>
           )}
         </div>
@@ -337,7 +319,8 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
               <div className="col-span-3">
                 {idx === 0 && <Label className="block mb-1.5 text-xs">Description</Label>}
                 <Input className="h-8 text-xs" value={line.description}
-                  onChange={(e) => updateLine(line.id, "description", e.target.value)} placeholder="Description" />
+                  onChange={(e) => updateLine(line.id, "description", e.target.value)}
+                  placeholder="Description" />
               </div>
               <div className="col-span-1">
                 {idx === 0 && <Label className="block mb-1.5 text-xs">Qty</Label>}
@@ -370,6 +353,7 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
             </div>
           ))}
         </div>
+
         {/* Totals */}
         <div className="border-t border-slate-200 p-4 bg-slate-50">
           <div className="flex flex-col items-end gap-1.5 text-sm">
@@ -406,16 +390,23 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
       {/* Notes */}
       <div className="space-y-1.5">
         <Label htmlFor="notes">Notes</Label>
-        <Input id="notes" name="notes" placeholder="Payment instructions, terms, etc." />
+        <Input
+          id="notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Payment instructions, terms, etc."
+        />
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex gap-3">
         <Button type="submit" disabled={loading || (!isNGN && rateLoading)}>
-          {loading ? "Creating…" : "Create Invoice"}
+          {loading ? "Saving…" : "Save Changes"}
         </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={() => router.push(`/sales/invoices/${invoiceId}`)}>
+          Cancel
+        </Button>
       </div>
     </form>
   );

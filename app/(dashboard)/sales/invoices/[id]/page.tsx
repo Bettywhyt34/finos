@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { formatCurrency, toNGN, cn } from "@/lib/utils";
 import { formatDate } from "@/lib/utils";
 import { InvoiceActions } from "./invoice-actions";
+import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status";
 
 const statusColors: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
@@ -55,6 +56,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const balance = parseFloat(String(invoice.balanceDue));
   const totalNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
   const balanceNGN = toNGN(balance, rate);
+  const displayStatus = getInvoiceDisplayStatus({
+    status: invoice.status,
+    dueDate: invoice.dueDate,
+    balanceDue: String(invoice.balanceDue),
+  });
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -65,8 +71,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           </Link>
           <span className="text-slate-300">/</span>
           <span className="font-mono text-sm font-semibold">{invoice.invoiceNumber}</span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[invoice.status] || ""}`}>
-            {invoice.status}
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[displayStatus] || ""}`}>
+            {displayStatus}
           </span>
           {!isNGN && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">

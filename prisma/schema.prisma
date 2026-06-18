@@ -134,6 +134,9 @@ model Tenant {
   transactionNumberSeries     TransactionNumberSeries[]
   pdfTemplates                PdfTemplate[]
   emailNotificationTemplates  EmailNotificationTemplate[]
+  reportingTags               ReportingTag[]
+  reportingTagOptions         ReportingTagOption[]
+  webTabs                     WebTab[]
 
   @@map("tenants")
 }
@@ -1587,4 +1590,111 @@ model EmailNotificationTemplate {
   @@index([tenantId])
   @@index([tenantId, category])
   @@map("email_notification_templates")
+}
+
+// ─── Reporting Tags ───────────────────────────────────────────────────────────
+
+enum ReportingTagEntityScope {
+  SALES
+  PURCHASES
+  BANKING
+  ACCOUNTING
+  INVENTORY
+  CONTACTS
+  EXPENSES
+
+  @@map("reporting_tag_entity_scope_enum")
+}
+
+model ReportingTag {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  color       String?
+  isActive    Boolean  @default(true)  @map("is_active")
+  isSystem    Boolean  @default(false) @map("is_system")
+
+  appliesTo   ReportingTagEntityScope[] @default([]) @map("applies_to")
+
+  options     ReportingTagOption[]
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("reporting_tags")
+}
+
+model ReportingTagOption {
+  id          String       @id @default(cuid())
+  tagId       String       @map("tag_id")
+  tag         ReportingTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  tenantId    String       @map("tenant_id")
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  color       String?
+  sortOrder   Int          @default(0) @map("sort_order")
+  isActive    Boolean      @default(true) @map("is_active")
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, tagId, name])
+  @@index([tenantId])
+  @@index([tagId])
+  @@index([tenantId, isActive])
+  @@map("reporting_tag_options")
+}
+
+// ─── Web Tabs ──────────────────────────────────────────────────────────────────
+
+enum WebTabType {
+  INTERNAL_ROUTE
+  EXTERNAL_URL
+
+  @@map("web_tab_type_enum")
+}
+
+enum WebTabPlacement {
+  MAIN_NAV
+  SETTINGS
+  QUICK_LINKS
+
+  @@map("web_tab_placement_enum")
+}
+
+model WebTab {
+  id              String          @id @default(cuid())
+  tenantId        String          @map("tenant_id")
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name            String
+  description     String?
+  type            WebTabType
+  url             String
+  placement       WebTabPlacement @default(QUICK_LINKS)
+  icon            String?
+  sortOrder       Int             @default(0)   @map("sort_order")
+  visibleToRoles  String[]        @default([])  @map("visible_to_roles")
+
+  isActive        Boolean         @default(true)  @map("is_active")
+  isSystem        Boolean         @default(false) @map("is_system")
+  isConnected     Boolean         @default(false) @map("is_connected")
+
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, placement])
+  @@index([tenantId, isActive])
+  @@map("web_tabs")
 }

@@ -4,8 +4,12 @@ import { useState }                                       from "react";
 import Link                                               from "next/link";
 import {
   Plus, Pencil, Copy, Star, X, AlertTriangle, Info,
-  ChevronRight, LayoutTemplate, Check, Trash2,
+  ChevronRight, LayoutTemplate, Check, Trash2, Printer, Clock,
 } from "lucide-react";
+
+// Document types where print/export is operational.
+// Update this set as each document type is wired.
+const CONNECTED_DOC_TYPES = new Set(["INVOICE"]);
 import { toast }                                          from "sonner";
 import { cn }                                             from "@/lib/utils";
 import type { PdfTemplateRow }                            from "@/lib/customization/pdf-utils";
@@ -27,109 +31,114 @@ interface Props {
 
 // ─── Mini document preview ─────────────────────────────────────────────────────
 
-/** Professional Branded Invoice — branded header band, structured sections. */
+/**
+ * Professional Branded Invoice thumbnail.
+ * Mirrors the actual renderer layout:
+ *   1. Accent header band — company left, INVOICE+number right
+ *   2. Address/Balance Due strip — light bg, accent bottom border, amount in accent
+ *   3. Bill To / Invoice Details — two-col, accent section labels
+ *   4. Line items table — accent header, alternating rows
+ *   5. Totals — Balance Due row in accent background
+ *   6. Notes / Payment Terms footer — accent headings
+ */
 function MiniDocPreviewProfessional() {
   return (
     <div className="w-full aspect-[210/297] bg-white flex flex-col overflow-hidden select-none pointer-events-none text-[0px]">
-      {/* Full-width brand header band */}
-      <div
-        className="shrink-0 px-2 py-2"
-        style={{ backgroundColor: "var(--finos-accent)" }}
-      >
+
+      {/* 1. Header band */}
+      <div className="shrink-0 px-2 py-2" style={{ backgroundColor: "var(--finos-accent)" }}>
         <div className="flex items-start justify-between gap-1">
-          {/* Company name area */}
           <div className="space-y-[3px]">
-            <div className="h-[6px] w-14 bg-white/70 rounded" />
-            <div className="h-[3px] w-9 bg-white/40 rounded" />
-            <div className="h-[3px] w-10 bg-white/30 rounded" />
+            <div className="h-[6px] w-14 bg-white/80 rounded" />
+            <div className="h-[2px] w-9 bg-white/45 rounded" />
           </div>
-          {/* INVOICE title + ref */}
-          <div className="text-right space-y-[3px]">
-            <div className="h-[7px] w-12 bg-white/80 rounded" />
-            <div className="h-[3px] w-8 bg-white/50 rounded ml-auto" />
+          <div className="text-right space-y-[2px]">
+            <div className="h-[8px] w-11 bg-white/85 rounded" />
+            <div className="h-[3px] w-8 bg-white/55 rounded ml-auto" />
           </div>
-        </div>
-        {/* Balance Due inside header */}
-        <div className="mt-2 flex items-center justify-end gap-1.5">
-          <div className="h-[3px] w-10 bg-white/40 rounded" />
-          <div className="h-[5px] w-14 bg-white/65 rounded" />
         </div>
       </div>
 
-      {/* Thin divider line */}
-      <div className="h-[2px] bg-slate-100" />
+      {/* 2. Address / Balance Due strip */}
+      <div
+        className="shrink-0 px-2 py-1.5 flex items-center justify-between"
+        style={{ backgroundColor: "#fafafa", borderBottom: "2px solid var(--finos-accent)" }}
+      >
+        <div className="space-y-[2px]">
+          <div className="h-[2px] w-11 bg-slate-300 rounded" />
+          <div className="h-[2px] w-8 bg-slate-200 rounded" />
+          <div className="h-[2px] w-9 bg-slate-200 rounded" />
+        </div>
+        <div className="text-right space-y-[2px]">
+          <div className="h-[2px] w-10 bg-slate-300 rounded ml-auto" />
+          <div className="h-[5px] w-12 rounded" style={{ backgroundColor: "var(--finos-accent)", opacity: 0.85 }} />
+        </div>
+      </div>
 
-      {/* Bill To + meta row */}
+      {/* 3. Bill To / Invoice Details */}
       <div className="px-2 py-1.5 flex gap-2">
-        <div className="flex-1 space-y-[3px]">
-          <div className="h-[3px] w-5 bg-slate-300 rounded" />
-          <div className="h-[4px] w-12 bg-slate-400 rounded" />
+        <div className="flex-1 space-y-[2px]">
+          <div className="h-[2px] w-6 rounded" style={{ backgroundColor: "var(--finos-accent)", opacity: 0.7 }} />
+          <div className="h-[4px] w-12 bg-slate-500 rounded" />
+          <div className="h-[2px] w-10 bg-slate-200 rounded" />
+          <div className="h-[2px] w-8 bg-slate-200 rounded" />
         </div>
-        <div className="space-y-[3px]">
-          <div className="h-[3px] w-14 bg-slate-200 rounded" />
-          <div className="h-[3px] w-14 bg-slate-200 rounded" />
-          <div className="h-[3px] w-14 bg-slate-200 rounded" />
+        <div className="flex-1 space-y-[2px]">
+          <div className="h-[2px] w-10 rounded" style={{ backgroundColor: "var(--finos-accent)", opacity: 0.7 }} />
+          <div className="h-[2px] w-full bg-slate-100 rounded" />
+          <div className="h-[2px] w-full bg-slate-100 rounded" />
+          <div className="h-[2px] w-3/4 bg-slate-100 rounded" />
         </div>
       </div>
 
-      {/* Subject line */}
-      <div className="px-2 pb-1">
-        <div className="h-[3px] w-20 bg-slate-100 rounded" />
-      </div>
-
-      <div className="border-t border-slate-100 mx-2" />
-
-      {/* Table header — brand colour */}
-      <div className="mx-2 mt-1">
-        <div
-          className="flex gap-[2px] rounded-t overflow-hidden"
-          style={{ backgroundColor: "var(--finos-accent)" }}
-        >
+      {/* 4. Line items table */}
+      <div className="mx-2">
+        <div className="flex gap-[2px]" style={{ backgroundColor: "var(--finos-accent)" }}>
           <div className="h-[5px] w-2" />
           <div className="h-[5px] flex-1" />
           <div className="h-[5px] w-3" />
-          <div className="h-[5px] w-4" />
-          <div className="h-[5px] w-4" />
+          <div className="h-[5px] w-5" />
+          <div className="h-[5px] w-5" />
         </div>
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
-            className={cn("flex gap-[2px]", i % 2 === 0 ? "bg-white" : "bg-[#EBF1FA]")}
+            className="flex gap-[2px]"
+            style={{ backgroundColor: i % 2 === 0 ? "#ffffff" : "#EBF1FA" }}
           >
             <div className="h-[4px] w-2 bg-slate-200" />
             <div className="h-[4px] flex-1 bg-slate-100" />
             <div className="h-[4px] w-3 bg-slate-100" />
-            <div className="h-[4px] w-4 bg-slate-100" />
-            <div className="h-[4px] w-4 bg-slate-100" />
+            <div className="h-[4px] w-5 bg-slate-100" />
+            <div className="h-[4px] w-5 bg-slate-100" />
           </div>
         ))}
       </div>
 
-      {/* Totals */}
-      <div className="px-2 pt-1.5 border-t border-slate-100 mx-2 space-y-[3px]">
-        {["w-5", "w-5"].map((w, i) => (
+      {/* 5. Totals */}
+      <div className="px-2 pt-1 space-y-[2px]">
+        {[0, 1].map((i) => (
           <div key={i} className="flex justify-end gap-2">
-            <div className="h-[3px] w-8 bg-slate-200 rounded" />
-            <div className={cn("h-[3px] bg-slate-200 rounded", w)} />
+            <div className="h-[2px] w-7 bg-slate-200 rounded" />
+            <div className="h-[2px] w-5 bg-slate-200 rounded" />
           </div>
         ))}
-        {/* Total row */}
-        <div className="flex justify-end gap-2">
-          <div className="h-[4px] w-8 rounded bg-[var(--finos-accent)]/30" />
-          <div className="h-[4px] w-6 rounded bg-[var(--finos-accent)]/30" />
+        <div className="mt-[2px] flex items-center gap-2 justify-end" style={{ backgroundColor: "var(--finos-accent)", padding: "2px 0" }}>
+          <div className="h-[4px] w-8 bg-white/30 rounded" />
+          <div className="h-[4px] w-6 bg-white/50 rounded mr-0.5" />
         </div>
       </div>
 
-      {/* Notes + Payment Terms headings */}
-      <div className="px-2 mt-1.5 space-y-2 flex-1">
-        {["w-6", "w-10"].map((w, i) => (
+      {/* 6. Notes / Payment Terms footer */}
+      <div className="px-2 mt-2 space-y-2 flex-1">
+        {(["w-5", "w-9"] as const).map((w, i) => (
           <div key={i}>
             <div
-              className={cn("h-[4px] rounded mb-[3px]", w)}
-              style={{ backgroundColor: "var(--finos-accent)", opacity: 0.7 }}
+              className={cn("h-[3px] rounded mb-[2px]", w)}
+              style={{ backgroundColor: "var(--finos-accent)", opacity: 0.65 }}
             />
-            <div className="h-[3px] w-20 bg-slate-100 rounded mb-[2px]" />
-            <div className="h-[3px] w-14 bg-slate-100 rounded" />
+            <div className="h-[2px] w-16 bg-slate-100 rounded mb-[2px]" />
+            <div className="h-[2px] w-11 bg-slate-100 rounded" />
           </div>
         ))}
       </div>
@@ -247,13 +256,23 @@ function TemplateCard({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {template.isSystem && (
             <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
               System
             </span>
           )}
-          <span className="text-xs text-slate-400 capitalize">{template.layoutKey}</span>
+          {CONNECTED_DOC_TYPES.has(template.documentType) ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-600">
+              <Printer className="h-2.5 w-2.5" />
+              Print/export connected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-600">
+              <Clock className="h-2.5 w-2.5" />
+              Rendering pending
+            </span>
+          )}
         </div>
       </div>
     </button>
@@ -505,14 +524,29 @@ export function PdfTemplatesClient({ initialTemplates, initialType }: Props) {
           </div>
         </div>
 
-        {/* PDF rendering notice */}
-        <div className="flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-100 rounded-lg mb-6">
-          <Info className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-          <p className="text-sm text-amber-700">
-            Template settings are ready. Actual PDF rendering integration is pending —
-            select a default template now and it will be applied when PDF export is connected.
-          </p>
-        </div>
+        {/* PDF rendering notice — conditional on whether this doc type is wired */}
+        {CONNECTED_DOC_TYPES.has(activeType) ? (
+          <div className="flex items-start gap-3 p-3.5 bg-emerald-50 border border-emerald-100 rounded-lg mb-6">
+            <Printer className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-emerald-800 space-y-0.5">
+              <p className="font-medium">Invoice print/export is connected.</p>
+              <p className="text-emerald-700">
+                The selected default invoice template is used when users click{" "}
+                <strong>Print / Save as PDF</strong> on an invoice.
+                Email PDF attachment is still pending.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-100 rounded-lg mb-6">
+            <Info className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+            <p className="text-sm text-amber-700">
+              Template settings are ready. PDF rendering for{" "}
+              <strong>{singularLabel}</strong> documents is not yet connected —
+              select a default template now and it will be applied when export is wired.
+            </p>
+          </div>
+        )}
 
         {/* Template grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
@@ -574,6 +608,15 @@ export function PdfTemplatesClient({ initialTemplates, initialType }: Props) {
                     Custom
                   </span>
                 )}
+                {CONNECTED_DOC_TYPES.has(selected.documentType) ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600">
+                    <Printer className="h-3 w-3" /> Print/export connected
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-600">
+                    <Clock className="h-3 w-3" /> Rendering pending
+                  </span>
+                )}
               </div>
 
               {/* Details */}
@@ -619,15 +662,27 @@ export function PdfTemplatesClient({ initialTemplates, initialType }: Props) {
             {/* Drawer footer actions */}
             <div className="px-6 py-4 border-t border-slate-200 space-y-2 shrink-0">
               {!selected.isDefault && (
-                <button
-                  type="button"
-                  disabled={!!actionLoading}
-                  onClick={() => handleSetDefault(selected.id)}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-60"
-                >
-                  <Check className="h-4 w-4" />
-                  {actionLoading === selected.id ? "Updating…" : "Set as Default"}
-                </button>
+                <div className="space-y-1.5">
+                  <button
+                    type="button"
+                    disabled={!!actionLoading}
+                    onClick={() => handleSetDefault(selected.id)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[var(--finos-accent)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-60"
+                  >
+                    <Check className="h-4 w-4" />
+                    {actionLoading === selected.id ? "Updating…" : "Set as Default"}
+                  </button>
+                  {CONNECTED_DOC_TYPES.has(selected.documentType) ? (
+                    <p className="text-xs text-center text-slate-500">
+                      Set this as default to use it for{" "}
+                      <strong>Print / Save as PDF</strong> on invoices.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-center text-slate-400">
+                      This will become the default template once export is connected.
+                    </p>
+                  )}
+                </div>
               )}
               <button
                 type="button"

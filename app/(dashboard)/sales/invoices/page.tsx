@@ -6,6 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { formatCurrency, toNGN, cn } from "@/lib/utils";
 import { InvoiceListClient } from "./invoice-list-client";
+import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status";
 
 export default async function InvoicesPage() {
   const session = await auth();
@@ -27,7 +28,9 @@ export default async function InvoicesPage() {
     }, 0);
 
   const draftCount = invoices.filter((i) => i.status === "DRAFT").length;
-  const overdueCount = invoices.filter((i) => i.status === "OVERDUE").length;
+  const overdueCount = invoices.filter(
+    (i) => getInvoiceDisplayStatus({ status: i.status, dueDate: i.dueDate, balanceDue: String(i.balanceDue) }) === "OVERDUE"
+  ).length;
 
   return (
     <div className="space-y-6">

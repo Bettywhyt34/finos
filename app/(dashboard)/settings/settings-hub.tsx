@@ -103,6 +103,7 @@ const SETTINGS: SettingSection[] = [
           { label: "PDF Templates",       href: "/settings/customization/pdf-templates" },
           { label: "Email Notifications", href: "/settings/customization/email-notifications" },
           { label: "Reporting Tags",      href: "/settings/customization/reporting-tags" },
+          { label: "Web Tabs",            href: "/settings/customization/web-tabs"       },
         ],
       },
       {

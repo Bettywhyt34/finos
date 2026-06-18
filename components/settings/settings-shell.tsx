@@ -77,6 +77,7 @@ export const SIDEBAR_NAV: NavSection[] = [
           { id: "customization-pdf-templates",       label: "PDF Templates",             href: "/settings/customization/pdf-templates"             },
           { id: "customization-email-templates",     label: "Email Notifications",       href: "/settings/customization/email-notifications"       },
           { id: "customization-reporting-tags",      label: "Reporting Tags",            href: "/settings/customization/reporting-tags"            },
+          { id: "customization-web-tabs",            label: "Web Tabs",                  href: "/settings/customization/web-tabs"                  },
         ],
       },
       { id: "automation",    label: "Automation",             icon: Zap,       href: "/settings/automation"    },

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Send, CreditCard, Ban, Pencil } from "lucide-react";
+import { Send, CreditCard, Ban, Pencil, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -147,14 +147,34 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     router.refresh();
   }
 
-  const canSend = ["DRAFT", "PARTIAL", "OVERDUE"].includes(invoice.status);
-  const canPay = invoice.balanceDue > 0 && !["VOIDED", "PAID"].includes(invoice.status);
-  const canVoid = !["VOIDED", "PAID"].includes(invoice.status);
-  const canEdit = invoice.status !== "VOIDED";
+  const isDraft       = invoice.status === "DRAFT";
+  const canSend       = ["DRAFT", "PARTIAL", "OVERDUE"].includes(invoice.status);
+  // Record Payment is only available for sent/open invoices — not drafts
+  const canPay        = invoice.balanceDue > 0 && !["DRAFT", "VOIDED", "PAID"].includes(invoice.status);
+  const canVoid       = !["VOIDED", "PAID"].includes(invoice.status);
+  const canFullEdit   = isDraft;                               // full edit page
+  const canLimitedEdit = !isDraft && invoice.status !== "VOIDED"; // limited modal
 
   return (
     <div className="flex items-center gap-2">
-      {canEdit && (
+      {/* Print / Save as PDF — always available */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => window.open(`/sales/invoices/${invoice.id}/print`, "_blank")}
+      >
+        <Printer className="h-3.5 w-3.5 mr-1.5" />
+        Print / Save as PDF
+      </Button>
+      {/* Full edit — DRAFT only — navigates to edit page */}
+      {canFullEdit && (
+        <Button variant="outline" size="sm" onClick={() => router.push(`/sales/invoices/${invoice.id}/edit`)}>
+          <Pencil className="h-3.5 w-3.5 mr-1.5" />
+          Edit Draft
+        </Button>
+      )}
+      {/* Limited edit — sent/open invoices — opens modal */}
+      {canLimitedEdit && (
         <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
           <Pencil className="h-3.5 w-3.5 mr-1.5" />
           Edit

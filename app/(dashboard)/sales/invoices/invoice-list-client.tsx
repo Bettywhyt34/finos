@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn, formatCurrency, formatDate, toNGN } from "@/lib/utils"
 import { postInvoicesToLedger } from "./actions"
+import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status"
 
 const statusColors: Record<string, string> = {
   DRAFT:       "bg-slate-100 text-slate-600",
@@ -16,6 +17,7 @@ const statusColors: Record<string, string> = {
   PAID:        "bg-emerald-100 text-emerald-700",
   OVERDUE:     "bg-red-100 text-red-700",
   WRITTEN_OFF: "bg-slate-100 text-slate-400",
+  VOIDED:      "bg-red-50 text-red-400 line-through",
 }
 
 const MS_PER_DAY = 86_400_000
@@ -153,11 +155,7 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
               const balanceNGN = toNGN(balance, rate)
               const totalNGN = toNGN(parseFloat(String(inv.totalAmount)), rate)
               const isNGN = inv.currency === "NGN"
-              const isOverdue =
-                new Date(inv.dueDate) < new Date() &&
-                inv.status !== "PAID" &&
-                inv.status !== "WRITTEN_OFF"
-              const statusKey = isOverdue ? "OVERDUE" : inv.status
+              const statusKey = getInvoiceDisplayStatus(inv)
               const isDraft = inv.status === "DRAFT"
               const isChecked = selected.has(inv.id)
               const ageDays = invoiceAgeDays(inv.sentAt, inv.paidAt, inv.status)

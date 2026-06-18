@@ -16,6 +16,9 @@ function getActiveItem(pathname: string): string {
   if (pathname.includes("/customization/reporting-tags")) {
     return "customization-reporting-tags";
   }
+  if (pathname.includes("/customization/web-tabs")) {
+    return "customization-web-tabs";
+  }
   return "customization-transaction-numbers";
 }
 
@@ -24,6 +27,7 @@ const BREADCRUMBS: Record<string, string> = {
   "customization-pdf-templates":       "PDF Templates",
   "customization-email-templates":     "Email Notifications",
   "customization-reporting-tags":      "Reporting Tags",
+  "customization-web-tabs":            "Web Tabs",
 };
 
 interface Props {
