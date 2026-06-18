@@ -12,7 +12,7 @@ import {
   ALL_SCOPES,
   type ReportingTagRow,
   type ReportingTagOptionRow,
-} from "@/lib/customization/reporting-tags-service";
+} from "@/lib/customization/reporting-tags-types";
 import type { ReportingTagEntityScope }            from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

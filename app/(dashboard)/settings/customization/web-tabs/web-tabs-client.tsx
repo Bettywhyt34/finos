@@ -14,7 +14,7 @@ import {
   ALL_PLACEMENTS,
   ALL_ROLES,
   type WebTabRow,
-} from "@/lib/customization/web-tabs-service";
+} from "@/lib/customization/web-tabs-types";
 import type { WebTabType, WebTabPlacement } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

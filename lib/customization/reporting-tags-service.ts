@@ -6,84 +6,29 @@ import "server-only";
 import { prisma }                  from "@/lib/prisma";
 import type { ReportingTagEntityScope } from "@prisma/client";
 
-// ─── Public row types ─────────────────────────────────────────────────────────
+// Types and constants live in the shared (non-server-only) file.
+// Import them for use within this file, and re-export so existing
+// server-side imports continue to work unchanged.
+import {
+  SCOPE_LABELS,
+  ALL_SCOPES,
+  type ReportingTagOptionRow,
+  type ReportingTagRow,
+  type CreateReportingTagInput,
+  type UpdateReportingTagInput,
+  type CreateReportingTagOptionInput,
+  type UpdateReportingTagOptionInput,
+} from "./reporting-tags-types";
 
-export type ReportingTagOptionRow = {
-  id:          string;
-  tagId:       string;
-  tenantId:    string;
-  name:        string;
-  description: string | null;
-  color:       string | null;
-  sortOrder:   number;
-  isActive:    boolean;
-  createdAt:   Date;
-  updatedAt:   Date;
-};
-
-export type ReportingTagRow = {
-  id:          string;
-  tenantId:    string;
-  name:        string;
-  description: string | null;
-  color:       string | null;
-  isActive:    boolean;
-  isSystem:    boolean;
-  appliesTo:   ReportingTagEntityScope[];
-  options:     ReportingTagOptionRow[];
-  createdAt:   Date;
-  updatedAt:   Date;
-};
-
-// ─── Input types ──────────────────────────────────────────────────────────────
-
-export type CreateReportingTagInput = {
-  name:        string;
-  description?: string;
-  color?:       string;
-  isActive?:    boolean;
-  appliesTo?:   ReportingTagEntityScope[];
-};
-
-export type UpdateReportingTagInput = {
-  name?:        string;
-  description?: string;
-  color?:       string;
-  isActive?:    boolean;
-  appliesTo?:   ReportingTagEntityScope[];
-};
-
-export type CreateReportingTagOptionInput = {
-  name:         string;
-  description?: string;
-  color?:       string;
-  sortOrder?:   number;
-  isActive?:    boolean;
-};
-
-export type UpdateReportingTagOptionInput = {
-  name?:        string;
-  description?: string;
-  color?:       string;
-  sortOrder?:   number;
-  isActive?:    boolean;
-};
-
-// ─── Scope labels ─────────────────────────────────────────────────────────────
-
-export const SCOPE_LABELS: Record<ReportingTagEntityScope, string> = {
-  SALES:       "Sales",
-  PURCHASES:   "Purchases",
-  BANKING:     "Banking",
-  ACCOUNTING:  "Accounting",
-  INVENTORY:   "Inventory",
-  CONTACTS:    "Contacts",
-  EXPENSES:    "Expenses",
-};
-
-export const ALL_SCOPES: ReportingTagEntityScope[] = [
-  "SALES", "PURCHASES", "BANKING", "ACCOUNTING", "INVENTORY", "CONTACTS", "EXPENSES",
-];
+export type {
+  ReportingTagOptionRow,
+  ReportingTagRow,
+  CreateReportingTagInput,
+  UpdateReportingTagInput,
+  CreateReportingTagOptionInput,
+  UpdateReportingTagOptionInput,
+} from "./reporting-tags-types";
+export { SCOPE_LABELS, ALL_SCOPES } from "./reporting-tags-types";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
