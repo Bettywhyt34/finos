@@ -86,7 +86,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     setLoading(true);
     const result = await sendInvoice(invoice.id, sentDate);
     setLoading(false);
-    if (result?.error) { toast.error(result.error); return; }
+    if ("error" in result) { toast.error(result.error); return; }
     toast.success("Invoice marked as sent");
     setSentOpen(false);
     router.refresh();

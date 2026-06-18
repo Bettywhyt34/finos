@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
-import { ArrowRight, BookOpen, Loader2 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { ArrowRight, BookOpen, Loader2, Trash2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { cn, formatCurrency, formatDate, toNGN } from "@/lib/utils"
-import { postInvoicesToLedger } from "./actions"
+import { postInvoicesToLedger, bulkDeleteInvoices } from "./actions"
 import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status"
 
 const statusColors: Record<string, string> = {
@@ -44,7 +44,8 @@ type InvoiceRow = {
 }
 
 export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selected, setSelected]   = useState<Set<string>>(new Set())
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const draftIds = invoices.filter((i) => i.status === "DRAFT").map((i) => i.id)
@@ -68,6 +69,22 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
+    })
+  }
+
+  const handleDelete = () => {
+    const ids = Array.from(selected)
+    startTransition(async () => {
+      const result = await bulkDeleteInvoices(ids)
+      setDeleteOpen(false)
+      if ("error" in result) { toast.error(result.error); return }
+      setSelected(new Set())
+      const msg = result.deleted === 1
+        ? "1 draft invoice deleted"
+        : `${result.deleted} draft invoices deleted`
+      result.skipped > 0
+        ? toast.warning(`${msg} (${result.skipped} non-draft skipped)`)
+        : toast.success(msg)
     })
   }
 
@@ -107,6 +124,15 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
               Clear
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteOpen(true)}
+              disabled={pending}
+              className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50 gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+            <Button
               size="sm"
               onClick={handlePostToLedger}
               disabled={pending}
@@ -121,6 +147,34 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
           </div>
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {selected.size} draft invoice{selected.size !== 1 ? "s" : ""}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">
+            This will permanently delete {selected.size === 1 ? "this draft invoice" : `these ${selected.size} draft invoices`}.
+            Only DRAFT invoices will be deleted — any non-draft selections will be skipped.
+            This cannot be undone.
+          </p>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" type="button" disabled={pending} />}>
+              Cancel
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={pending}
+              className="gap-1.5"
+            >
+              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
         <table className="w-full text-sm">

@@ -6,7 +6,7 @@ import { prisma }                        from "@/lib/prisma";
 import { postJournalEntry }              from "@/lib/journal";
 import { getRecognitionPeriod, toNGN }   from "@/lib/utils";
 import { sendToBettywhyt }               from "@/lib/integrations/bettywhyt/webhook-sender";
-import { sendInvoiceEmail }              from "@/lib/email-notifications/senders/invoice-sent";
+import { postInvoiceAndMarkSent }        from "@/lib/invoices/post-invoice";
 import { previewTransactionNumber }      from "@/lib/customization/utils";
 import { generateTransactionNumber }     from "@/lib/customization/service";
 
@@ -46,7 +46,6 @@ export async function createInvoice(data: {
   const subtotal    = data.lines.reduce((s, l) => s + l.quantity * l.rate, 0);
   const taxAmount   = data.lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
   const totalAmount = subtotal - data.discountAmount + taxAmount;
-  const totalNGN    = toNGN(totalAmount, rate);
 
   try {
     // ── Single atomic transaction ──────────────────────────────────────────────
@@ -144,23 +143,8 @@ export async function createInvoice(data: {
       });
     });
 
-    // ── Post journal in NGN (fire-and-forget, outside transaction) ────────────
-    // Email/journal failure must not roll back the already-committed invoice.
-    const fxNote = rate !== 1 ? ` (${data.currency} @ ${rate})` : "";
-    await postJournalEntry({
-      tenantId:          orgId,
-      createdBy:         userId,
-      entryDate:         new Date(data.issueDate),
-      reference:         invoice.invoiceNumber,
-      description:       `Invoice ${invoice.invoiceNumber}${fxNote}`,
-      recognitionPeriod: data.recognitionPeriod,
-      source:            "invoice",
-      sourceId:          invoice.id,
-      lines: [
-        { accountCode: "CA-001", description: `AR - ${invoice.invoiceNumber}${fxNote}`,      debit: totalNGN, credit: 0       },
-        { accountCode: "IN-001", description: `Revenue - ${invoice.invoiceNumber}${fxNote}`, debit: 0,       credit: totalNGN },
-      ],
-    }).catch(() => {});
+    // NOTE: No journal posting on draft creation.
+    // AR/Revenue is posted only when the invoice is marked as Sent (sendInvoice).
 
     // BettyWhyt outbound hook: fire-and-forget for POS sales
     if (data.source === "bettywhyt_pos") {
@@ -185,24 +169,20 @@ export async function createInvoice(data: {
 
 export async function sendInvoice(id: string, dateSent?: string) {
   const session = await auth();
-  const orgId = session?.user?.tenantId;
-  if (!orgId) return { error: "Unauthorized" };
-  const sentAt = dateSent ? new Date(dateSent) : new Date();
-  await prisma.invoice.update({
-    where: { id, tenantId: orgId },
-    data: { status: "SENT", sentAt },
-  });
+  const orgId   = session?.user?.tenantId;
+  const userId  = session?.user?.id;
+  if (!orgId || !userId) return { error: "Unauthorized" };
 
-  // Fire-and-forget: email failure must not block the status update.
-  void sendInvoiceEmail({ tenantId: orgId, invoiceId: id })
-    .then((result) => {
-      if (!result.sent) {
-        console.warn(`[INVOICE_SENT] Email not sent for invoice ${id}: ${result.reason}`);
-      }
-    })
-    .catch((err: unknown) => {
-      console.error(`[INVOICE_SENT] Unexpected error sending email for invoice ${id}:`, err);
-    });
+  const sentAt = dateSent ? new Date(dateSent) : new Date();
+
+  const result = await postInvoiceAndMarkSent({
+    tenantId:  orgId,
+    invoiceId: id,
+    userId,
+    sentAt,
+    sendEmail: true,
+  });
+  if ("error" in result) return result;
 
   revalidatePath(`/sales/invoices/${id}`);
   revalidatePath("/sales/invoices");
@@ -263,7 +243,6 @@ export async function updateDraftInvoice(
   const subtotal    = data.lines.reduce((s, l) => s + l.quantity * l.rate, 0);
   const taxAmount   = data.lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
   const totalAmount = subtotal - data.discountAmount + taxAmount;
-  const totalNGN    = toNGN(totalAmount, rate);
 
   try {
     // 1. Fetch invoice — tenant-scoped
@@ -335,46 +314,9 @@ export async function updateDraftInvoice(
       });
     });
 
-    // 5. Reverse old journal + post new one if amounts changed (fire-and-forget)
-    const oldRate     = parseFloat(String(existing.exchangeRate));
-    const oldTotalNGN = toNGN(parseFloat(String(existing.totalAmount)), oldRate);
-    const amountsChanged =
-      Math.abs(oldTotalNGN - totalNGN) > 0.01 || existing.currency !== data.currency;
-
-    if (amountsChanged) {
-      const oldFxNote = oldRate !== 1 ? ` (${existing.currency} @ ${oldRate})` : "";
-      const newFxNote = rate    !== 1 ? ` (${data.currency} @ ${rate})`        : "";
-
-      await postJournalEntry({
-        tenantId:          orgId,
-        createdBy:         userId,
-        entryDate:         new Date(),
-        reference:         `REV-${existing.invoiceNumber}`,
-        description:       `Reverse draft ${existing.invoiceNumber} (edit)${oldFxNote}`,
-        recognitionPeriod: data.recognitionPeriod,
-        source:            "invoice_edit_reversal",
-        sourceId:          id,
-        lines: [
-          { accountCode: "IN-001", description: `Rev Revenue - ${existing.invoiceNumber}`, debit: oldTotalNGN, credit: 0           },
-          { accountCode: "CA-001", description: `Rev AR - ${existing.invoiceNumber}`,      debit: 0,           credit: oldTotalNGN },
-        ],
-      }).catch(() => {});
-
-      await postJournalEntry({
-        tenantId:          orgId,
-        createdBy:         userId,
-        entryDate:         new Date(data.issueDate),
-        reference:         finalNumber,
-        description:       `Invoice ${finalNumber} (draft edit)${newFxNote}`,
-        recognitionPeriod: data.recognitionPeriod,
-        source:            "invoice",
-        sourceId:          id,
-        lines: [
-          { accountCode: "CA-001", description: `AR - ${finalNumber}${newFxNote}`,      debit: totalNGN, credit: 0       },
-          { accountCode: "IN-001", description: `Revenue - ${finalNumber}${newFxNote}`, debit: 0,       credit: totalNGN },
-        ],
-      }).catch(() => {});
-    }
+    // NOTE: No journal reversal/repost on draft edit.
+    // The draft has not been posted yet; there is nothing to reverse.
+    // AR/Revenue will be posted when the invoice is marked as Sent.
 
     revalidatePath(`/sales/invoices/${id}`);
     revalidatePath("/sales/invoices");
@@ -402,27 +344,30 @@ export async function voidInvoice(id: string, reason: string, convertToDraft: bo
   const totalNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
   const fxNote   = rate !== 1 ? ` (${invoice.currency} @ ${rate})` : "";
 
-  // Void the invoice (committed immediately — not in a transaction with the draft)
+  // Void the invoice
   await prisma.invoice.update({
     where: { id },
     data: { status: "VOIDED", voidedAt: new Date(), voidedReason: reason },
   });
 
-  // Post reversal journal (flip DR/CR)
-  await postJournalEntry({
-    tenantId:          orgId,
-    createdBy:         userId,
-    entryDate:         new Date(),
-    reference:         `VOID-${invoice.invoiceNumber}`,
-    description:       `Void ${invoice.invoiceNumber}: ${reason}${fxNote}`,
-    recognitionPeriod: getRecognitionPeriod(new Date()),
-    source:            "invoice_void",
-    sourceId:          invoice.id,
-    lines: [
-      { accountCode: "IN-001", description: `Void Revenue - ${invoice.invoiceNumber}`, debit: totalNGN, credit: 0       },
-      { accountCode: "CA-001", description: `Void AR - ${invoice.invoiceNumber}`,      debit: 0,       credit: totalNGN },
-    ],
-  }).catch(() => {});
+  // Post reversal journal only if the invoice was already posted (i.e., not DRAFT).
+  // A DRAFT invoice has never had AR/Revenue posted, so there is nothing to reverse.
+  if (invoice.status !== "DRAFT") {
+    await postJournalEntry({
+      tenantId:          orgId,
+      createdBy:         userId,
+      entryDate:         new Date(),
+      reference:         `VOID-${invoice.invoiceNumber}`,
+      description:       `Void ${invoice.invoiceNumber}: ${reason}${fxNote}`,
+      recognitionPeriod: getRecognitionPeriod(new Date()),
+      source:            "invoice_void",
+      sourceId:          invoice.id,
+      lines: [
+        { accountCode: "IN-001", description: `Void Revenue - ${invoice.invoiceNumber}`, debit: totalNGN, credit: 0       },
+        { accountCode: "CA-001", description: `Void AR - ${invoice.invoiceNumber}`,      debit: 0,       credit: totalNGN },
+      ],
+    }).catch(() => {});
+  }
 
   let newInvoiceId: string | undefined;
 
@@ -481,49 +426,57 @@ export async function postInvoicesToLedger(ids: string[]) {
   const errors: Array<{ id: string; error: string }> = [];
 
   for (const id of ids) {
-    try {
-      const invoice = await prisma.invoice.findFirst({
-        where: { id, tenantId: orgId, status: "DRAFT" },
-      });
-      if (!invoice) { skipped++; continue; }
-
-      const rate     = parseFloat(String(invoice.exchangeRate));
-      const totalNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
-      const fxNote   = rate !== 1 ? ` (${invoice.currency} @ ${rate})` : "";
-
-      const existingJE = await prisma.journalEntry.findFirst({
-        where: { tenantId: orgId, sourceId: id },
-      });
-
-      if (!existingJE) {
-        await postJournalEntry({
-          tenantId:          orgId,
-          createdBy:         userId,
-          entryDate:         invoice.issueDate,
-          reference:         invoice.invoiceNumber,
-          description:       `Invoice ${invoice.invoiceNumber}${fxNote}`,
-          recognitionPeriod: invoice.recognitionPeriod,
-          source:            "invoice",
-          sourceId:          invoice.id,
-          lines: [
-            { accountCode: "CA-001", description: `AR - ${invoice.invoiceNumber}${fxNote}`,      debit: totalNGN, credit: 0       },
-            { accountCode: "IN-001", description: `Revenue - ${invoice.invoiceNumber}${fxNote}`, debit: 0,       credit: totalNGN },
-          ],
-        });
+    const result = await postInvoiceAndMarkSent({
+      tenantId:  orgId,
+      invoiceId: id,
+      userId,
+      sentAt:    new Date(),
+      sendEmail: false,   // bulk posting does not send individual emails
+    });
+    if ("error" in result) {
+      // "not found" and "already sent" are silent skips; everything else is an error
+      if (
+        result.error === "Invoice not found" ||
+        result.error.startsWith("Invoice is already")
+      ) {
+        skipped++;
+      } else {
+        errors.push({ id, error: result.error });
       }
-
-      await prisma.invoice.update({
-        where: { id },
-        data: { status: "SENT", sentAt: new Date() },
-      });
+    } else {
       posted++;
-    } catch (e: unknown) {
-      errors.push({ id, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
   revalidatePath("/sales/invoices");
   return { posted, skipped, errors };
+}
+
+export async function bulkDeleteInvoices(ids: string[]) {
+  const session = await auth();
+  const orgId   = session?.user?.tenantId;
+  if (!orgId) return { error: "Unauthorized" };
+  if (ids.length === 0) return { deleted: 0, skipped: 0 };
+
+  // Fetch all requested invoices that belong to this tenant
+  const invoices = await prisma.invoice.findMany({
+    where:  { id: { in: ids }, tenantId: orgId },
+    select: { id: true, status: true },
+  });
+
+  const draftIds   = invoices.filter((i) => i.status === "DRAFT").map((i) => i.id);
+  const skipped    = ids.length - draftIds.length;
+
+  if (draftIds.length === 0) return { deleted: 0, skipped };
+
+  // Delete lines first (FK constraint), then invoices — all in one transaction
+  await prisma.$transaction(async (tx) => {
+    await tx.invoiceLine.deleteMany({ where: { invoiceId: { in: draftIds } } });
+    await tx.invoice.deleteMany({ where: { id: { in: draftIds } } });
+  });
+
+  revalidatePath("/sales/invoices");
+  return { deleted: draftIds.length, skipped };
 }
 
 export async function recordPayment(data: {

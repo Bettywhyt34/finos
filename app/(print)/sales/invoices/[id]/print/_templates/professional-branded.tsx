@@ -80,6 +80,38 @@ export function ProfessionalBrandedTemplate({ data }: { data: InvoicePdfData }) 
         backgroundColor: "#fff",
       }}
     >
+      {/* DRAFT watermark — only while invoice has not been issued */}
+      {invoice.status === "DRAFT" && (
+        <div
+          style={{
+            backgroundColor: "#fef3c7",
+            border:          "2px solid #f59e0b",
+            padding:         "10px 20px",
+            display:         "flex",
+            alignItems:      "center",
+            gap:             "12px",
+          }}
+        >
+          <span
+            style={{
+              backgroundColor: "#f59e0b",
+              color:           "#fff",
+              fontSize:        "11px",
+              fontWeight:      700,
+              letterSpacing:   "0.1em",
+              padding:         "3px 10px",
+              borderRadius:    "3px",
+              flexShrink:      0,
+            }}
+          >
+            DRAFT
+          </span>
+          <span style={{ fontSize: "12px", color: "#78350f" }}>
+            This invoice has not been issued. It is not a valid tax document until it is marked as Sent.
+          </span>
+        </div>
+      )}
+
       {/* ── 1. Header band ────────────────────────────────────────────────── */}
       <div
         style={{
