@@ -32,7 +32,7 @@ export default async function InvoiceEditPage({
   // Only DRAFT invoices can be fully edited
   if (invoice.status !== "DRAFT") redirect(`/sales/invoices/${id}`);
 
-  const [customers, items, series] = await Promise.all([
+  const [customers, items, series, taxRates] = await Promise.all([
     prisma.customer.findMany({
       where: { tenantId },
       select: { id: true, companyName: true, customerCode: true, paymentTerms: true },
@@ -49,6 +49,11 @@ export default async function InvoiceEditPage({
     prisma.transactionNumberSeries.findFirst({
       where: { tenantId, module: "INVOICE" },
       select: { allowManualOverride: true, isEnabled: true },
+    }),
+    prisma.taxRate.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, name: true, rate: true, type: true, isDefault: true },
+      orderBy: [{ type: "asc" }, { name: "asc" }],
     }),
   ]);
 
@@ -103,17 +108,21 @@ export default async function InvoiceEditPage({
           exchangeRate:      parseFloat(String(invoice.exchangeRate)),
           discountAmount:    parseFloat(String(invoice.discountAmount)),
           notes:             invoice.notes ?? "",
-          lines: invoice.lines.map((l) => ({
-            itemId:      l.itemId ?? "",
-            description: l.description,
-            quantity:    parseFloat(String(l.quantity)),
-            rate:        parseFloat(String(l.rate)),
-            taxRate:     parseFloat(String(l.taxRate)),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          lines: invoice.lines.map((l: any) => ({
+            itemId:        l.itemId ?? "",
+            description:   l.description,
+            quantity:      parseFloat(String(l.quantity)),
+            rate:          parseFloat(String(l.rate)),
+            taxRateId:     l.taxRateId ?? "",
+            discountType:  (l.discountType as "PERCENT" | "FIXED"),
+            discountValue: parseFloat(String(l.discountValue)),
           })),
         }}
         customers={customers}
         items={items}
         allowManualOverride={allowManualOverride}
+        taxRates={taxRates.map((t) => ({ ...t, rate: parseFloat(String(t.rate)) }))}
       />
     </div>
   );

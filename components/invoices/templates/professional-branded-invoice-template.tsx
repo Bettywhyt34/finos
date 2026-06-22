@@ -40,14 +40,15 @@ function getBorderColor(config: Record<string, unknown>): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ProfessionalBrandedTemplate({ data }: { data: InvoicePdfData }) {
-  const { tenant, customer, invoice, lines, payments, accentColor, templateConfig } = data;
+  const { tenant, customer, invoice, lines, payments, accentColor, templateConfig, taxBreakdown } = data;
 
   const altRow    = getAltRowColor(templateConfig);
   const border    = getBorderColor(templateConfig);
   const cur       = invoice.currency;
   const isNGN     = cur === "NGN";
-  const hasDiscount = invoice.discountAmount > 0;
-  const hasTax    = invoice.taxAmount > 0;
+  const hasLineDiscounts   = invoice.lineDiscountTotal > 0;
+  const hasInvoiceDiscount = invoice.discountAmount > 0;
+  const hasTax    = taxBreakdown.length > 0;
   const hasPaid   = invoice.amountPaid > 0;
 
   const showNotes        = templateConfig.showNotes !== false;
@@ -367,16 +368,22 @@ export function ProfessionalBrandedTemplate({ data }: { data: InvoicePdfData }) 
       >
         <table style={{ width: "300px", borderCollapse: "collapse" }}>
           <tbody>
-            <TotalRow label="Sub Total"    value={formatCurrency(invoice.subtotal, cur)} />
-            {hasDiscount && (
+            <TotalRow label="Sub Total" value={formatCurrency(invoice.subtotal, cur)} />
+            {hasLineDiscounts && (
               <TotalRow
-                label="Discount"
+                label="Line Discounts"
+                value={`-${formatCurrency(invoice.lineDiscountTotal, cur)}`}
+              />
+            )}
+            {hasInvoiceDiscount && (
+              <TotalRow
+                label="Additional Invoice Discount"
                 value={`-${formatCurrency(invoice.discountAmount, cur)}`}
               />
             )}
-            {hasTax && (
-              <TotalRow label="Tax / VAT"  value={formatCurrency(invoice.taxAmount, cur)} />
-            )}
+            {taxBreakdown.map((row) => (
+              <TotalRow key={row.label} label={row.label} value={formatCurrency(row.amount, cur)} />
+            ))}
             <tr>
               <td
                 colSpan={2}

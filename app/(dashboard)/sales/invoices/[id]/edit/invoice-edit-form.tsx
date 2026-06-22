@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, RefreshCw, FileText, AlignLeft, Receipt } from "lucide-react";
+import { RefreshCw, FileText, AlignLeft, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,10 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { updateDraftInvoice } from "../../actions";
 import { cn, formatCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/fx";
+import {
+  InvoiceLineItemsEditor,
+  type LineItemData,
+  type TaxRateOption,
+  computeLineAmount,
+  buildTaxBreakdown,
+  emptyLine,
+} from "@/components/invoices/invoice-line-items-editor";
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
 interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; }
-interface LineItem { id: string; itemId: string; description: string; quantity: number; rate: number; taxRate: number; }
 
 interface InitialData {
   customerId:        string;
@@ -27,7 +34,15 @@ interface InitialData {
   exchangeRate:      number;
   discountAmount:    number;
   notes:             string;
-  lines: { itemId: string; description: string; quantity: number; rate: number; taxRate: number; }[];
+  lines: {
+    itemId:        string;
+    description:   string;
+    quantity:      number;
+    rate:          number;
+    taxRateId:     string;
+    discountType:  "PERCENT" | "FIXED";
+    discountValue: number;
+  }[];
 }
 
 interface Props {
@@ -36,6 +51,7 @@ interface Props {
   customers:           Customer[];
   items:               Item[];
   allowManualOverride: boolean;
+  taxRates:            TaxRateOption[];
 }
 
 function addDays(d: string, n: number) {
@@ -48,22 +64,14 @@ function getMonthPeriod(d: string) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Small accent bar used in section headings */
 function AccentBar() {
   return (
-    <div
-      className="w-0.5 self-stretch rounded-full flex-shrink-0"
-      style={{ backgroundColor: "var(--finos-accent)" }}
-    />
+    <div className="w-0.5 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: "var(--finos-accent)" }} />
   );
 }
+function Req() { return <span className="text-red-500 ml-0.5">*</span>; }
 
-/** Red asterisk for required fields */
-function Req() {
-  return <span className="text-red-500 ml-0.5">*</span>;
-}
-
-export function InvoiceEditForm({ invoiceId, initialData, customers, items, allowManualOverride }: Props) {
+export function InvoiceEditForm({ invoiceId, initialData, customers, items, allowManualOverride, taxRates }: Props) {
   const router = useRouter();
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -80,10 +88,10 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
   const [rateFetched, setRateFetched]             = useState(false);
   const [discountAmount, setDiscountAmount]       = useState(initialData.discountAmount);
   const [notes, setNotes]                         = useState(initialData.notes);
-  const [lines, setLines] = useState<LineItem[]>(
+  const [lines, setLines] = useState<LineItemData[]>(
     initialData.lines.length > 0
       ? initialData.lines.map((l) => ({ ...l, id: crypto.randomUUID() }))
-      : [{ id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 }]
+      : [emptyLine(taxRates)]
   );
 
   const isNGN = currency === "NGN";
@@ -123,21 +131,18 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
     if (cust) setDueDate(addDays(val, cust.paymentTerms));
   }
 
-  function handleItemSelect(lineId: string, itemId: string) {
-    const item = items.find((i) => i.id === itemId);
-    setLines((prev) => prev.map((l) => l.id === lineId
-      ? { ...l, itemId, description: item?.name || "", rate: item?.salesPrice ?? 0 }
-      : l
-    ));
-  }
-
-  function updateLine(lineId: string, field: keyof LineItem, value: string | number) {
-    setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)));
-  }
-
-  const subtotal  = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
-  const taxAmount = lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
-  const total     = subtotal - discountAmount + taxAmount;
+  // ── Totals (live, client-side) ────────────────────────────────────────────
+  const subtotal       = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
+  const lineDiscountSum = lines.reduce((s, l) => {
+    const gross = l.quantity * l.rate;
+    const net   = computeLineAmount(l);
+    return s + (gross - net);
+  }, 0);
+  const taxBreakdown   = buildTaxBreakdown(lines, taxRates);
+  const taxTotal       = taxBreakdown.reduce((s, r) => s + r.amount, 0);
+  const maxDiscount    = Math.max(0, subtotal - lineDiscountSum);
+  const clampedDiscount = Math.min(Math.max(0, discountAmount), maxDiscount);
+  const total          = subtotal - lineDiscountSum - clampedDiscount + taxTotal;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -157,11 +162,13 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
       currency,
       exchangeRate: isNGN ? 1 : exchangeRate,
       lines: lines.map((l) => ({
-        itemId:      l.itemId || undefined,
-        description: l.description,
-        quantity:    l.quantity,
-        rate:        l.rate,
-        taxRate:     l.taxRate,
+        itemId:        l.itemId || undefined,
+        description:   l.description,
+        quantity:      l.quantity,
+        rate:          l.rate,
+        taxRateId:     l.taxRateId || undefined,
+        discountType:  l.discountType,
+        discountValue: l.discountValue,
       })),
       notes: notes || undefined,
     });
@@ -172,7 +179,6 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
     router.push(`/sales/invoices/${invoiceId}`);
   }
 
-  // Derived display labels (fixes @base-ui SelectValue not resolving label from item text)
   const selectedCustomerName = customerId
     ? (customers.find((c) => c.id === customerId)?.companyName ?? "Unknown customer")
     : null;
@@ -189,44 +195,26 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Customer + Reference */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Customer<Req /></Label>
-              {/*
-                @base-ui SelectPrimitive.Value does not auto-resolve the label
-                from child SelectItem text. We explicitly show the customer name
-                derived from the customerId state; the Select still tracks and
-                emits the UUID internally.
-              */}
               <Select value={customerId} onValueChange={(v) => handleCustomerChange(v ?? "")}>
                 <SelectTrigger className="w-full">
-                  <span className={cn(
-                    "flex-1 truncate text-left text-sm",
-                    !selectedCustomerName && "text-muted-foreground"
-                  )}>
+                  <span className={cn("flex-1 truncate text-left text-sm", !selectedCustomerName && "text-muted-foreground")}>
                     {selectedCustomerName ?? "Select customer"}
                   </span>
                 </SelectTrigger>
                 <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
-                  ))}
+                  {customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="reference">Reference <span className="text-slate-400 font-normal text-xs">(optional)</span></Label>
-              <Input
-                id="reference"
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-                placeholder="PO-12345"
-              />
+              <Input id="reference" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="PO-12345" />
             </div>
           </div>
 
-          {/* Invoice Number + Currency */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="invoiceNumber">Invoice Number</Label>
@@ -238,21 +226,12 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
                     onChange={(e) => { setInvoiceNumber(e.target.value); setInvoiceNumberTouched(true); }}
                     className="font-mono"
                   />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Manual override is enabled. Editing this number will not advance the series counter.
-                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Manual override is enabled. Editing this number will not advance the series counter.</p>
                 </>
               ) : (
                 <>
-                  <Input
-                    id="invoiceNumber"
-                    value={invoiceNumber}
-                    readOnly
-                    className="font-mono bg-slate-50 text-slate-500 cursor-not-allowed"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Invoice number is locked by your numbering settings.
-                  </p>
+                  <Input id="invoiceNumber" value={invoiceNumber} readOnly className="font-mono bg-slate-50 text-slate-500 cursor-not-allowed" />
+                  <p className="text-xs text-slate-400 mt-1">Invoice number is locked by your numbering settings.</p>
                 </>
               )}
             </div>
@@ -263,15 +242,12 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
                   <span className="flex-1 text-left text-sm">{currency}</span>
                 </SelectTrigger>
                 <SelectContent>
-                  {SUPPORTED_CURRENCIES.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
+                  {SUPPORTED_CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          {/* Issue Date + Due Date + Recognition Period */}
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label>Issue Date<Req /></Label>
@@ -283,12 +259,7 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
             </div>
             <div className="space-y-1.5">
               <Label>Recognition Period<Req /></Label>
-              <Input
-                value={recognitionPeriod}
-                onChange={(e) => setRecognitionPeriod(e.target.value)}
-                placeholder="YYYY-MM"
-                className="font-mono"
-              />
+              <Input value={recognitionPeriod} onChange={(e) => setRecognitionPeriod(e.target.value)} placeholder="YYYY-MM" className="font-mono" />
             </div>
           </div>
         </div>
@@ -300,12 +271,8 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-amber-900">Exchange Rate</h2>
             <div className="flex items-center gap-2">
-              {rateLoading && (
-                <span className="text-xs text-amber-600 animate-pulse">Fetching live rate…</span>
-              )}
-              {rateFetched && !rateLoading && (
-                <span className="text-xs text-green-700 font-medium">✓ Live rate</span>
-              )}
+              {rateLoading && <span className="text-xs text-amber-600 animate-pulse">Fetching live rate…</span>}
+              {rateFetched && !rateLoading && <span className="text-xs text-green-700 font-medium">✓ Live rate</span>}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -314,14 +281,12 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
               type="number" min="0.0001" step="0.0001"
               value={exchangeRate}
               onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1)}
-              className="font-mono"
-              placeholder="e.g. 1580.50"
+              className="font-mono" placeholder="e.g. 1580.50"
             />
             <span className="text-sm text-amber-800">NGN</span>
             <Button
               type="button" variant="outline" size="sm"
-              onClick={() => void fetchRate(currency)}
-              disabled={rateLoading}
+              onClick={() => void fetchRate(currency)} disabled={rateLoading}
               className="whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-100"
             >
               <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", rateLoading && "animate-spin")} />
@@ -332,9 +297,7 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
             <div className="bg-white rounded-lg px-4 py-3 text-xs border border-amber-100">
               <div className="flex justify-between text-slate-500">
                 <span>Total (NGN equivalent)</span>
-                <span className="font-mono font-semibold text-slate-700">
-                  {formatCurrency(total * exchangeRate)}
-                </span>
+                <span className="font-mono font-semibold text-slate-700">{formatCurrency(total * exchangeRate)}</span>
               </div>
             </div>
           )}
@@ -343,156 +306,36 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
 
       {/* ── 3. Line Items ──────────────────────────────────────────────── */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-        {/* Section heading */}
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <AccentBar />
-            <Receipt className="h-4 w-4 text-slate-400 flex-shrink-0" />
-            <span className="font-semibold text-slate-800 text-sm">
-              Line Items
-              <span className="ml-2 text-slate-400 font-normal text-xs">prices in {currency}</span>
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1"
-            onClick={() =>
-              setLines((p) => [
-                ...p,
-                { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 },
-              ])
-            }
-          >
-            <Plus className="h-3.5 w-3.5" /> Add Line
-          </Button>
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-3">
+          <AccentBar />
+          <Receipt className="h-4 w-4 text-slate-400 flex-shrink-0" />
+          <span className="font-semibold text-slate-800 text-sm">Line Items</span>
         </div>
-
-        {/* Column headers */}
-        <div
-          className="grid grid-cols-12 gap-3 px-4 py-2 border-b border-slate-100 text-xs font-medium text-slate-500"
-          style={{ backgroundColor: "color-mix(in srgb, var(--finos-accent) 5%, white)" }}
-        >
-          <div className="col-span-3">Item</div>
-          <div className="col-span-3">Description<Req /></div>
-          <div className="col-span-1 text-center">Qty<Req /></div>
-          <div className="col-span-2">Rate ({currency})<Req /></div>
-          <div className="col-span-1 text-center">Tax %</div>
-          <div className="col-span-1 text-right">Amount</div>
-          <div className="col-span-1" />
-        </div>
-
-        {/* Line rows */}
-        <div className="divide-y divide-slate-50">
-          {lines.map((line) => {
-            const lineItemName = line.itemId
-              ? (items.find((i) => i.id === line.itemId)?.name ?? "Custom")
-              : null;
-
-            return (
-              <div key={line.id} className="grid grid-cols-12 gap-3 px-4 py-3 items-center hover:bg-slate-50/50 transition-colors">
-                {/* Item select */}
-                <div className="col-span-3">
-                  <Select
-                    value={line.itemId}
-                    onValueChange={(v) => handleItemSelect(line.id, v ?? "")}
-                  >
-                    <SelectTrigger className="h-8 text-xs w-full">
-                      <span className={cn(
-                        "flex-1 truncate text-left",
-                        !lineItemName && "text-muted-foreground"
-                      )}>
-                        {lineItemName ?? "Select item"}
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Custom</SelectItem>
-                      {items.map((i) => (
-                        <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Description */}
-                <div className="col-span-3">
-                  <Input
-                    className="h-8 text-xs"
-                    value={line.description}
-                    onChange={(e) => updateLine(line.id, "description", e.target.value)}
-                    placeholder="Description"
-                  />
-                </div>
-
-                {/* Quantity */}
-                <div className="col-span-1">
-                  <Input
-                    className="h-8 text-xs text-center"
-                    type="number" min="0" step="0.01"
-                    value={line.quantity}
-                    onChange={(e) => updateLine(line.id, "quantity", parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-
-                {/* Rate */}
-                <div className="col-span-2">
-                  <Input
-                    className="h-8 text-xs font-mono"
-                    type="number" min="0" step="0.01"
-                    value={line.rate}
-                    onChange={(e) => updateLine(line.id, "rate", parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-
-                {/* Tax % */}
-                <div className="col-span-1">
-                  <Input
-                    className="h-8 text-xs text-center"
-                    type="number" min="0" max="100" step="0.5"
-                    value={line.taxRate}
-                    onChange={(e) => updateLine(line.id, "taxRate", parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-
-                {/* Amount */}
-                <div className="col-span-1 text-right font-mono text-xs text-slate-600 tabular-nums">
-                  {formatCurrency(line.quantity * line.rate, currency)}
-                </div>
-
-                {/* Delete */}
-                <div className="col-span-1 flex justify-center">
-                  <button
-                    type="button"
-                    className={cn(
-                      "h-7 w-7 flex items-center justify-center rounded-md text-slate-300 transition-colors",
-                      lines.length > 1
-                        ? "hover:text-red-500 hover:bg-red-50 cursor-pointer"
-                        : "opacity-30 cursor-not-allowed"
-                    )}
-                    onClick={() => lines.length > 1 && setLines((p) => p.filter((l) => l.id !== line.id))}
-                    disabled={lines.length === 1}
-                    aria-label="Remove line"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="p-4">
+          <InvoiceLineItemsEditor
+            currency={currency}
+            items={items}
+            taxRates={taxRates}
+            lines={lines}
+            onChange={setLines}
+          />
         </div>
 
         {/* Totals */}
         <div className="border-t border-slate-200 bg-slate-50/60 px-5 py-4">
           <div className="flex flex-col items-end gap-2 text-sm">
             <div className="flex items-center gap-6">
-              <span className="text-slate-500 w-28 text-right">Subtotal</span>
-              <span className="font-mono w-36 text-right tabular-nums">
-                {formatCurrency(subtotal, currency)}
-              </span>
+              <span className="text-slate-500 w-52 text-right">Subtotal</span>
+              <span className="font-mono w-36 text-right tabular-nums">{formatCurrency(subtotal, currency)}</span>
             </div>
+            {lineDiscountSum > 0 && (
+              <div className="flex items-center gap-6">
+                <span className="text-slate-500 w-52 text-right">Line Discounts</span>
+                <span className="font-mono w-36 text-right tabular-nums text-slate-600">-{formatCurrency(lineDiscountSum, currency)}</span>
+              </div>
+            )}
             <div className="flex items-center gap-6">
-              <span className="text-slate-500 w-28 text-right">Discount</span>
+              <span className="text-slate-500 w-52 text-right">Additional Invoice Discount</span>
               <Input
                 type="number" min="0" step="0.01"
                 value={discountAmount}
@@ -500,35 +343,22 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
                 className="h-6 w-36 text-xs text-right font-mono"
               />
             </div>
-            {taxAmount > 0 && (
-              <div className="flex items-center gap-6">
-                <span className="text-slate-500 w-28 text-right">Tax</span>
-                <span className="font-mono w-36 text-right tabular-nums">
-                  {formatCurrency(taxAmount, currency)}
-                </span>
+            {taxBreakdown.map((row) => (
+              <div key={row.label} className="flex items-center gap-6">
+                <span className="text-slate-500 w-52 text-right">{row.label}</span>
+                <span className="font-mono w-36 text-right tabular-nums">{formatCurrency(row.amount, currency)}</span>
               </div>
-            )}
-            {/* Total row — accent colour */}
+            ))}
             <div className="flex items-center gap-6 pt-2 border-t border-slate-200 mt-1">
-              <span
-                className="font-semibold w-28 text-right"
-                style={{ color: "var(--finos-accent)" }}
-              >
-                Total
-              </span>
-              <span
-                className="font-bold font-mono w-36 text-right tabular-nums"
-                style={{ color: "var(--finos-accent)" }}
-              >
+              <span className="font-semibold w-52 text-right" style={{ color: "var(--finos-accent)" }}>Total ({currency})</span>
+              <span className="font-bold font-mono w-36 text-right tabular-nums" style={{ color: "var(--finos-accent)" }}>
                 {formatCurrency(total, currency)}
               </span>
             </div>
             {!isNGN && exchangeRate > 0 && (
               <div className="flex items-center gap-6 text-xs text-slate-400 border-t border-dashed border-slate-200 pt-1.5 mt-0.5">
-                <span className="w-28 text-right">≈ NGN equivalent</span>
-                <span className="font-mono w-36 text-right tabular-nums">
-                  {formatCurrency(total * exchangeRate)}
-                </span>
+                <span className="w-52 text-right">≈ NGN equivalent</span>
+                <span className="font-mono w-36 text-right tabular-nums">{formatCurrency(total * exchangeRate)}</span>
               </div>
             )}
           </div>
@@ -556,11 +386,8 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
 
       {/* ── 5. Actions ─────────────────────────────────────────────────── */}
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
-          {error}
-        </p>
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">{error}</p>
       )}
-
       <div className="flex items-center gap-3 pb-2">
         <Button
           type="submit"
@@ -570,11 +397,7 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
         >
           {loading ? "Saving…" : "Save Changes"}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.push(`/sales/invoices/${invoiceId}`)}
-        >
+        <Button type="button" variant="outline" onClick={() => router.push(`/sales/invoices/${invoiceId}`)}>
           Cancel
         </Button>
       </div>

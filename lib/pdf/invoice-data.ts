@@ -34,12 +34,19 @@ export type InvoicePdfCustomer = {
 };
 
 export type InvoicePdfLine = {
-  description: string;
-  quantity:    number;
-  rate:        number;
-  amount:      number;
-  taxRate:     number;
-  itemCode:    string | null;
+  description:    string;
+  quantity:       number;
+  rate:           number;
+  amount:         number;       // gross = qty × rate
+  taxRateId:      string | null;
+  taxName:        string | null;
+  taxRate:        number;
+  taxAmount:      number;
+  discountType:   string;
+  discountValue:  number;
+  discountAmount: number;
+  lineTotal:      number;
+  itemCode:       string | null;
 };
 
 export type InvoicePdfPayment = {
@@ -62,6 +69,7 @@ export type InvoicePdfData = {
     exchangeRate:      number;
     subtotal:          number;
     discountAmount:    number;
+    lineDiscountTotal: number;
     taxAmount:         number;
     totalAmount:       number;
     amountPaid:        number;
@@ -71,6 +79,7 @@ export type InvoicePdfData = {
   };
   lines:          InvoicePdfLine[];
   payments:       InvoicePdfPayment[];
+  taxBreakdown:   Array<{ label: string; amount: number }>;
   templateConfig: Record<string, unknown>;
   accentColor:    string;
   layoutKey:      string;
@@ -153,6 +162,41 @@ export async function prepareInvoicePdfData(
       : null) ??
     "#1B3A6B";
 
+  // Build tax breakdown from per-line data (uses any-cast until prisma generate runs)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function buildTaxBreakdown(lines: any[]): Array<{ label: string; amount: number }> {
+    const map = new Map<string, number>();
+    for (const l of lines) {
+      const taxAmt = parseFloat(String(l.taxAmount ?? 0));
+      if (taxAmt <= 0) continue;
+      const label = l.taxName
+        ? `${l.taxName} [${parseFloat(String(l.taxRate))}%]`
+        : `Tax [${parseFloat(String(l.taxRate))}%]`;
+      map.set(label, (map.get(label) ?? 0) + taxAmt);
+    }
+    return Array.from(map.entries()).map(([label, amount]) => ({ label, amount }));
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfLines = (invoice.lines as any[]).map((l) => ({
+    description:    l.description,
+    quantity:       parseFloat(String(l.quantity)),
+    rate:           parseFloat(String(l.rate)),
+    amount:         parseFloat(String(l.amount)),
+    taxRateId:      l.taxRateId ?? null,
+    taxName:        l.taxName ?? null,
+    taxRate:        parseFloat(String(l.taxRate)),
+    taxAmount:      parseFloat(String(l.taxAmount ?? 0)),
+    discountType:   l.discountType ?? "PERCENT",
+    discountValue:  parseFloat(String(l.discountValue ?? 0)),
+    discountAmount: parseFloat(String(l.discountAmount ?? 0)),
+    lineTotal:      parseFloat(String(l.lineTotal ?? l.amount)),
+    itemCode:       l.item?.itemCode ?? null,
+  }));
+
+  const lineDiscountTotal = pdfLines.reduce((s, l) => s + l.discountAmount, 0);
+  const taxBreakdown      = buildTaxBreakdown(invoice.lines);
+
   return {
     tenant: {
       name:     tenant.name,
@@ -186,6 +230,7 @@ export async function prepareInvoicePdfData(
       exchangeRate:      parseFloat(String(invoice.exchangeRate)),
       subtotal:          parseFloat(String(invoice.subtotal)),
       discountAmount:    parseFloat(String(invoice.discountAmount)),
+      lineDiscountTotal,
       taxAmount:         parseFloat(String(invoice.taxAmount)),
       totalAmount:       parseFloat(String(invoice.totalAmount)),
       amountPaid:        parseFloat(String(invoice.amountPaid)),
@@ -193,20 +238,14 @@ export async function prepareInvoicePdfData(
       recognitionPeriod: invoice.recognitionPeriod,
       notes:             invoice.notes,
     },
-    lines: invoice.lines.map((l) => ({
-      description: l.description,
-      quantity:    parseFloat(String(l.quantity)),
-      rate:        parseFloat(String(l.rate)),
-      amount:      parseFloat(String(l.amount)),
-      taxRate:     parseFloat(String(l.taxRate)),
-      itemCode:    l.item?.itemCode ?? null,
-    })),
+    lines: pdfLines,
     payments: invoice.payments.map((alloc) => ({
       paymentNumber: alloc.payment.paymentNumber,
       paymentDate:   alloc.payment.paymentDate,
       method:        alloc.payment.method,
       amount:        parseFloat(String(alloc.amount)),
     })),
+    taxBreakdown,
     templateConfig,
     accentColor,
     layoutKey,

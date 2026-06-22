@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,17 +11,35 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createInvoice } from "../actions";
 import { formatCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/fx";
+import {
+  InvoiceLineItemsEditor,
+  type LineItemData,
+  type TaxRateOption,
+  computeLineAmount,
+  computeLineTax,
+  buildTaxBreakdown,
+  emptyLine,
+} from "@/components/invoices/invoice-line-items-editor";
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
 interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; }
 interface Account { id: string; code: string; name: string; }
-interface LineItem { id: string; itemId: string; description: string; quantity: number; rate: number; taxRate: number; }
 
 function today() { return new Date().toISOString().split("T")[0]; }
 function addDays(d: string, n: number) { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
 function getMonthPeriod(d: string) { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`; }
 
-export function InvoiceForm({ customers, items, accounts: _accounts }: { customers: Customer[]; items: Item[]; accounts: Account[]; }) {
+export function InvoiceForm({
+  customers,
+  items,
+  accounts: _accounts,
+  taxRates,
+}: {
+  customers: Customer[];
+  items: Item[];
+  accounts: Account[];
+  taxRates: TaxRateOption[];
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,19 +52,17 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
   const [exchangeRate, setExchangeRate] = useState(1);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateFetched, setRateFetched] = useState(false);
-  const [invoiceNumber, setInvoiceNumber]       = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceNumberTouched, setInvoiceNumberTouched] = useState(false);
-  const [numberLoading, setNumberLoading]   = useState(true);
-  const [numberConfig, setNumberConfig]     = useState<{
-    suggestedNumber:     string | null;
+  const [numberLoading, setNumberLoading] = useState(true);
+  const [numberConfig, setNumberConfig] = useState<{
+    suggestedNumber: string | null;
     allowManualOverride: boolean;
-    preventDuplicates:   boolean;
-    isEnabled:           boolean;
-    helperText:          string;
+    preventDuplicates: boolean;
+    isEnabled: boolean;
+    helperText: string;
   } | null>(null);
-  const [lines, setLines] = useState<LineItem[]>([
-    { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 },
-  ]);
+  const [lines, setLines] = useState<LineItemData[]>(() => [emptyLine(taxRates)]);
 
   const isNGN = currency === "NGN";
 
@@ -66,22 +82,20 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     }
   }, []);
 
-  // Auto-fetch when currency changes
   useEffect(() => { fetchRate(currency); }, [currency, fetchRate]);
 
-  // Fetch suggested invoice number on mount (pure preview — does NOT advance counter)
   useEffect(() => {
     async function load() {
       try {
-        const res  = await fetch("/api/invoices/next-number");
+        const res = await fetch("/api/invoices/next-number");
         const json = await res.json() as {
           data: { suggestedNumber: string | null; allowManualOverride: boolean;
                   preventDuplicates: boolean; isEnabled: boolean; helperText: string; };
         };
         setNumberConfig(json.data);
         if (json.data.suggestedNumber) setInvoiceNumber(json.data.suggestedNumber);
-      } catch { /* silently ignore — user can enter manually */ }
-      finally   { setNumberLoading(false); }
+      } catch { /* silently ignore */ }
+      finally { setNumberLoading(false); }
     }
     load();
   }, []);
@@ -105,21 +119,23 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     if (cust) setDueDate(addDays(val, cust.paymentTerms));
   }
 
-  function handleItemSelect(lineId: string, itemId: string) {
-    const item = items.find((i) => i.id === itemId);
-    setLines((prev) => prev.map((l) => l.id === lineId
-      ? { ...l, itemId, description: item?.name || "", rate: item?.salesPrice ?? 0 }
-      : l
-    ));
-  }
-
-  function updateLine(lineId: string, field: keyof LineItem, value: string | number) {
-    setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, [field]: value } : l)));
-  }
-
-  const subtotal = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
-  const taxAmount = lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
-  const total = subtotal - discountAmount + taxAmount;
+  // ── Totals (live, client-side) ────────────────────────────────────────────
+  const subtotal          = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
+  const lineDiscountTotal = lines.reduce((s, l) => s + (computeLineAmount(l) - l.quantity * l.rate + (
+    // disc = gross - net
+    l.quantity * l.rate - computeLineAmount(l)
+  )), 0);
+  // Simpler: just sum up discounts directly
+  const lineDiscountSum = lines.reduce((s, l) => {
+    const gross = l.quantity * l.rate;
+    const net   = computeLineAmount(l);
+    return s + (gross - net);
+  }, 0);
+  const taxBreakdown = buildTaxBreakdown(lines, taxRates);
+  const taxTotal     = taxBreakdown.reduce((s, r) => s + r.amount, 0);
+  const maxDiscount  = Math.max(0, subtotal - lineDiscountSum);
+  const clampedDiscount = Math.min(Math.max(0, discountAmount), maxDiscount);
+  const total        = subtotal - lineDiscountSum - clampedDiscount + taxTotal;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -130,9 +146,6 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
     const fd = new FormData(e.currentTarget as HTMLFormElement);
     const result = await createInvoice({
       customerId,
-      // Only pass invoiceNumber when the user actively typed a new value.
-      // Untouched auto-populated fields and read-only fields submit undefined,
-      // so the backend always auto-generates and atomically advances the counter.
       invoiceNumber: invoiceNumberTouched ? (invoiceNumber.trim() || undefined) : undefined,
       reference: String(fd.get("reference") || ""),
       issueDate,
@@ -142,11 +155,13 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
       currency,
       exchangeRate: isNGN ? 1 : exchangeRate,
       lines: lines.map((l) => ({
-        itemId: l.itemId || undefined,
-        description: l.description,
-        quantity: l.quantity,
-        rate: l.rate,
-        taxRate: l.taxRate,
+        itemId:        l.itemId || undefined,
+        description:   l.description,
+        quantity:      l.quantity,
+        rate:          l.rate,
+        taxRateId:     l.taxRateId || undefined,
+        discountType:  l.discountType,
+        discountValue: l.discountValue,
       })),
     });
     setLoading(false);
@@ -174,7 +189,8 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
             <Input id="reference" name="reference" placeholder="PO-12345" />
           </div>
         </div>
-        {/* Invoice Number — wired to Transaction Number Series */}
+
+        {/* Invoice Number */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="invoiceNumber">Invoice Number</Label>
@@ -195,12 +211,7 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
               </>
             ) : !numberConfig.allowManualOverride ? (
               <>
-                <Input
-                  id="invoiceNumber"
-                  value={invoiceNumber}
-                  readOnly
-                  className="font-mono bg-slate-50 text-slate-600 cursor-not-allowed"
-                />
+                <Input id="invoiceNumber" value={invoiceNumber} readOnly className="font-mono bg-slate-50 text-slate-600 cursor-not-allowed" />
                 <p className="text-xs text-slate-500 mt-1">{numberConfig.helperText}</p>
               </>
             ) : (
@@ -214,9 +225,7 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
                 />
                 <p className="text-xs text-slate-500 mt-1">{numberConfig.helperText}</p>
                 {!numberConfig.preventDuplicates && (
-                  <p className="text-xs text-amber-600 mt-0.5">
-                    Duplicate invoice numbers are allowed by your current settings.
-                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">Duplicate invoice numbers are allowed by your current settings.</p>
                 )}
               </>
             )}
@@ -250,7 +259,7 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
         </div>
       </div>
 
-      {/* FX Rate — shown only for non-NGN currency */}
+      {/* FX Rate */}
       {!isNGN && (
         <div className="border border-amber-200 bg-amber-50 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
@@ -263,143 +272,72 @@ export function InvoiceForm({ customers, items, accounts: _accounts }: { custome
           <div className="flex items-center gap-2">
             <span className="text-sm text-amber-800 whitespace-nowrap">1 {currency} =</span>
             <Input
-              type="number"
-              min="0.0001"
-              step="0.0001"
+              type="number" min="0.0001" step="0.0001"
               value={exchangeRate}
               onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1)}
-              className="font-mono"
-              placeholder="e.g. 1580.50"
+              className="font-mono" placeholder="e.g. 1580.50"
             />
             <span className="text-sm text-amber-800">NGN</span>
             <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fetchRate(currency)}
-              disabled={rateLoading}
+              type="button" variant="outline" size="sm"
+              onClick={() => fetchRate(currency)} disabled={rateLoading}
               className="whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-100"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${rateLoading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
           </div>
-          <p className="text-xs text-amber-600">
-            Auto-fetched from Frankfurter. Override with your contracted rate.
-          </p>
-          {exchangeRate > 0 && total > 0 && (
-            <div className="bg-white rounded-lg px-4 py-3 space-y-1 text-xs border border-amber-100">
-              <div className="flex justify-between text-slate-500">
-                <span>Subtotal (NGN equivalent)</span>
-                <span className="font-mono font-medium text-slate-700">{formatCurrency(subtotal * exchangeRate)}</span>
-              </div>
-              {taxAmount > 0 && (
-                <div className="flex justify-between text-slate-500">
-                  <span>Tax (NGN equivalent)</span>
-                  <span className="font-mono font-medium text-slate-700">{formatCurrency(taxAmount * exchangeRate)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-slate-200">
-                <span>Total (NGN equivalent)</span>
-                <span className="font-mono">{formatCurrency(total * exchangeRate)}</span>
-              </div>
-              <p className="text-slate-400 pt-1">Journal entries will post at this NGN equivalent.</p>
-            </div>
-          )}
+          <p className="text-xs text-amber-600">Auto-fetched from Frankfurter. Override with your contracted rate.</p>
         </div>
       )}
 
-      {/* Line items */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden">
-        <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
-          <span className="font-medium text-sm text-slate-700">
-            Line Items <span className="text-slate-400 font-normal">(prices in {currency})</span>
-          </span>
-          <Button type="button" variant="ghost" size="sm" onClick={() =>
-            setLines((p) => [...p, { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, taxRate: 0 }])
-          }>
-            <Plus className="h-3.5 w-3.5 mr-1" />Add line
-          </Button>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {lines.map((line, idx) => (
-            <div key={line.id} className="p-4 grid grid-cols-12 gap-3 items-start">
-              <div className="col-span-3">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Item</Label>}
-                <Select value={line.itemId} onValueChange={(v) => handleItemSelect(line.id, v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select item" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Custom</SelectItem>
-                    {items.map((i) => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-3">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Description</Label>}
-                <Input className="h-8 text-xs" value={line.description}
-                  onChange={(e) => updateLine(line.id, "description", e.target.value)} placeholder="Description" />
-              </div>
-              <div className="col-span-1">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Qty</Label>}
-                <Input className="h-8 text-xs" type="number" min="0" step="0.01" value={line.quantity}
-                  onChange={(e) => updateLine(line.id, "quantity", parseFloat(e.target.value) || 0)} />
-              </div>
-              <div className="col-span-2">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Rate ({currency})</Label>}
-                <Input className="h-8 text-xs font-mono" type="number" min="0" step="0.01" value={line.rate}
-                  onChange={(e) => updateLine(line.id, "rate", parseFloat(e.target.value) || 0)} />
-              </div>
-              <div className="col-span-1">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Tax%</Label>}
-                <Input className="h-8 text-xs" type="number" min="0" max="100" step="0.5" value={line.taxRate}
-                  onChange={(e) => updateLine(line.id, "taxRate", parseFloat(e.target.value) || 0)} />
-              </div>
-              <div className="col-span-1">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Amount</Label>}
-                <div className="h-8 flex items-center text-xs font-mono text-slate-600">
-                  {formatCurrency(line.quantity * line.rate, currency)}
-                </div>
-              </div>
-              <div className="col-span-1 flex items-end">
-                <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-red-500"
-                  onClick={() => lines.length > 1 && setLines((p) => p.filter((l) => l.id !== line.id))}
-                  disabled={lines.length === 1}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+      {/* Line Items Editor */}
+      <InvoiceLineItemsEditor
+        currency={currency}
+        items={items}
+        taxRates={taxRates}
+        lines={lines}
+        onChange={setLines}
+      />
+
+      {/* Totals */}
+      <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+        <div className="flex flex-col items-end gap-1.5 text-sm">
+          <div className="flex gap-8">
+            <span className="text-slate-500">Subtotal</span>
+            <span className="font-mono w-36 text-right">{formatCurrency(subtotal, currency)}</span>
+          </div>
+          {lineDiscountSum > 0 && (
+            <div className="flex gap-8">
+              <span className="text-slate-500">Line Discounts</span>
+              <span className="font-mono w-36 text-right text-slate-600">-{formatCurrency(lineDiscountSum, currency)}</span>
+            </div>
+          )}
+          <div className="flex gap-8 items-center">
+            <span className="text-slate-500">Additional Invoice Discount</span>
+            <Input
+              type="number" min="0" step="0.01"
+              value={discountAmount}
+              onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+              className="h-6 w-36 text-xs text-right font-mono"
+            />
+          </div>
+          {taxBreakdown.map((row) => (
+            <div key={row.label} className="flex gap-8">
+              <span className="text-slate-500">{row.label}</span>
+              <span className="font-mono w-36 text-right">{formatCurrency(row.amount, currency)}</span>
             </div>
           ))}
-        </div>
-        {/* Totals */}
-        <div className="border-t border-slate-200 p-4 bg-slate-50">
-          <div className="flex flex-col items-end gap-1.5 text-sm">
-            <div className="flex gap-8">
-              <span className="text-slate-500">Subtotal</span>
-              <span className="font-mono w-32 text-right">{formatCurrency(subtotal, currency)}</span>
-            </div>
-            <div className="flex gap-8 items-center">
-              <span className="text-slate-500">Discount</span>
-              <Input type="number" min="0" step="0.01" value={discountAmount}
-                onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                className="h-6 w-32 text-xs text-right font-mono" />
-            </div>
-            {taxAmount > 0 && (
-              <div className="flex gap-8">
-                <span className="text-slate-500">Tax</span>
-                <span className="font-mono w-32 text-right">{formatCurrency(taxAmount, currency)}</span>
-              </div>
-            )}
-            <div className="flex gap-8 pt-1 border-t border-slate-300 mt-1">
-              <span className="font-semibold text-slate-900">Total</span>
-              <span className="font-bold font-mono w-32 text-right text-slate-900">{formatCurrency(total, currency)}</span>
-            </div>
-            {!isNGN && exchangeRate > 0 && (
-              <div className="flex gap-8 text-xs text-slate-400 border-t border-dashed border-slate-200 pt-1 mt-0.5">
-                <span>≈ NGN equivalent</span>
-                <span className="font-mono w-32 text-right">{formatCurrency(total * exchangeRate)}</span>
-              </div>
-            )}
+          <div className="flex gap-8 pt-1 border-t border-slate-300 mt-1">
+            <span className="font-semibold text-slate-900">Total ({currency})</span>
+            <span className="font-bold font-mono w-36 text-right text-slate-900">{formatCurrency(total, currency)}</span>
           </div>
+          {!isNGN && exchangeRate > 0 && (
+            <div className="flex gap-8 text-xs text-slate-400 border-t border-dashed border-slate-200 pt-1 mt-0.5">
+              <span>≈ NGN equivalent</span>
+              <span className="font-mono w-36 text-right">{formatCurrency(total * exchangeRate)}</span>
+            </div>
+          )}
         </div>
       </div>
 

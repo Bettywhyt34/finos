@@ -36,13 +36,15 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function StandardInvoiceTemplate({ data }: { data: InvoicePdfData }) {
-  const { tenant, customer, invoice, lines, payments } = data;
+  const { tenant, customer, invoice, lines, payments, taxBreakdown } = data;
   const cur = invoice.currency;
   const isNGN = cur === "NGN";
-  const hasDiscount = invoice.discountAmount > 0;
-  const hasTax      = invoice.taxAmount > 0;
-  const hasPaid     = invoice.amountPaid > 0;
-  const hasPayments = payments.length > 0;
+  const hasLineDiscounts    = invoice.lineDiscountTotal > 0;
+  const hasInvoiceDiscount  = invoice.discountAmount > 0;
+  const hasDiscount         = hasLineDiscounts || hasInvoiceDiscount;
+  const hasTax              = taxBreakdown.length > 0;
+  const hasPaid             = invoice.amountPaid > 0;
+  const hasPayments         = payments.length > 0;
 
   const tenantAddress = [
     tenant.address1,
@@ -236,13 +238,18 @@ export function StandardInvoiceTemplate({ data }: { data: InvoicePdfData }) {
             <th style={{ textAlign: "right", padding: "8px 4px", fontSize: "11px", color: "#374151", fontWeight: 600, width: "100px" }}>
               Rate ({cur})
             </th>
+            {hasLineDiscounts && (
+              <th style={{ textAlign: "right", padding: "8px 4px", fontSize: "11px", color: "#374151", fontWeight: 600, width: "60px" }}>
+                Disc.
+              </th>
+            )}
             {hasTax && (
-              <th style={{ textAlign: "right", padding: "8px 4px", fontSize: "11px", color: "#374151", fontWeight: 600, width: "50px" }}>
-                Tax%
+              <th style={{ textAlign: "right", padding: "8px 4px", fontSize: "11px", color: "#374151", fontWeight: 600, width: "80px" }}>
+                Tax
               </th>
             )}
             <th style={{ textAlign: "right", padding: "8px 0", fontSize: "11px", color: "#374151", fontWeight: 600, width: "100px" }}>
-              Amount ({cur})
+              Total ({cur})
             </th>
           </tr>
         </thead>
@@ -264,13 +271,20 @@ export function StandardInvoiceTemplate({ data }: { data: InvoicePdfData }) {
               <td style={{ padding: "8px 4px", textAlign: "right", fontFamily: "monospace", fontSize: "12px" }}>
                 {formatCurrency(line.rate, cur)}
               </td>
+              {hasLineDiscounts && (
+                <td style={{ padding: "8px 4px", textAlign: "right", fontFamily: "monospace", fontSize: "12px", color: "#6b7280" }}>
+                  {line.discountAmount > 0 ? `-${formatCurrency(line.discountAmount, cur)}` : "—"}
+                </td>
+              )}
               {hasTax && (
-                <td style={{ padding: "8px 4px", textAlign: "right", fontFamily: "monospace", fontSize: "12px" }}>
-                  {line.taxRate}%
+                <td style={{ padding: "8px 4px", textAlign: "right", fontFamily: "monospace", fontSize: "12px", color: "#6b7280" }}>
+                  {line.taxRate > 0
+                    ? (line.taxName ? `${line.taxName} [${line.taxRate}%]` : `${line.taxRate}%`)
+                    : "—"}
                 </td>
               )}
               <td style={{ padding: "8px 0", textAlign: "right", fontFamily: "monospace", fontSize: "12px", fontWeight: 500 }}>
-                {formatCurrency(line.amount, cur)}
+                {formatCurrency(line.lineTotal, cur)}
               </td>
             </tr>
           ))}
@@ -279,20 +293,20 @@ export function StandardInvoiceTemplate({ data }: { data: InvoicePdfData }) {
 
       {/* Totals */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "24px" }}>
-        <table style={{ width: "280px", borderCollapse: "collapse" }}>
+        <table style={{ width: "300px", borderCollapse: "collapse" }}>
           <tbody>
             <Row label="Subtotal" value={formatCurrency(invoice.subtotal, cur)} />
-            {hasDiscount && (
-              <Row label="Discount" value={`-${formatCurrency(invoice.discountAmount, cur)}`} />
+            {hasLineDiscounts && (
+              <Row label="Line Discounts" value={`-${formatCurrency(invoice.lineDiscountTotal, cur)}`} />
             )}
-            {hasTax && (
-              <Row label="Tax" value={formatCurrency(invoice.taxAmount, cur)} />
+            {hasInvoiceDiscount && (
+              <Row label="Additional Invoice Discount" value={`-${formatCurrency(invoice.discountAmount, cur)}`} />
             )}
+            {taxBreakdown.map((row) => (
+              <Row key={row.label} label={row.label} value={formatCurrency(row.amount, cur)} />
+            ))}
             <tr>
-              <td
-                colSpan={2}
-                style={{ borderTop: "1px solid #d1d5db", padding: "4px 0" }}
-              />
+              <td colSpan={2} style={{ borderTop: "1px solid #d1d5db", padding: "4px 0" }} />
             </tr>
             <Row label={`Total (${cur})`} value={formatCurrency(invoice.totalAmount, cur)} bold />
             {hasPaid && (

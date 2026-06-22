@@ -6,7 +6,7 @@ export default async function NewInvoicePage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [customers, items, accounts] = await Promise.all([
+  const [customers, items, accounts, taxRates] = await Promise.all([
     prisma.customer.findMany({
       where: { tenantId, isActive: true },
       select: { id: true, companyName: true, customerCode: true, paymentTerms: true },
@@ -22,6 +22,11 @@ export default async function NewInvoicePage() {
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     }),
+    prisma.taxRate.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, name: true, rate: true, type: true, isDefault: true },
+      orderBy: [{ type: "asc" }, { name: "asc" }],
+    }),
   ]);
 
   return (
@@ -31,6 +36,7 @@ export default async function NewInvoicePage() {
         customers={customers}
         items={items.map((i) => ({ ...i, salesPrice: i.salesPrice ? parseFloat(String(i.salesPrice)) : null }))}
         accounts={accounts}
+        taxRates={taxRates.map((t) => ({ ...t, rate: parseFloat(String(t.rate)) }))}
       />
     </div>
   );

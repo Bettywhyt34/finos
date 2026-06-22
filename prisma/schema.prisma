@@ -435,16 +435,24 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id          String  @id @default(uuid())
-  invoiceId   String  @map("invoice_id")
-  itemId      String? @map("item_id")
-  description String
-  quantity    Decimal @db.Decimal(15, 2)
-  rate        Decimal @db.Decimal(15, 2)
-  amount      Decimal @db.Decimal(15, 2)
-  taxRate     Decimal @default(0) @map("tax_rate") @db.Decimal(5, 2)
-  invoice     Invoice @relation(fields: [invoiceId], references: [id])
-  item        Item?   @relation(fields: [itemId], references: [id])
+  id             String   @id @default(uuid())
+  invoiceId      String   @map("invoice_id")
+  itemId         String?  @map("item_id")
+  description    String
+  quantity       Decimal  @db.Decimal(15, 2)
+  rate           Decimal  @db.Decimal(15, 2)
+  amount         Decimal  @db.Decimal(15, 2)           // gross = qty × rate
+  taxRateId      String?  @map("tax_rate_id")
+  taxName        String?  @map("tax_name")              // snapshot at creation
+  taxRate        Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount      Decimal  @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  discountType   String   @default("PERCENT") @map("discount_type")
+  discountValue  Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2)
+  discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  lineTotal      Decimal  @default(0) @map("line_total") @db.Decimal(15, 2)
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id])
+  item           Item?    @relation(fields: [itemId], references: [id])
+  taxRateRef     TaxRate? @relation(fields: [taxRateId], references: [id])
 
   @@map("invoice_lines")
 }
@@ -674,15 +682,16 @@ enum InvitationStatus {
 }
 
 model TaxRate {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  name      String                              // e.g. "VAT", "WHT 5%", "PAYE"
-  type      String                              // VAT | WHT | PAYE | CUSTOM
-  rate      Decimal  @db.Decimal(5, 2)          // percentage, e.g. 7.50
-  isDefault Boolean  @default(false) @map("is_default")
-  isActive  Boolean  @default(true)  @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String        @id @default(uuid())
+  tenantId     String        @map("tenant_id")
+  name         String                              // e.g. "VAT", "WHT 5%", "PAYE"
+  type         String                              // VAT | WHT | PAYE | CUSTOM
+  rate         Decimal       @db.Decimal(5, 2)    // percentage, e.g. 7.50
+  isDefault    Boolean       @default(false) @map("is_default")
+  isActive     Boolean       @default(true)  @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoiceLines InvoiceLine[]
 
   @@map("tax_rates")
 }

@@ -11,11 +11,103 @@ import { previewTransactionNumber }      from "@/lib/customization/utils";
 import { generateTransactionNumber }     from "@/lib/customization/service";
 
 export interface LineItem {
-  itemId?: string;
-  description: string;
-  quantity: number;
-  rate: number;
-  taxRate: number;
+  itemId?:       string;
+  description:   string;
+  quantity:      number;
+  rate:          number;
+  taxRateId?:    string;          // FK to TaxRate ("" or undefined = no tax)
+  discountType:  "PERCENT" | "FIXED";
+  discountValue: number;
+}
+
+interface ResolvedLine {
+  itemId:        string | null;
+  description:   string;
+  quantity:      number;
+  rate:          number;
+  amount:        number;          // gross = qty × rate
+  taxRateId:     string | null;
+  taxName:       string | null;
+  taxRate:       number;
+  taxAmount:     number;
+  discountType:  string;
+  discountValue: number;
+  discountAmount:number;
+  lineTotal:     number;
+}
+
+/** Server-side: resolve tax FKs, snapshot names/rates, compute per-line amounts. */
+async function resolveLines(
+  tenantId: string,
+  lines:    LineItem[],
+): Promise<ResolvedLine[]> {
+  // Collect unique non-empty taxRateIds
+  const ids = Array.from(
+    new Set(lines.map((l) => l.taxRateId?.trim() || "").filter(Boolean)),
+  );
+
+  // Fetch and validate: must belong to this tenant and be active
+  const taxRateMap = new Map<string, { name: string; rate: number }>();
+  if (ids.length > 0) {
+    const rows = await prisma.taxRate.findMany({
+      where: { id: { in: ids }, tenantId, isActive: true },
+      select: { id: true, name: true, rate: true },
+    });
+    for (const r of rows) {
+      taxRateMap.set(r.id, { name: r.name, rate: parseFloat(String(r.rate)) });
+    }
+    // If any supplied id is not found it is silently treated as "no tax"
+    // (attacker cannot inject another tenant's tax rate)
+  }
+
+  return lines.map((l) => {
+    const gross = l.quantity * l.rate;
+
+    const disc =
+      l.discountType === "FIXED"
+        ? Math.min(Math.max(0, l.discountValue), gross)
+        : (gross * Math.min(Math.max(0, l.discountValue), 100)) / 100;
+
+    const taxable = gross - disc;
+
+    const taxInfo = taxRateMap.get(l.taxRateId?.trim() || "") ?? null;
+    const taxRate = taxInfo?.rate ?? 0;
+    const taxAmt  = Math.round(taxable * taxRate / 100 * 100) / 100;
+
+    return {
+      itemId:        l.itemId || null,
+      description:   l.description,
+      quantity:      l.quantity,
+      rate:          l.rate,
+      amount:        gross,
+      taxRateId:     taxInfo ? (l.taxRateId?.trim() || null) : null,
+      taxName:       taxInfo?.name ?? null,
+      taxRate,
+      taxAmount:     taxAmt,
+      discountType:  l.discountType,
+      discountValue: l.discountValue,
+      discountAmount:Math.round(disc * 100) / 100,
+      lineTotal:     Math.round((taxable + taxAmt) * 100) / 100,
+    };
+  });
+}
+
+interface Totals {
+  subtotal:          number;
+  lineDiscountTotal: number;
+  taxAmount:         number;
+  totalAmount:       number;
+}
+
+/** Compute invoice header totals from resolved lines + optional invoice-level discount. */
+function computeTotals(resolved: ResolvedLine[], invoiceDiscount: number): Totals {
+  const subtotal          = resolved.reduce((s, l) => s + l.amount, 0);
+  const lineDiscountTotal = resolved.reduce((s, l) => s + l.discountAmount, 0);
+  const taxAmount         = resolved.reduce((s, l) => s + l.taxAmount, 0);
+  const maxDiscount       = Math.max(0, subtotal - lineDiscountTotal);
+  const clampedDiscount   = Math.min(Math.max(0, invoiceDiscount), maxDiscount);
+  const totalAmount       = subtotal - lineDiscountTotal - clampedDiscount + taxAmount;
+  return { subtotal, lineDiscountTotal, taxAmount, totalAmount };
 }
 
 export async function createInvoice(data: {
@@ -40,12 +132,18 @@ export async function createInvoice(data: {
   if (!orgId || !userId) return { error: "Unauthorized" };
 
   if (data.lines.length === 0) return { error: "At least one line item is required" };
-  const rate = data.exchangeRate || 1;
+  const fxRate = data.exchangeRate || 1;
 
-  // Amounts stored in document currency (e.g., USD)
-  const subtotal    = data.lines.reduce((s, l) => s + l.quantity * l.rate, 0);
-  const taxAmount   = data.lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
-  const totalAmount = subtotal - data.discountAmount + taxAmount;
+  // Validate customer belongs to tenant
+  const customer = await prisma.customer.findFirst({
+    where: { id: data.customerId, tenantId: orgId },
+    select: { id: true },
+  });
+  if (!customer) return { error: "Customer not found" };
+
+  // Resolve lines server-side (validates taxRateIds, snapshots names, computes amounts)
+  const resolved = await resolveLines(orgId, data.lines);
+  const { subtotal, taxAmount, totalAmount } = computeTotals(resolved, data.discountAmount);
 
   try {
     // ── Single atomic transaction ──────────────────────────────────────────────
@@ -120,7 +218,7 @@ export async function createInvoice(data: {
           dueDate:          new Date(data.dueDate),
           status:           "DRAFT",
           currency:         data.currency,
-          exchangeRate:     rate,
+          exchangeRate:     fxRate,
           subtotal,
           discountAmount:   data.discountAmount,
           taxAmount,
@@ -130,13 +228,20 @@ export async function createInvoice(data: {
           recognitionPeriod: data.recognitionPeriod,
           notes:            data.notes || null,
           lines: {
-            create: data.lines.map((l) => ({
-              itemId:      l.itemId || null,
-              description: l.description,
-              quantity:    l.quantity,
-              rate:        l.rate,
-              amount:      l.quantity * l.rate,
-              taxRate:     l.taxRate,
+            create: resolved.map((l) => ({
+              itemId:        l.itemId,
+              description:   l.description,
+              quantity:      l.quantity,
+              rate:          l.rate,
+              amount:        l.amount,
+              taxRateId:     l.taxRateId,
+              taxName:       l.taxName,
+              taxRate:       l.taxRate,
+              taxAmount:     l.taxAmount,
+              discountType:  l.discountType,
+              discountValue: l.discountValue,
+              discountAmount:l.discountAmount,
+              lineTotal:     l.lineTotal,
             })),
           },
         },
@@ -238,11 +343,7 @@ export async function updateDraftInvoice(
   if (!orgId || !userId) return { error: "Unauthorized" };
 
   if (data.lines.length === 0) return { error: "At least one line item is required" };
-  const rate = data.exchangeRate || 1;
-
-  const subtotal    = data.lines.reduce((s, l) => s + l.quantity * l.rate, 0);
-  const taxAmount   = data.lines.reduce((s, l) => s + l.quantity * l.rate * (l.taxRate / 100), 0);
-  const totalAmount = subtotal - data.discountAmount + taxAmount;
+  const fxRate = data.exchangeRate || 1;
 
   try {
     // 1. Fetch invoice — tenant-scoped
@@ -255,6 +356,10 @@ export async function updateDraftInvoice(
     // 2. Validate customer belongs to tenant
     const customer = await prisma.customer.findFirst({ where: { id: data.customerId, tenantId: orgId } });
     if (!customer) return { error: "Customer not found" };
+
+    // Resolve lines server-side before the transaction
+    const resolved = await resolveLines(orgId, data.lines);
+    const { subtotal, taxAmount, totalAmount } = computeTotals(resolved, data.discountAmount);
 
     // 3. Resolve invoice number — keep existing by default
     let finalNumber = existing.invoiceNumber;
@@ -292,7 +397,7 @@ export async function updateDraftInvoice(
           issueDate:         new Date(data.issueDate),
           dueDate:           new Date(data.dueDate),
           currency:          data.currency,
-          exchangeRate:      rate,
+          exchangeRate:      fxRate,
           subtotal,
           discountAmount:    data.discountAmount,
           taxAmount,
@@ -301,13 +406,20 @@ export async function updateDraftInvoice(
           recognitionPeriod: data.recognitionPeriod,
           notes:             data.notes || null,
           lines: {
-            create: data.lines.map((l) => ({
-              itemId:      l.itemId || null,
-              description: l.description,
-              quantity:    l.quantity,
-              rate:        l.rate,
-              amount:      l.quantity * l.rate,
-              taxRate:     l.taxRate,
+            create: resolved.map((l) => ({
+              itemId:        l.itemId,
+              description:   l.description,
+              quantity:      l.quantity,
+              rate:          l.rate,
+              amount:        l.amount,
+              taxRateId:     l.taxRateId,
+              taxName:       l.taxName,
+              taxRate:       l.taxRate,
+              taxAmount:     l.taxAmount,
+              discountType:  l.discountType,
+              discountValue: l.discountValue,
+              discountAmount:l.discountAmount,
+              lineTotal:     l.lineTotal,
             })),
           },
         },
@@ -396,13 +508,21 @@ export async function voidInvoice(id: string, reason: string, convertToDraft: bo
         recognitionPeriod: invoice.recognitionPeriod,
         notes:            invoice.notes,
         lines: {
-          create: invoice.lines.map((l) => ({
-            itemId:      l.itemId,
-            description: l.description,
-            quantity:    l.quantity,
-            rate:        l.rate,
-            amount:      l.amount,
-            taxRate:     l.taxRate,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          create: invoice.lines.map((l: any) => ({
+            itemId:        l.itemId,
+            description:   l.description,
+            quantity:      l.quantity,
+            rate:          l.rate,
+            amount:        l.amount,
+            taxRateId:     l.taxRateId,
+            taxName:       l.taxName,
+            taxRate:       l.taxRate,
+            taxAmount:     l.taxAmount,
+            discountType:  l.discountType,
+            discountValue: l.discountValue,
+            discountAmount:l.discountAmount,
+            lineTotal:     l.lineTotal,
           })),
         },
       },
