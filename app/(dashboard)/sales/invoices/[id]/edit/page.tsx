@@ -108,8 +108,7 @@ export default async function InvoiceEditPage({
           exchangeRate:      parseFloat(String(invoice.exchangeRate)),
           discountAmount:    parseFloat(String(invoice.discountAmount)),
           notes:             invoice.notes ?? "",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          lines: invoice.lines.map((l: any) => ({
+          lines: invoice.lines.map((l) => ({
             itemId:        l.itemId ?? "",
             description:   l.description,
             quantity:      parseFloat(String(l.quantity)),

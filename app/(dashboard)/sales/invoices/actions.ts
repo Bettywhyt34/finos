@@ -508,8 +508,7 @@ export async function voidInvoice(id: string, reason: string, convertToDraft: bo
         recognitionPeriod: invoice.recognitionPeriod,
         notes:            invoice.notes,
         lines: {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          create: invoice.lines.map((l: any) => ({
+          create: invoice.lines.map((l) => ({
             itemId:        l.itemId,
             description:   l.description,
             quantity:      l.quantity,

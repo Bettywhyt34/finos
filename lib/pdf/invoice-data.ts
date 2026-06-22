@@ -162,23 +162,19 @@ export async function prepareInvoicePdfData(
       : null) ??
     "#1B3A6B";
 
-  // Build tax breakdown from per-line data (uses any-cast until prisma generate runs)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function buildTaxBreakdown(lines: any[]): Array<{ label: string; amount: number }> {
+  function buildTaxBreakdown(lines: InvoicePdfLine[]): Array<{ label: string; amount: number }> {
     const map = new Map<string, number>();
     for (const l of lines) {
-      const taxAmt = parseFloat(String(l.taxAmount ?? 0));
-      if (taxAmt <= 0) continue;
+      if (l.taxAmount <= 0) continue;
       const label = l.taxName
-        ? `${l.taxName} [${parseFloat(String(l.taxRate))}%]`
-        : `Tax [${parseFloat(String(l.taxRate))}%]`;
-      map.set(label, (map.get(label) ?? 0) + taxAmt);
+        ? `${l.taxName} [${l.taxRate}%]`
+        : `Tax [${l.taxRate}%]`;
+      map.set(label, (map.get(label) ?? 0) + l.taxAmount);
     }
     return Array.from(map.entries()).map(([label, amount]) => ({ label, amount }));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfLines = (invoice.lines as any[]).map((l) => ({
+  const pdfLines = invoice.lines.map((l) => ({
     description:    l.description,
     quantity:       parseFloat(String(l.quantity)),
     rate:           parseFloat(String(l.rate)),
@@ -195,7 +191,7 @@ export async function prepareInvoicePdfData(
   }));
 
   const lineDiscountTotal = pdfLines.reduce((s, l) => s + l.discountAmount, 0);
-  const taxBreakdown      = buildTaxBreakdown(invoice.lines);
+  const taxBreakdown      = buildTaxBreakdown(pdfLines);
 
   return {
     tenant: {
