@@ -497,90 +497,254 @@ export async function voidInvoice(id: string, reason: string, convertToDraft: bo
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
 
+  // ── 1. Fetch invoice ─────────────────────────────────────────────────────────
   const invoice = await prisma.invoice.findFirst({
-    where: { id, tenantId: orgId },
-    include: { lines: true, customer: true },
+    where:   { id, tenantId: orgId },
+    include: { lines: true },
   });
   if (!invoice) return { error: "Invoice not found" };
-  if (invoice.status === "VOIDED") return { error: "Invoice already voided" };
-  if (invoice.status === "PAID")   return { error: "Cannot void a fully paid invoice" };
 
-  const rate     = parseFloat(String(invoice.exchangeRate));
-  const totalNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
-  const fxNote   = rate !== 1 ? ` (${invoice.currency} @ ${rate})` : "";
+  // ── 2. Status guards ─────────────────────────────────────────────────────────
+  if (invoice.status === "VOIDED")      return { error: "Invoice already voided" };
+  if (invoice.status === "PAID")        return { error: "Cannot void a fully paid invoice. Issue a credit note or refund the payment first." };
+  if (invoice.status === "WRITTEN_OFF") return { error: "Cannot void a written-off invoice." };
 
-  // Void the invoice
-  await prisma.invoice.update({
-    where: { id },
-    data: { status: "VOIDED", voidedAt: new Date(), voidedReason: reason },
-  });
-
-  // Post reversal journal only if the invoice was already posted (i.e., not DRAFT).
-  // A DRAFT invoice has never had AR/Revenue posted, so there is nothing to reverse.
-  if (invoice.status !== "DRAFT") {
-    await postJournalEntry({
-      tenantId:          orgId,
-      createdBy:         userId,
-      entryDate:         new Date(),
-      reference:         `VOID-${invoice.invoiceNumber}`,
-      description:       `Void ${invoice.invoiceNumber}: ${reason}${fxNote}`,
-      recognitionPeriod: getRecognitionPeriod(new Date()),
-      source:            "invoice_void",
-      sourceId:          invoice.id,
-      lines: [
-        { accountCode: "IN-001", description: `Void Revenue - ${invoice.invoiceNumber}`, debit: totalNGN, credit: 0       },
-        { accountCode: "CA-001", description: `Void AR - ${invoice.invoiceNumber}`,      debit: 0,       credit: totalNGN },
-      ],
-    }).catch(() => {});
+  // Block void if any payment has been applied — prevents balance inconsistency.
+  const amountPaid = parseFloat(String(invoice.amountPaid));
+  if (amountPaid > 0) {
+    return {
+      error:
+        "This invoice has payments recorded. " +
+        "Reverse or refund the payment before voiding the invoice.",
+    };
   }
 
-  let newInvoiceId: string | undefined;
+  const fxNote = parseFloat(String(invoice.exchangeRate)) !== 1
+    ? ` (${invoice.currency} @ ${invoice.exchangeRate})`
+    : "";
 
-  if (convertToDraft) {
-    // Generate replacement number from the series (has its own transaction).
-    // If the series is not configured this throws — the void is already committed
-    // but we surface the error so the user can create the replacement manually.
-    const newNumber = await generateTransactionNumber(orgId, "INVOICE");
-    const newInvoice = await prisma.invoice.create({
-      data: {
-        tenantId:         orgId,
-        customerId:       invoice.customerId,
-        invoiceNumber:    newNumber,
-        reference:        invoice.reference,
-        issueDate:        invoice.issueDate,
-        dueDate:          invoice.dueDate,
-        status:           "DRAFT",
-        currency:         invoice.currency,
-        exchangeRate:     invoice.exchangeRate,
-        subtotal:         invoice.subtotal,
-        discountAmount:   invoice.discountAmount,
-        taxAmount:        invoice.taxAmount,
-        totalAmount:      invoice.totalAmount,
-        amountPaid:       0,
-        balanceDue:       invoice.totalAmount,
-        recognitionPeriod: invoice.recognitionPeriod,
-        notes:            invoice.notes,
-        lines: {
-          create: invoice.lines.map((l) => ({
-            itemId:          l.itemId,
-            description:     l.description,
-            quantity:        l.quantity,
-            rate:            l.rate,
-            amount:          l.amount,
-            taxRateId:       l.taxRateId,
-            taxName:         l.taxName,
-            taxRate:         l.taxRate,
-            taxAmount:       l.taxAmount,
-            discountType:    l.discountType,
-            discountValue:   l.discountValue,
-            discountAmount:  l.discountAmount,
-            lineTotal:       l.lineTotal,
-            incomeAccountId: l.incomeAccountId,
-          })),
-        },
-      },
+  // ── 3. DRAFT void — no journal reversal ──────────────────────────────────────
+  // A DRAFT invoice has never been posted to the ledger; nothing to reverse.
+  if (invoice.status === "DRAFT") {
+    await prisma.invoice.update({
+      where: { id, tenantId: orgId },
+      data:  { status: "VOIDED", voidedAt: new Date(), voidedReason: reason },
     });
-    newInvoiceId = newInvoice.id;
+
+    let newInvoiceId: string | undefined;
+    if (convertToDraft) {
+      const newNumber  = await generateTransactionNumber(orgId, "INVOICE");
+      const newInvoice = await prisma.invoice.create({
+        data: {
+          tenantId:          orgId,
+          customerId:        invoice.customerId,
+          invoiceNumber:     newNumber,
+          reference:         invoice.reference,
+          issueDate:         invoice.issueDate,
+          dueDate:           invoice.dueDate,
+          status:            "DRAFT",
+          currency:          invoice.currency,
+          exchangeRate:      invoice.exchangeRate,
+          subtotal:          invoice.subtotal,
+          discountAmount:    invoice.discountAmount,
+          taxAmount:         invoice.taxAmount,
+          totalAmount:       invoice.totalAmount,
+          amountPaid:        0,
+          balanceDue:        invoice.totalAmount,
+          recognitionPeriod: invoice.recognitionPeriod,
+          notes:             invoice.notes,
+          lines: {
+            create: invoice.lines.map((l) => ({
+              itemId:          l.itemId,
+              description:     l.description,
+              quantity:        l.quantity,
+              rate:            l.rate,
+              amount:          l.amount,
+              taxRateId:       l.taxRateId,
+              taxName:         l.taxName,
+              taxRate:         l.taxRate,
+              taxAmount:       l.taxAmount,
+              discountType:    l.discountType,
+              discountValue:   l.discountValue,
+              discountAmount:  l.discountAmount,
+              lineTotal:       l.lineTotal,
+              incomeAccountId: l.incomeAccountId,
+            })),
+          },
+        },
+      });
+      newInvoiceId = newInvoice.id;
+    }
+
+    revalidatePath(`/sales/invoices/${id}`);
+    revalidatePath("/sales/invoices");
+    return { success: true, newInvoiceId };
+  }
+
+  // ── 4. Posted invoice void — mirror original journal entry ───────────────────
+  // status is SENT, PARTIAL, or OVERDUE at this point.
+
+  // 4a. Find original invoice journal entry (with its lines)
+  const originalJE = await prisma.journalEntry.findFirst({
+    where:   { tenantId: orgId, sourceId: id, source: "invoice" },
+    include: { lines: true },
+  });
+  if (!originalJE) {
+    return {
+      error:
+        "Cannot void this invoice because the original accounting entry was not found. " +
+        "Contact support to investigate the posting history.",
+    };
+  }
+
+  // 4b. Duplicate reversal check (pre-transaction fast-fail)
+  const existingReversal = await prisma.journalEntry.findFirst({
+    where:  { tenantId: orgId, sourceId: id, source: "invoice_void" },
+    select: { id: true },
+  });
+  if (existingReversal) {
+    return { error: "A void reversal journal already exists for this invoice." };
+  }
+
+  // 4c. Build reversal lines by mirroring original journal lines (flip DR ↔ CR)
+  //     This preserves line-level income accounts, VAT split, and exact amounts.
+  type RevLine = { accountId: string; description: string; debit: number; credit: number };
+  const reversalLines: RevLine[] = originalJE.lines.map((l) => ({
+    accountId:   l.accountId,
+    description: `Void - ${l.description ?? invoice.invoiceNumber}`,
+    debit:       parseFloat(String(l.credit)),   // original CR → reversal DR
+    credit:      parseFloat(String(l.debit)),    // original DR → reversal CR
+  }));
+
+  // 4d. Balance sanity check
+  const revDR = Math.round(reversalLines.reduce((s, l) => s + l.debit,  0) * 100) / 100;
+  const revCR = Math.round(reversalLines.reduce((s, l) => s + l.credit, 0) * 100) / 100;
+  if (Math.abs(revDR - revCR) > 0.005) {
+    return {
+      error:
+        `Reversal journal does not balance (DR=${revDR}, CR=${revCR}). ` +
+        `This may indicate a data issue. Contact support.`,
+    };
+  }
+
+  // 4e. Accounting period open check (reversal posts to current period, not original)
+  const voidedAt  = new Date();
+  const revPeriod = getRecognitionPeriod(voidedAt);
+  const periodRow = await prisma.accountingPeriod.findUnique({
+    where:  { tenantId_period: { tenantId: orgId, period: revPeriod } },
+    select: { isClosed: true },
+  });
+  if (periodRow?.isClosed) {
+    return { error: `Accounting period ${revPeriod} is closed. Reopen it before voiding.` };
+  }
+
+  // ── 5. Atomic transaction: create reversal journal + mark invoice VOIDED ─────
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Concurrency guard: re-check for duplicate reversal inside TX
+      const dupCheck = await tx.journalEntry.findFirst({
+        where:  { tenantId: orgId, sourceId: id, source: "invoice_void" },
+        select: { id: true },
+      });
+      if (dupCheck) {
+        throw new Error("A void reversal already exists for this invoice. Concurrent duplicate prevented.");
+      }
+
+      // Generate entry number inside TX (consistent snapshot)
+      const jeCount     = await tx.journalEntry.count({ where: { tenantId: orgId } });
+      const entryNumber = `JE-${String(jeCount + 1).padStart(5, "0")}`;
+
+      // Create reversal journal entry
+      // entryDate = void date (today), NOT original invoice issueDate
+      // recognitionPeriod = current period, not the original invoice period
+      await tx.journalEntry.create({
+        data: {
+          tenantId:          orgId,
+          entryNumber,
+          entryDate:         voidedAt,
+          reference:         `VOID-${invoice.invoiceNumber}`,
+          description:       `Void ${invoice.invoiceNumber}: ${reason}${fxNote}`,
+          recognitionPeriod: revPeriod,
+          source:            "invoice_void",
+          sourceId:          id,
+          createdBy:         userId,
+          isLocked:          true,
+          lines: { create: reversalLines },
+        },
+      });
+
+      // Void the invoice — status guard in WHERE catches concurrent status changes
+      const updated = await tx.invoice.updateMany({
+        where: { id, tenantId: orgId, status: invoice.status },
+        data:  { status: "VOIDED", voidedAt, voidedReason: reason },
+      });
+      if (updated.count === 0) {
+        throw new Error("Invoice status changed before void could complete. Transaction rolled back.");
+      }
+    });
+  } catch (e: unknown) {
+    return {
+      error: e instanceof Error
+        ? e.message
+        : "Failed to void invoice. Invoice status was not changed.",
+    };
+  }
+
+  // ── 6. convertToDraft: create replacement draft after successful void ─────────
+  let newInvoiceId: string | undefined;
+  if (convertToDraft) {
+    try {
+      const newNumber  = await generateTransactionNumber(orgId, "INVOICE");
+      const newInvoice = await prisma.invoice.create({
+        data: {
+          tenantId:          orgId,
+          customerId:        invoice.customerId,
+          invoiceNumber:     newNumber,
+          reference:         invoice.reference,
+          issueDate:         invoice.issueDate,
+          dueDate:           invoice.dueDate,
+          status:            "DRAFT",
+          currency:          invoice.currency,
+          exchangeRate:      invoice.exchangeRate,
+          subtotal:          invoice.subtotal,
+          discountAmount:    invoice.discountAmount,
+          taxAmount:         invoice.taxAmount,
+          totalAmount:       invoice.totalAmount,
+          amountPaid:        0,
+          balanceDue:        invoice.totalAmount,
+          recognitionPeriod: invoice.recognitionPeriod,
+          notes:             invoice.notes,
+          lines: {
+            create: invoice.lines.map((l) => ({
+              itemId:          l.itemId,
+              description:     l.description,
+              quantity:        l.quantity,
+              rate:            l.rate,
+              amount:          l.amount,
+              taxRateId:       l.taxRateId,
+              taxName:         l.taxName,
+              taxRate:         l.taxRate,
+              taxAmount:       l.taxAmount,
+              discountType:    l.discountType,
+              discountValue:   l.discountValue,
+              discountAmount:  l.discountAmount,
+              lineTotal:       l.lineTotal,
+              incomeAccountId: l.incomeAccountId,
+            })),
+          },
+        },
+      });
+      newInvoiceId = newInvoice.id;
+    } catch (e: unknown) {
+      // Void is already committed; surface error so user can create replacement manually.
+      revalidatePath(`/sales/invoices/${id}`);
+      revalidatePath("/sales/invoices");
+      return {
+        success:     true,
+        newInvoiceId: undefined,
+        warning:     `Invoice voided successfully, but failed to create replacement draft: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
   }
 
   revalidatePath(`/sales/invoices/${id}`);

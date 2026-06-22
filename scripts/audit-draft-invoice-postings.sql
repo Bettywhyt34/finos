@@ -159,5 +159,85 @@ GROUP BY t.name, i.invoice_number, i.status
 ORDER BY t.name, i.invoice_number;
 
 -- =============================================================================
+-- Section 8: VOIDED invoices that have an original journal but no reversal
+-- These were voided but the invoice_void reversal is missing.
+-- Expected: 0 rows after go-live of corrected void logic.
+SELECT
+  t.name              AS tenant,
+  i.invoice_number,
+  i.voided_at,
+  je.entry_number     AS original_je,
+  je.entry_date       AS original_je_date
+FROM invoices i
+JOIN tenants t          ON t.id = i.tenant_id
+JOIN journal_entries je  ON je.source_id = i.id AND je.source = 'invoice'
+WHERE i.status = 'VOIDED'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM journal_entries rev
+    WHERE rev.source_id = i.id
+      AND rev.source    = 'invoice_void'
+  )
+ORDER BY t.name, i.invoice_number;
+
+-- =============================================================================
+
+-- Section 9: Invoices with duplicate invoice_void reversal journals
+-- Expected: 0 rows.
+SELECT
+  t.name              AS tenant,
+  i.invoice_number,
+  i.status,
+  COUNT(rev.id)       AS reversal_count
+FROM invoices i
+JOIN tenants t           ON t.id = i.tenant_id
+JOIN journal_entries rev  ON rev.source_id = i.id AND rev.source = 'invoice_void'
+GROUP BY t.name, i.invoice_number, i.status
+HAVING COUNT(rev.id) > 1
+ORDER BY reversal_count DESC, t.name;
+
+-- =============================================================================
+
+-- Section 10: invoice_void reversals that do not balance (DR ≠ CR)
+-- Expected: 0 rows. Any non-zero row is a data integrity issue.
+SELECT
+  t.name                   AS tenant,
+  i.invoice_number,
+  rev.entry_number,
+  SUM(jel.debit)           AS total_dr,
+  SUM(jel.credit)          AS total_cr,
+  SUM(jel.debit) - SUM(jel.credit) AS imbalance
+FROM invoices i
+JOIN tenants t            ON t.id = i.tenant_id
+JOIN journal_entries rev   ON rev.source_id = i.id AND rev.source = 'invoice_void'
+JOIN journal_entry_lines jel ON jel.entry_id = rev.id
+GROUP BY t.name, i.invoice_number, rev.entry_number
+HAVING ABS(SUM(jel.debit) - SUM(jel.credit)) > 0.005
+ORDER BY ABS(SUM(jel.debit) - SUM(jel.credit)) DESC;
+
+-- =============================================================================
+
+-- Section 11: invoice_void reversals whose DR total does not match original invoice journal CR total
+-- The void reversal should exactly mirror the original: void DR = original CR, void CR = original DR.
+-- Expected: 0 rows.
+SELECT
+  t.name                   AS tenant,
+  i.invoice_number,
+  orig.entry_number        AS original_je,
+  SUM(orig_l.credit)       AS original_total_cr,
+  rev.entry_number         AS reversal_je,
+  SUM(rev_l.debit)         AS reversal_total_dr,
+  SUM(orig_l.credit) - SUM(rev_l.debit) AS mismatch
+FROM invoices i
+JOIN tenants t               ON t.id = i.tenant_id
+JOIN journal_entries orig     ON orig.source_id = i.id AND orig.source = 'invoice'
+JOIN journal_entry_lines orig_l ON orig_l.entry_id = orig.id
+JOIN journal_entries rev       ON rev.source_id = i.id AND rev.source = 'invoice_void'
+JOIN journal_entry_lines rev_l  ON rev_l.entry_id = rev.id
+GROUP BY t.name, i.invoice_number, orig.entry_number, rev.entry_number
+HAVING ABS(SUM(orig_l.credit) - SUM(rev_l.debit)) > 0.005
+ORDER BY ABS(SUM(orig_l.credit) - SUM(rev_l.debit)) DESC;
+
+-- =============================================================================
 -- END OF AUDIT SCRIPT
 -- =============================================================================
