@@ -105,5 +105,59 @@ WHERE i.status = 'DRAFT'
 ORDER BY i.invoice_number, je.entry_number, coa.code;
 
 -- =============================================================================
+-- Section 5: SENT / PARTIAL / PAID / OVERDUE invoices missing a journal entry
+-- Expected: 0 rows after go-live.
+-- Pre-go-live rows are acceptable if invoices were marked sent before
+-- line-level posting was implemented.
+SELECT
+  t.name            AS tenant,
+  i.invoice_number,
+  i.status,
+  i.total_amount,
+  i.sent_at
+FROM invoices i
+JOIN tenants t ON t.id = i.tenant_id
+WHERE i.status IN ('SENT', 'PARTIAL', 'PAID', 'OVERDUE')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM journal_entries je
+    WHERE je.source_id = i.id
+      AND je.source    = 'invoice'
+  )
+ORDER BY t.name, i.invoice_number;
+
+-- =============================================================================
+
+-- Section 6: Invoices with duplicate "invoice" source journal entries
+-- Expected: 0 rows.
+SELECT
+  t.name            AS tenant,
+  i.invoice_number,
+  i.status,
+  COUNT(je.id)      AS journal_entry_count
+FROM invoices i
+JOIN tenants t         ON t.id = i.tenant_id
+JOIN journal_entries je ON je.source_id = i.id AND je.source = 'invoice'
+GROUP BY t.name, i.invoice_number, i.status
+HAVING COUNT(je.id) > 1
+ORDER BY journal_entry_count DESC, t.name;
+
+-- =============================================================================
+
+-- Section 7: Invoice lines missing an income account
+-- Expected: 0 rows after COA baseline backfill.
+SELECT
+  t.name            AS tenant,
+  i.invoice_number,
+  i.status,
+  COUNT(il.id)      AS lines_missing_income_account
+FROM invoice_lines il
+JOIN invoices i ON i.id = il.invoice_id
+JOIN tenants t  ON t.id = i.tenant_id
+WHERE il.income_account_id IS NULL
+GROUP BY t.name, i.invoice_number, i.status
+ORDER BY t.name, i.invoice_number;
+
+-- =============================================================================
 -- END OF AUDIT SCRIPT
 -- =============================================================================

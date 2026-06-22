@@ -15,15 +15,14 @@ import {
   InvoiceLineItemsEditor,
   type LineItemData,
   type TaxRateOption,
+  type IncomeAccountOption,
   computeLineAmount,
-  computeLineTax,
   buildTaxBreakdown,
   emptyLine,
 } from "@/components/invoices/invoice-line-items-editor";
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
-interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; }
-interface Account { id: string; code: string; name: string; }
+interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; incomeAccountId: string | null; }
 
 function today() { return new Date().toISOString().split("T")[0]; }
 function addDays(d: string, n: number) { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
@@ -32,13 +31,13 @@ function getMonthPeriod(d: string) { const dt = new Date(d); return `${dt.getFul
 export function InvoiceForm({
   customers,
   items,
-  accounts: _accounts,
+  incomeAccounts,
   taxRates,
 }: {
-  customers: Customer[];
-  items: Item[];
-  accounts: Account[];
-  taxRates: TaxRateOption[];
+  customers:      Customer[];
+  items:          Item[];
+  incomeAccounts: IncomeAccountOption[];
+  taxRates:       TaxRateOption[];
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -62,7 +61,11 @@ export function InvoiceForm({
     isEnabled: boolean;
     helperText: string;
   } | null>(null);
-  const [lines, setLines] = useState<LineItemData[]>(() => [emptyLine(taxRates)]);
+
+  const defaultIncomeAccountId =
+    incomeAccounts.find((a) => a.code === "IN-001")?.id ?? incomeAccounts[0]?.id ?? "";
+
+  const [lines, setLines] = useState<LineItemData[]>(() => [emptyLine(taxRates, defaultIncomeAccountId)]);
 
   const isNGN = currency === "NGN";
 
@@ -120,12 +123,7 @@ export function InvoiceForm({
   }
 
   // ── Totals (live, client-side) ────────────────────────────────────────────
-  const subtotal          = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
-  const lineDiscountTotal = lines.reduce((s, l) => s + (computeLineAmount(l) - l.quantity * l.rate + (
-    // disc = gross - net
-    l.quantity * l.rate - computeLineAmount(l)
-  )), 0);
-  // Simpler: just sum up discounts directly
+  const subtotal = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
   const lineDiscountSum = lines.reduce((s, l) => {
     const gross = l.quantity * l.rate;
     const net   = computeLineAmount(l);
@@ -155,13 +153,14 @@ export function InvoiceForm({
       currency,
       exchangeRate: isNGN ? 1 : exchangeRate,
       lines: lines.map((l) => ({
-        itemId:        l.itemId || undefined,
-        description:   l.description,
-        quantity:      l.quantity,
-        rate:          l.rate,
-        taxRateId:     l.taxRateId || undefined,
-        discountType:  l.discountType,
-        discountValue: l.discountValue,
+        itemId:          l.itemId || undefined,
+        description:     l.description,
+        quantity:        l.quantity,
+        rate:            l.rate,
+        taxRateId:       l.taxRateId || undefined,
+        discountType:    l.discountType,
+        discountValue:   l.discountValue,
+        incomeAccountId: l.incomeAccountId || undefined,
       })),
     });
     setLoading(false);
@@ -291,11 +290,22 @@ export function InvoiceForm({
         </div>
       )}
 
+      {/* Income account empty-state warning */}
+      {incomeAccounts.length === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>No active income accounts are configured.</strong> Create at least one income account in the{" "}
+          <a href="/accounting/chart-of-accounts" className="underline font-medium">Chart of Accounts</a>{" "}
+          before issuing invoices.
+        </div>
+      )}
+
       {/* Line Items Editor */}
       <InvoiceLineItemsEditor
         currency={currency}
         items={items}
         taxRates={taxRates}
+        incomeAccounts={incomeAccounts}
+        defaultIncomeAccountId={defaultIncomeAccountId}
         lines={lines}
         onChange={setLines}
       />

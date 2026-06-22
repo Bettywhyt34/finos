@@ -6,7 +6,7 @@ export default async function NewInvoicePage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [customers, items, accounts, taxRates] = await Promise.all([
+  const [customers, items, incomeAccounts, taxRates] = await Promise.all([
     prisma.customer.findMany({
       where: { tenantId, isActive: true },
       select: { id: true, companyName: true, customerCode: true, paymentTerms: true },
@@ -14,11 +14,11 @@ export default async function NewInvoicePage() {
     }),
     prisma.item.findMany({
       where: { tenantId, isActive: true },
-      select: { id: true, itemCode: true, name: true, salesPrice: true, type: true },
+      select: { id: true, itemCode: true, name: true, salesPrice: true, type: true, incomeAccountId: true },
       orderBy: { name: "asc" },
     }),
     prisma.chartOfAccounts.findMany({
-      where: { tenantId, isActive: true },
+      where: { tenantId, isActive: true, type: "INCOME" },
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     }),
@@ -34,8 +34,12 @@ export default async function NewInvoicePage() {
       <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-6">New Invoice</h1>
       <InvoiceForm
         customers={customers}
-        items={items.map((i) => ({ ...i, salesPrice: i.salesPrice ? parseFloat(String(i.salesPrice)) : null }))}
-        accounts={accounts}
+        items={items.map((i) => ({
+          ...i,
+          salesPrice: i.salesPrice ? parseFloat(String(i.salesPrice)) : null,
+          incomeAccountId: i.incomeAccountId ?? null,
+        }))}
+        incomeAccounts={incomeAccounts}
         taxRates={taxRates.map((t) => ({ ...t, rate: parseFloat(String(t.rate)) }))}
       />
     </div>

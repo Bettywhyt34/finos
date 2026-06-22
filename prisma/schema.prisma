@@ -214,7 +214,8 @@ model ChartOfAccounts {
   journalLines      JournalEntryLine[]
   canonicalLines    JournalLine[]
   budgetLines       BudgetLine[]
-  accountMappings   AccountMapping[]
+  accountMappings           AccountMapping[]
+  incomeAccountInvoiceLines InvoiceLine[]    @relation("InvoiceLineIncomeAccount")
 
   @@unique([tenantId, code])
   @@map("chart_of_accounts")
@@ -450,9 +451,11 @@ model InvoiceLine {
   discountValue  Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2)
   discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2)
   lineTotal      Decimal  @default(0) @map("line_total") @db.Decimal(15, 2)
-  invoice        Invoice  @relation(fields: [invoiceId], references: [id])
-  item           Item?    @relation(fields: [itemId], references: [id])
-  taxRateRef     TaxRate? @relation(fields: [taxRateId], references: [id])
+  incomeAccountId String?          @map("income_account_id")
+  invoice         Invoice          @relation(fields: [invoiceId], references: [id])
+  item            Item?            @relation(fields: [itemId], references: [id])
+  taxRateRef      TaxRate?         @relation(fields: [taxRateId], references: [id])
+  incomeAccount   ChartOfAccounts? @relation("InvoiceLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: SetNull)
 
   @@map("invoice_lines")
 }

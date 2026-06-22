@@ -15,13 +15,14 @@ import {
   InvoiceLineItemsEditor,
   type LineItemData,
   type TaxRateOption,
+  type IncomeAccountOption,
   computeLineAmount,
   buildTaxBreakdown,
   emptyLine,
 } from "@/components/invoices/invoice-line-items-editor";
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
-interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; }
+interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; incomeAccountId: string | null; }
 
 interface InitialData {
   customerId:        string;
@@ -35,13 +36,14 @@ interface InitialData {
   discountAmount:    number;
   notes:             string;
   lines: {
-    itemId:        string;
-    description:   string;
-    quantity:      number;
-    rate:          number;
-    taxRateId:     string;
-    discountType:  "PERCENT" | "FIXED";
-    discountValue: number;
+    itemId:          string;
+    description:     string;
+    quantity:        number;
+    rate:            number;
+    taxRateId:       string;
+    discountType:    "PERCENT" | "FIXED";
+    discountValue:   number;
+    incomeAccountId: string;
   }[];
 }
 
@@ -50,6 +52,7 @@ interface Props {
   initialData:         InitialData;
   customers:           Customer[];
   items:               Item[];
+  incomeAccounts:      IncomeAccountOption[];
   allowManualOverride: boolean;
   taxRates:            TaxRateOption[];
 }
@@ -71,7 +74,7 @@ function AccentBar() {
 }
 function Req() { return <span className="text-red-500 ml-0.5">*</span>; }
 
-export function InvoiceEditForm({ invoiceId, initialData, customers, items, allowManualOverride, taxRates }: Props) {
+export function InvoiceEditForm({ invoiceId, initialData, customers, items, incomeAccounts, allowManualOverride, taxRates }: Props) {
   const router = useRouter();
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -88,10 +91,14 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
   const [rateFetched, setRateFetched]             = useState(false);
   const [discountAmount, setDiscountAmount]       = useState(initialData.discountAmount);
   const [notes, setNotes]                         = useState(initialData.notes);
+
+  const defaultIncomeAccountId =
+    incomeAccounts.find((a) => a.code === "IN-001")?.id ?? incomeAccounts[0]?.id ?? "";
+
   const [lines, setLines] = useState<LineItemData[]>(
     initialData.lines.length > 0
       ? initialData.lines.map((l) => ({ ...l, id: crypto.randomUUID() }))
-      : [emptyLine(taxRates)]
+      : [emptyLine(taxRates, defaultIncomeAccountId)]
   );
 
   const isNGN = currency === "NGN";
@@ -162,13 +169,14 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
       currency,
       exchangeRate: isNGN ? 1 : exchangeRate,
       lines: lines.map((l) => ({
-        itemId:        l.itemId || undefined,
-        description:   l.description,
-        quantity:      l.quantity,
-        rate:          l.rate,
-        taxRateId:     l.taxRateId || undefined,
-        discountType:  l.discountType,
-        discountValue: l.discountValue,
+        itemId:          l.itemId || undefined,
+        description:     l.description,
+        quantity:        l.quantity,
+        rate:            l.rate,
+        taxRateId:       l.taxRateId || undefined,
+        discountType:    l.discountType,
+        discountValue:   l.discountValue,
+        incomeAccountId: l.incomeAccountId || undefined,
       })),
       notes: notes || undefined,
     });
@@ -312,10 +320,19 @@ export function InvoiceEditForm({ invoiceId, initialData, customers, items, allo
           <span className="font-semibold text-slate-800 text-sm">Line Items</span>
         </div>
         <div className="p-4">
+          {incomeAccounts.length === 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+              <strong>No active income accounts are configured.</strong> Create at least one income account in the{" "}
+              <a href="/accounting/chart-of-accounts" className="underline font-medium">Chart of Accounts</a>{" "}
+              before issuing invoices.
+            </div>
+          )}
           <InvoiceLineItemsEditor
             currency={currency}
             items={items}
             taxRates={taxRates}
+            incomeAccounts={incomeAccounts}
+            defaultIncomeAccountId={defaultIncomeAccountId}
             lines={lines}
             onChange={setLines}
           />

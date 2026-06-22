@@ -11,54 +11,96 @@ import { previewTransactionNumber }      from "@/lib/customization/utils";
 import { generateTransactionNumber }     from "@/lib/customization/service";
 
 export interface LineItem {
-  itemId?:       string;
-  description:   string;
-  quantity:      number;
-  rate:          number;
-  taxRateId?:    string;          // FK to TaxRate ("" or undefined = no tax)
-  discountType:  "PERCENT" | "FIXED";
-  discountValue: number;
+  itemId?:         string;
+  description:     string;
+  quantity:        number;
+  rate:            number;
+  taxRateId?:      string;          // FK to TaxRate ("" or undefined = no tax)
+  discountType:    "PERCENT" | "FIXED";
+  discountValue:   number;
+  incomeAccountId?: string;         // FK to ChartOfAccounts ("" or undefined = fallback)
 }
 
 interface ResolvedLine {
-  itemId:        string | null;
-  description:   string;
-  quantity:      number;
-  rate:          number;
-  amount:        number;          // gross = qty × rate
-  taxRateId:     string | null;
-  taxName:       string | null;
-  taxRate:       number;
-  taxAmount:     number;
-  discountType:  string;
-  discountValue: number;
-  discountAmount:number;
-  lineTotal:     number;
+  itemId:          string | null;
+  description:     string;
+  quantity:        number;
+  rate:            number;
+  amount:          number;          // gross = qty × rate
+  taxRateId:       string | null;
+  taxName:         string | null;
+  taxRate:         number;
+  taxAmount:       number;
+  discountType:    string;
+  discountValue:   number;
+  discountAmount:  number;
+  lineTotal:       number;
+  incomeAccountId: string | null;
 }
 
-/** Server-side: resolve tax FKs, snapshot names/rates, compute per-line amounts. */
+/** Server-side: resolve tax FKs, income account FKs, snapshot names/rates, compute per-line amounts. */
 async function resolveLines(
   tenantId: string,
   lines:    LineItem[],
 ): Promise<ResolvedLine[]> {
-  // Collect unique non-empty taxRateIds
-  const ids = Array.from(
+  // ── Tax rates ──────────────────────────────────────────────────────────────
+  const taxIds = Array.from(
     new Set(lines.map((l) => l.taxRateId?.trim() || "").filter(Boolean)),
   );
 
-  // Fetch and validate: must belong to this tenant and be active
   const taxRateMap = new Map<string, { name: string; rate: number }>();
-  if (ids.length > 0) {
+  if (taxIds.length > 0) {
     const rows = await prisma.taxRate.findMany({
-      where: { id: { in: ids }, tenantId, isActive: true },
+      where: { id: { in: taxIds }, tenantId, isActive: true },
       select: { id: true, name: true, rate: true },
     });
     for (const r of rows) {
       taxRateMap.set(r.id, { name: r.name, rate: parseFloat(String(r.rate)) });
     }
-    // If any supplied id is not found it is silently treated as "no tax"
-    // (attacker cannot inject another tenant's tax rate)
+    // Unknown ids → silently treated as "no tax" (prevents cross-tenant injection)
   }
+
+  // ── Income accounts ────────────────────────────────────────────────────────
+  const incomeIds = Array.from(
+    new Set(lines.map((l) => l.incomeAccountId?.trim() || "").filter(Boolean)),
+  );
+
+  // Validate explicitly submitted income accounts.
+  // Unknown ids (wrong tenant, wrong type, inactive) are collected for rejection.
+  const incomeAccountMap = new Map<string, string>();
+  if (incomeIds.length > 0) {
+    const rows = await prisma.chartOfAccounts.findMany({
+      where: { id: { in: incomeIds }, tenantId, type: "INCOME", isActive: true },
+      select: { id: true },
+    });
+    for (const r of rows) incomeAccountMap.set(r.id, r.id);
+
+    // Any submitted id not found in the validated map is invalid.
+    // Reject immediately — do not silently fallback for an explicitly chosen account.
+    const invalidIds = incomeIds.filter((id) => !incomeAccountMap.has(id));
+    if (invalidIds.length > 0) {
+      throw new Error(
+        `One or more income accounts are invalid, inactive, or do not belong to this organisation. ` +
+        `Please refresh the form and reselect the income account for each affected line.`
+      );
+    }
+  }
+
+  // Fallback chain (used only when incomeAccountId is empty/missing):
+  //   1. item.incomeAccountId  (resolved per-line below)
+  //   2. tenant's active IN-001
+  //   3. first active INCOME account (order by code)
+  //   4. null
+  let fallbackIncomeAccountId: string | null = null;
+  const fallback = await prisma.chartOfAccounts.findFirst({
+    where: { tenantId, code: "IN-001", type: "INCOME", isActive: true },
+    select: { id: true },
+  }) ?? await prisma.chartOfAccounts.findFirst({
+    where:   { tenantId, type: "INCOME", isActive: true },
+    orderBy: { code: "asc" },
+    select:  { id: true },
+  });
+  if (fallback) fallbackIncomeAccountId = fallback.id;
 
   return lines.map((l) => {
     const gross = l.quantity * l.rate;
@@ -74,20 +116,29 @@ async function resolveLines(
     const taxRate = taxInfo?.rate ?? 0;
     const taxAmt  = Math.round(taxable * taxRate / 100 * 100) / 100;
 
+    // Resolve income account:
+    //   - Explicit validated id → use it
+    //   - Empty/missing → apply fallback chain
+    const suppliedId = l.incomeAccountId?.trim() || "";
+    const resolvedIncomeId = suppliedId
+      ? incomeAccountMap.get(suppliedId) ?? null   // already validated above; null = shouldn't happen
+      : fallbackIncomeAccountId;
+
     return {
-      itemId:        l.itemId || null,
-      description:   l.description,
-      quantity:      l.quantity,
-      rate:          l.rate,
-      amount:        gross,
-      taxRateId:     taxInfo ? (l.taxRateId?.trim() || null) : null,
-      taxName:       taxInfo?.name ?? null,
+      itemId:          l.itemId || null,
+      description:     l.description,
+      quantity:        l.quantity,
+      rate:            l.rate,
+      amount:          gross,
+      taxRateId:       taxInfo ? (l.taxRateId?.trim() || null) : null,
+      taxName:         taxInfo?.name ?? null,
       taxRate,
-      taxAmount:     taxAmt,
-      discountType:  l.discountType,
-      discountValue: l.discountValue,
-      discountAmount:Math.round(disc * 100) / 100,
-      lineTotal:     Math.round((taxable + taxAmt) * 100) / 100,
+      taxAmount:       taxAmt,
+      discountType:    l.discountType,
+      discountValue:   l.discountValue,
+      discountAmount:  Math.round(disc * 100) / 100,
+      lineTotal:       Math.round((taxable + taxAmt) * 100) / 100,
+      incomeAccountId: resolvedIncomeId,
     };
   });
 }
@@ -229,19 +280,20 @@ export async function createInvoice(data: {
           notes:            data.notes || null,
           lines: {
             create: resolved.map((l) => ({
-              itemId:        l.itemId,
-              description:   l.description,
-              quantity:      l.quantity,
-              rate:          l.rate,
-              amount:        l.amount,
-              taxRateId:     l.taxRateId,
-              taxName:       l.taxName,
-              taxRate:       l.taxRate,
-              taxAmount:     l.taxAmount,
-              discountType:  l.discountType,
-              discountValue: l.discountValue,
-              discountAmount:l.discountAmount,
-              lineTotal:     l.lineTotal,
+              itemId:          l.itemId,
+              description:     l.description,
+              quantity:        l.quantity,
+              rate:            l.rate,
+              amount:          l.amount,
+              taxRateId:       l.taxRateId,
+              taxName:         l.taxName,
+              taxRate:         l.taxRate,
+              taxAmount:       l.taxAmount,
+              discountType:    l.discountType,
+              discountValue:   l.discountValue,
+              discountAmount:  l.discountAmount,
+              lineTotal:       l.lineTotal,
+              incomeAccountId: l.incomeAccountId,
             })),
           },
         },
@@ -407,19 +459,20 @@ export async function updateDraftInvoice(
           notes:             data.notes || null,
           lines: {
             create: resolved.map((l) => ({
-              itemId:        l.itemId,
-              description:   l.description,
-              quantity:      l.quantity,
-              rate:          l.rate,
-              amount:        l.amount,
-              taxRateId:     l.taxRateId,
-              taxName:       l.taxName,
-              taxRate:       l.taxRate,
-              taxAmount:     l.taxAmount,
-              discountType:  l.discountType,
-              discountValue: l.discountValue,
-              discountAmount:l.discountAmount,
-              lineTotal:     l.lineTotal,
+              itemId:          l.itemId,
+              description:     l.description,
+              quantity:        l.quantity,
+              rate:            l.rate,
+              amount:          l.amount,
+              taxRateId:       l.taxRateId,
+              taxName:         l.taxName,
+              taxRate:         l.taxRate,
+              taxAmount:       l.taxAmount,
+              discountType:    l.discountType,
+              discountValue:   l.discountValue,
+              discountAmount:  l.discountAmount,
+              lineTotal:       l.lineTotal,
+              incomeAccountId: l.incomeAccountId,
             })),
           },
         },
@@ -509,19 +562,20 @@ export async function voidInvoice(id: string, reason: string, convertToDraft: bo
         notes:            invoice.notes,
         lines: {
           create: invoice.lines.map((l) => ({
-            itemId:        l.itemId,
-            description:   l.description,
-            quantity:      l.quantity,
-            rate:          l.rate,
-            amount:        l.amount,
-            taxRateId:     l.taxRateId,
-            taxName:       l.taxName,
-            taxRate:       l.taxRate,
-            taxAmount:     l.taxAmount,
-            discountType:  l.discountType,
-            discountValue: l.discountValue,
-            discountAmount:l.discountAmount,
-            lineTotal:     l.lineTotal,
+            itemId:          l.itemId,
+            description:     l.description,
+            quantity:        l.quantity,
+            rate:            l.rate,
+            amount:          l.amount,
+            taxRateId:       l.taxRateId,
+            taxName:         l.taxName,
+            taxRate:         l.taxRate,
+            taxAmount:       l.taxAmount,
+            discountType:    l.discountType,
+            discountValue:   l.discountValue,
+            discountAmount:  l.discountAmount,
+            lineTotal:       l.lineTotal,
+            incomeAccountId: l.incomeAccountId,
           })),
         },
       },

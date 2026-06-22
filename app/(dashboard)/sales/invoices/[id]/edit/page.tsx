@@ -32,7 +32,7 @@ export default async function InvoiceEditPage({
   // Only DRAFT invoices can be fully edited
   if (invoice.status !== "DRAFT") redirect(`/sales/invoices/${id}`);
 
-  const [customers, items, series, taxRates] = await Promise.all([
+  const [customers, items, series, taxRates, incomeAccounts] = await Promise.all([
     prisma.customer.findMany({
       where: { tenantId },
       select: { id: true, companyName: true, customerCode: true, paymentTerms: true },
@@ -40,11 +40,12 @@ export default async function InvoiceEditPage({
     }),
     prisma.item.findMany({
       where: { tenantId, isActive: true },
-      select: { id: true, itemCode: true, name: true, salesPrice: true, type: true, },
+      select: { id: true, itemCode: true, name: true, salesPrice: true, type: true, incomeAccountId: true },
       orderBy: { name: "asc" },
     }).then((rows) => rows.map((i) => ({
       ...i,
       salesPrice: i.salesPrice !== null ? parseFloat(String(i.salesPrice)) : null,
+      incomeAccountId: i.incomeAccountId ?? null,
     }))),
     prisma.transactionNumberSeries.findFirst({
       where: { tenantId, module: "INVOICE" },
@@ -54,6 +55,11 @@ export default async function InvoiceEditPage({
       where: { tenantId, isActive: true },
       select: { id: true, name: true, rate: true, type: true, isDefault: true },
       orderBy: [{ type: "asc" }, { name: "asc" }],
+    }),
+    prisma.chartOfAccounts.findMany({
+      where: { tenantId, isActive: true, type: "INCOME" },
+      select: { id: true, code: true, name: true },
+      orderBy: { code: "asc" },
     }),
   ]);
 
@@ -109,17 +115,19 @@ export default async function InvoiceEditPage({
           discountAmount:    parseFloat(String(invoice.discountAmount)),
           notes:             invoice.notes ?? "",
           lines: invoice.lines.map((l) => ({
-            itemId:        l.itemId ?? "",
-            description:   l.description,
-            quantity:      parseFloat(String(l.quantity)),
-            rate:          parseFloat(String(l.rate)),
-            taxRateId:     l.taxRateId ?? "",
-            discountType:  (l.discountType as "PERCENT" | "FIXED"),
-            discountValue: parseFloat(String(l.discountValue)),
+            itemId:          l.itemId ?? "",
+            description:     l.description,
+            quantity:        parseFloat(String(l.quantity)),
+            rate:            parseFloat(String(l.rate)),
+            taxRateId:       l.taxRateId ?? "",
+            discountType:    (l.discountType as "PERCENT" | "FIXED"),
+            discountValue:   parseFloat(String(l.discountValue)),
+            incomeAccountId: l.incomeAccountId ?? "",
           })),
         }}
         customers={customers}
         items={items}
+        incomeAccounts={incomeAccounts}
         allowManualOverride={allowManualOverride}
         taxRates={taxRates.map((t) => ({ ...t, rate: parseFloat(String(t.rate)) }))}
       />

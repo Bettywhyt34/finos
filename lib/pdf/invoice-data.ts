@@ -34,19 +34,22 @@ export type InvoicePdfCustomer = {
 };
 
 export type InvoicePdfLine = {
-  description:    string;
-  quantity:       number;
-  rate:           number;
-  amount:         number;       // gross = qty × rate
-  taxRateId:      string | null;
-  taxName:        string | null;
-  taxRate:        number;
-  taxAmount:      number;
-  discountType:   string;
-  discountValue:  number;
-  discountAmount: number;
-  lineTotal:      number;
-  itemCode:       string | null;
+  description:       string;
+  quantity:          number;
+  rate:              number;
+  amount:            number;       // gross = qty × rate
+  taxRateId:         string | null;
+  taxName:           string | null;
+  taxRate:           number;
+  taxAmount:         number;
+  discountType:      string;
+  discountValue:     number;
+  discountAmount:    number;
+  lineTotal:         number;
+  itemCode:          string | null;
+  incomeAccountId:   string | null;
+  incomeAccountCode: string | null;
+  incomeAccountName: string | null;
 };
 
 export type InvoicePdfPayment = {
@@ -115,7 +118,10 @@ export async function prepareInvoicePdfData(
     include: {
       customer: true,
       lines: {
-        include: { item: { select: { itemCode: true } } },
+        include: {
+          item:          { select: { itemCode: true } },
+          incomeAccount: { select: { code: true, name: true } },
+        },
         orderBy: { id: "asc" },
       },
       payments: {
@@ -175,19 +181,22 @@ export async function prepareInvoicePdfData(
   }
 
   const pdfLines = invoice.lines.map((l) => ({
-    description:    l.description,
-    quantity:       parseFloat(String(l.quantity)),
-    rate:           parseFloat(String(l.rate)),
-    amount:         parseFloat(String(l.amount)),
-    taxRateId:      l.taxRateId ?? null,
-    taxName:        l.taxName ?? null,
-    taxRate:        parseFloat(String(l.taxRate)),
-    taxAmount:      parseFloat(String(l.taxAmount ?? 0)),
-    discountType:   l.discountType ?? "PERCENT",
-    discountValue:  parseFloat(String(l.discountValue ?? 0)),
-    discountAmount: parseFloat(String(l.discountAmount ?? 0)),
-    lineTotal:      parseFloat(String(l.lineTotal ?? l.amount)),
-    itemCode:       l.item?.itemCode ?? null,
+    description:       l.description,
+    quantity:          parseFloat(String(l.quantity)),
+    rate:              parseFloat(String(l.rate)),
+    amount:            parseFloat(String(l.amount)),
+    taxRateId:         l.taxRateId ?? null,
+    taxName:           l.taxName ?? null,
+    taxRate:           parseFloat(String(l.taxRate)),
+    taxAmount:         parseFloat(String(l.taxAmount ?? 0)),
+    discountType:      l.discountType ?? "PERCENT",
+    discountValue:     parseFloat(String(l.discountValue ?? 0)),
+    discountAmount:    parseFloat(String(l.discountAmount ?? 0)),
+    lineTotal:         parseFloat(String(l.lineTotal ?? l.amount)),
+    itemCode:          l.item?.itemCode ?? null,
+    incomeAccountId:   l.incomeAccountId ?? null,
+    incomeAccountCode: l.incomeAccount?.code ?? null,
+    incomeAccountName: l.incomeAccount?.name ?? null,
   }));
 
   const lineDiscountTotal = pdfLines.reduce((s, l) => s + l.discountAmount, 0);

@@ -17,6 +17,8 @@ export const PAYMENT_METHODS = ["BANK_TRANSFER", "CHECK", "CASH", "CARD"] as con
 export const ITEM_TYPES = ["INVENTORY", "SERVICE", "NON_STOCK"] as const;
 
 // Nigerian Chart of Accounts standard codes
-export const COA_AR_CODE = "CA-001";
-export const COA_AP_CODE = "CL-001";
-export const COA_BANK_CODE = "CA-003";
+export const COA_AR_CODE           = "CA-001";
+export const COA_AP_CODE           = "CL-001";
+export const COA_BANK_CODE         = "CA-003";
+export const COA_SALES_INCOME_CODE = "IN-001";
+export const COA_OUTPUT_VAT_CODE   = "CL-OUTPUT-VAT";
