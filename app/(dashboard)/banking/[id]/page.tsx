@@ -16,11 +16,12 @@ import {
 import { TransactionForm } from "./transaction-form";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 
-export default async function BankAccountDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function BankAccountDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 

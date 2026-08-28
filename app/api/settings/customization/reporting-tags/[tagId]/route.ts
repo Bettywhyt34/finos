@@ -18,10 +18,11 @@ const UpdateSchema = z.object({
   appliesTo:   z.array(z.enum(ALL_SCOPES as [ReportingTagEntityScope, ...ReportingTagEntityScope[]])).optional(),
 });
 
-type RouteCtx = { params: { tagId: string } };
+type RouteCtx = { params: Promise<{ tagId: string }> };
 
 // GET /api/settings/customization/reporting-tags/[tagId]
-export async function GET(_req: NextRequest, { params }: RouteCtx) {
+export async function GET(_req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireAuth();
   if (!ctx) return response!;
 
@@ -36,7 +37,8 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
 }
 
 // PATCH /api/settings/customization/reporting-tags/[tagId]
-export async function PATCH(req: NextRequest, { params }: RouteCtx) {
+export async function PATCH(req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 
@@ -75,7 +77,8 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
 }
 
 // DELETE /api/settings/customization/reporting-tags/[tagId]
-export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
+export async function DELETE(_req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 

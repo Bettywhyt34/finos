@@ -7,10 +7,11 @@ const ReorderSchema = z.object({
   orderedIds: z.array(z.string()).min(1),
 });
 
-type RouteCtx = { params: { tagId: string } };
+type RouteCtx = { params: Promise<{ tagId: string }> };
 
 // POST /api/settings/customization/reporting-tags/[tagId]/options/reorder
-export async function POST(req: NextRequest, { params }: RouteCtx) {
+export async function POST(req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 

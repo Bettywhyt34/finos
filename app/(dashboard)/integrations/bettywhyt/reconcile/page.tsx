@@ -9,11 +9,12 @@ interface SearchParams {
   page?: string;
 }
 
-export default async function BettyWhytReconcilePage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function BettyWhytReconcilePage(
+  props: {
+    searchParams: Promise<SearchParams>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
   const orgId = session.user.tenantId;

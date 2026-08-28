@@ -3,10 +3,8 @@ import { requireAuth }                           from "@/lib/auth/guards";
 import { previewEmailNotificationTemplate }      from "@/lib/customization/email-notifications-service";
 
 // POST /api/settings/customization/email-notifications/[templateId]/preview
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { templateId: string } },
-) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ templateId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireAuth();
   if (!ctx) return response;
 

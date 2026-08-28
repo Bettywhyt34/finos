@@ -20,11 +20,12 @@ function getStatus(isLocked: boolean, isReversed: boolean) {
   return { label: "Draft", cls: "bg-amber-100 text-amber-700" };
 }
 
-export default async function JournalEntriesPage({
-  searchParams,
-}: {
-  searchParams: { period?: string; source?: string; search?: string };
-}) {
+export default async function JournalEntriesPage(
+  props: {
+    searchParams: Promise<{ period?: string; source?: string; search?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

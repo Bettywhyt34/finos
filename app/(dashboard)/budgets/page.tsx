@@ -17,11 +17,12 @@ const STATUS_COLORS: Record<string, string> = {
   LOCKED: "bg-gray-100 text-gray-600",
 };
 
-export default async function BudgetsPage({
-  searchParams,
-}: {
-  searchParams: { year?: string; type?: string };
-}) {
+export default async function BudgetsPage(
+  props: {
+    searchParams: Promise<{ year?: string; type?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

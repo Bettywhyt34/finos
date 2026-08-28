@@ -13,10 +13,8 @@ const TEST_BANNER = `<div style="background:#fef3c7;border:1px solid #fde68a;pad
 </div>`;
 
 // POST /api/settings/customization/email-notifications/[templateId]/test-send
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { templateId: string } },
-) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ templateId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response;
 

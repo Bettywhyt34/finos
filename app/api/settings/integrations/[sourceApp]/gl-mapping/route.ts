@@ -16,10 +16,8 @@ const schema = z.object({
   defaultBankAccount:    z.string().optional(),
 });
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { sourceApp: string } },
-) {
+export async function PATCH(req: Request, props: { params: Promise<{ sourceApp: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

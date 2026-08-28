@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase-server";
+import { requireMutationRole } from "@/lib/auth/guards";
 
 const BUCKET = "org-logos";
 const MAX_SIZE = 1024 * 1024; // 1 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/bmp", "image/webp"];
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const tenantId = session.user.tenantId;
+  const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
+  if (!ctx) return response;
+  const tenantId = ctx.tenantId;
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
@@ -56,12 +54,10 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ url: publicUrl });
 }
 
-export async function DELETE(_req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const tenantId = session.user.tenantId;
+export async function DELETE() {
+  const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
+  if (!ctx) return response;
+  const tenantId = ctx.tenantId;
 
   const supabase = createAdminClient();
 

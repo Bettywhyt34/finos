@@ -16,6 +16,14 @@ export async function createOrganization(formData: FormData) {
     return { error: "You must be signed in to create a workspace." };
   }
 
+  const activeMembership = await prisma.tenantMembership.findFirst({
+    where: { userId: session.user.id, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (activeMembership) {
+    return { error: "Your account already belongs to an active workspace." };
+  }
+
   const validated = CreateOrgSchema.safeParse({ name: formData.get("name") });
   if (!validated.success) {
     return { error: validated.error.issues[0].message };

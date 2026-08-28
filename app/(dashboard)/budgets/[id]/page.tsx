@@ -8,13 +8,14 @@ import { XpenxFlowOverrideDialog } from "./xpenxflow-override-dialog";
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-export default async function BudgetDetailPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams: { versionId?: string };
-}) {
+export default async function BudgetDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+    searchParams: Promise<{ versionId?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

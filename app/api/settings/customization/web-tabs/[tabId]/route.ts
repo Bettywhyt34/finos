@@ -24,10 +24,11 @@ const UpdateSchema = z.object({
   isActive:        z.boolean().optional(),
 });
 
-type RouteCtx = { params: { tabId: string } };
+type RouteCtx = { params: Promise<{ tabId: string }> };
 
 // GET /api/settings/customization/web-tabs/[tabId]
-export async function GET(_req: NextRequest, { params }: RouteCtx) {
+export async function GET(_req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireAuth();
   if (!ctx) return response!;
 
@@ -42,7 +43,8 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
 }
 
 // PATCH /api/settings/customization/web-tabs/[tabId]
-export async function PATCH(req: NextRequest, { params }: RouteCtx) {
+export async function PATCH(req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 
@@ -90,7 +92,8 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
 }
 
 // DELETE /api/settings/customization/web-tabs/[tabId]
-export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
+export async function DELETE(_req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 

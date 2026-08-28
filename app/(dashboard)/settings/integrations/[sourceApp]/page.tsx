@@ -7,11 +7,12 @@ import { MappingManager } from "./mapping-manager";
 import { GLMappingForm } from "./gl-mapping-form";
 import { getGLMapping } from "@/lib/integrations/registry";
 
-export default async function IntegrationMappingsPage({
-  params,
-}: {
-  params: { sourceApp: string };
-}) {
+export default async function IntegrationMappingsPage(
+  props: {
+    params: Promise<{ sourceApp: string }>;
+  }
+) {
+  const params = await props.params;
   const session = await auth();
   const tenantId = session?.user?.tenantId;
   if (!tenantId) redirect("/auth/signin");

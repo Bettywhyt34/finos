@@ -15,16 +15,17 @@ const SOURCE_LABELS: Record<string, string> = {
   reversal: "Reversal",
 };
 
-export default async function GeneralLedgerPage({
-  searchParams,
-}: {
-  searchParams: {
-    accountId?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    period?: string;
-  };
-}) {
+export default async function GeneralLedgerPage(
+  props: {
+    searchParams: Promise<{
+      accountId?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      period?: string;
+    }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

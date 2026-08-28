@@ -10,10 +10,8 @@ const CreateSchema = z.object({
   notes:             z.string().optional(),
 });
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { sourceApp: string } }
-) {
+export async function GET(_req: Request, props: { params: Promise<{ sourceApp: string }> }) {
+  const params = await props.params;
   const session = await auth();
   const tenantId = session?.user?.tenantId;
   if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -27,10 +25,8 @@ export async function GET(
   return NextResponse.json(mappings);
 }
 
-export async function POST(
-  req: Request,
-  { params }: { params: { sourceApp: string } }
-) {
+export async function POST(req: Request, props: { params: Promise<{ sourceApp: string }> }) {
+  const params = await props.params;
   const session = await auth();
   const tenantId = session?.user?.tenantId;
   if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

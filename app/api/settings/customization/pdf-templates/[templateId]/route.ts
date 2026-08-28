@@ -15,10 +15,8 @@ const PatchSchema = z.object({
 });
 
 // GET /api/settings/customization/pdf-templates/[templateId]
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { templateId: string } },
-) {
+export async function GET(_req: NextRequest, props: { params: Promise<{ templateId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireAuth();
   if (!ctx) return response;
 
@@ -33,10 +31,8 @@ export async function GET(
 }
 
 // PATCH /api/settings/customization/pdf-templates/[templateId]
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { templateId: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ templateId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response;
 
@@ -61,10 +57,8 @@ export async function PATCH(
 }
 
 // DELETE /api/settings/customization/pdf-templates/[templateId]
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { templateId: string } },
-) {
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ templateId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response;
 

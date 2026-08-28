@@ -20,10 +20,8 @@ function canWrite(role: string | null | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
-export async function POST(
-  _request: Request,
-  { params }: { params: { batchId: string } },
-) {
+export async function POST(_request: Request, props: { params: Promise<{ batchId: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

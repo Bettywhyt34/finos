@@ -3,13 +3,20 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Public routes — no auth required
-const PUBLIC_ROUTES = ["/login", "/signup", "/register", "/api/auth", "/accept-invite"];
+const PUBLIC_PAGES = new Set(["/login", "/signup", "/register", "/accept-invite"]);
 
-export default auth(function middleware(req) {
+function isPublicRoute(pathname: string): boolean {
+  return PUBLIC_PAGES.has(pathname) || pathname.startsWith("/api/auth/");
+}
+
+export default auth(function proxy(req) {
   const { nextUrl, auth: session } = req as NextRequest & { auth: typeof req.auth };
-  const isPublic = PUBLIC_ROUTES.some((r) => nextUrl.pathname.startsWith(r));
+  const isPublic = isPublicRoute(nextUrl.pathname);
 
   if (!session && !isPublic) {
+    if (nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     return NextResponse.redirect(new URL("/login", nextUrl));
   }
 

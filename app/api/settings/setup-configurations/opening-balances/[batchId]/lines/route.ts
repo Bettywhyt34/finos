@@ -29,10 +29,8 @@ const LineSchema = z.object({
   credit:          z.number().min(0).default(0),
 });
 
-export async function POST(
-  request: Request,
-  { params }: { params: { batchId: string } },
-) {
+export async function POST(request: Request, props: { params: Promise<{ batchId: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

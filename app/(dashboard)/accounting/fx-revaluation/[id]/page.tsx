@@ -13,11 +13,12 @@ const STATUS_COLORS: Record<string, string> = {
   REVERSED: "bg-red-100 text-red-700",
 };
 
-export default async function FxRevaluationDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function FxRevaluationDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

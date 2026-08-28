@@ -106,15 +106,43 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
 
   /**
    * Session callback: shapes what the client receives from useSession().
-   * Reads from token (JWT strategy). Never fetches the DB here — keep it fast.
+   * Revalidates the token's tenant claim against active database membership.
    */
   async session({ session, token }) {
-    if (token && session.user) {
-      session.user.id = token.id as string;
-      session.user.tenantId = token.tenantId as string | null;
-      session.user.role = token.role as import("@prisma/client").UserRole | null;
-      session.user.tenantName = token.tenantName as string | null;
+    if (!token?.id || !session.user) return session;
+
+    session.user.id = token.id as string;
+
+    // JWT tenant claims are a routing hint, not an authorization decision.
+    // Revalidate the exact active membership on every server-side auth() call
+    // so removal, suspension, and role changes take effect immediately.
+    const claimedTenantId = token.tenantId as string | null | undefined;
+    if (!claimedTenantId) {
+      session.user.tenantId = null;
+      session.user.role = null;
+      session.user.tenantName = null;
+      return session;
     }
+
+    const membership = await prisma.tenantMembership.findFirst({
+      where: {
+        userId:   token.id as string,
+        tenantId: claimedTenantId,
+        status:   "ACTIVE",
+      },
+      include: { tenant: { select: { name: true, status: true } } },
+    });
+
+    if (!membership || membership.tenant.status !== "active") {
+      session.user.tenantId = null;
+      session.user.role = null;
+      session.user.tenantName = null;
+      return session;
+    }
+
+    session.user.tenantId = membership.tenantId;
+    session.user.role = membership.role;
+    session.user.tenantName = membership.tenant.name;
     return session;
   },
 };

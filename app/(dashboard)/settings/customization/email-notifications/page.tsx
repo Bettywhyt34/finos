@@ -3,11 +3,12 @@ import { auth }                              from "@/lib/auth";
 import { getEmailNotificationTemplates }     from "@/lib/customization/email-notifications-service";
 import { EmailNotificationsClient }          from "./email-notifications-client";
 
-export default async function EmailNotificationsPage({
-  searchParams,
-}: {
-  searchParams: { category?: string };
-}) {
+export default async function EmailNotificationsPage(
+  props: {
+    searchParams: Promise<{ category?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
 

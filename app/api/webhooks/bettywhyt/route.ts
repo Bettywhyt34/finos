@@ -18,20 +18,22 @@ import { handleBettywhytWebhook } from "@/lib/integrations/bettywhyt/webhook-han
 export async function POST(req: Request) {
   // 1. API key check (fast rejection before reading body)
   const finosApiKey = process.env.FINOS_API_KEY ?? "";
-  if (finosApiKey) {
-    const providedKey = req.headers.get("X-API-Key") ?? "";
-    let keyValid = false;
-    try {
-      keyValid = timingSafeEqual(
-        Buffer.from(providedKey, "utf8"),
-        Buffer.from(finosApiKey, "utf8")
-      );
-    } catch {
-      keyValid = false;
-    }
-    if (!keyValid) {
-      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
-    }
+  if (!finosApiKey) {
+    console.error("[bettywhyt-webhook] FINOS_API_KEY is not set");
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const providedKey = req.headers.get("X-API-Key") ?? "";
+  let keyValid = false;
+  try {
+    keyValid = timingSafeEqual(
+      Buffer.from(providedKey, "utf8"),
+      Buffer.from(finosApiKey, "utf8")
+    );
+  } catch {
+    keyValid = false;
+  }
+  if (!keyValid) {
+    return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
   }
 
   // 2. Read raw body for signature verification (must come before .json())

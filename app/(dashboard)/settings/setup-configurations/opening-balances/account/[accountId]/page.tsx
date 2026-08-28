@@ -45,10 +45,11 @@ function getColumnConfig(category: string): {
 }
 
 interface PageProps {
-  params: { accountId: string };
+  params: Promise<{ accountId: string }>;
 }
 
-export default async function OpeningBalanceDrilldownPage({ params }: PageProps) {
+export default async function OpeningBalanceDrilldownPage(props: PageProps) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
 

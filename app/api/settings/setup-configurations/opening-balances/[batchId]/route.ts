@@ -24,10 +24,8 @@ const PatchSchema = z.object({
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { batchId: string } },
-) {
+export async function PATCH(request: Request, props: { params: Promise<{ batchId: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,10 +70,8 @@ export async function PATCH(
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 
-export async function DELETE(
-  _request: Request,
-  { params }: { params: { batchId: string } },
-) {
+export async function DELETE(_request: Request, props: { params: Promise<{ batchId: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
