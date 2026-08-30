@@ -14,6 +14,7 @@ import {
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { ProjectDocuments, type ProjectDocumentRow } from "./project-documents";
 
 interface ProjectDetailRow {
   id: string;
@@ -41,6 +42,16 @@ interface ProjectDetailRow {
 interface BillingMilestone {
   percentage: number;
   expectedDate: string;
+}
+
+interface ProjectActivityRow {
+  id: string;
+  eventType: string;
+  title: string;
+  description: string | null;
+  actorName: string | null;
+  metadata: unknown;
+  createdAt: Date;
 }
 
 const TABS = [
@@ -103,6 +114,30 @@ export default async function ProjectDetailPage({
   const costBudget = project.costBudget == null ? null : Number(project.costBudget);
   const plannedMargin = costBudget == null ? null : contractValue - costBudget;
   const milestones = parseBillingSchedule(project.billingSchedule);
+  let documents: ProjectDocumentRow[] = [];
+  let activities: ProjectActivityRow[] = [];
+  if (activeTab === "documents") {
+    const rows = await prisma.$queryRaw<Array<Omit<ProjectDocumentRow, "uploadedAt"> & { uploadedAt: Date }>>`
+      SELECT d."id", d."title", d."category", d."file_name" AS "fileName",
+        d."mime_type" AS "mimeType", d."file_size" AS "fileSize", d."uploaded_at" AS "uploadedAt",
+        COALESCE(u."name", u."email", d."uploaded_by") AS "uploadedByName"
+      FROM "project_documents" d
+      LEFT JOIN "users" u ON u."id" = d."uploaded_by"
+      WHERE d."tenant_id" = ${tenantId}::uuid AND d."project_id" = ${project.id} AND d."status" = 'ACTIVE'
+      ORDER BY d."uploaded_at" DESC
+    `;
+    documents = rows.map((row) => ({ ...row, uploadedAt: row.uploadedAt.toISOString() }));
+  }
+  if (activeTab === "activity") {
+    activities = await prisma.$queryRaw<ProjectActivityRow[]>`
+      SELECT "id", "event_type" AS "eventType", "title", "description",
+        "actor_name" AS "actorName", "metadata", "created_at" AS "createdAt"
+      FROM "project_activities"
+      WHERE "tenant_id" = ${tenantId}::uuid AND "project_id" = ${project.id}
+      ORDER BY "created_at" DESC
+    `;
+  }
+  const canManageDocuments = ["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "");
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -154,8 +189,8 @@ export default async function ProjectDetailPage({
       ) : null}
       {activeTab === "revenue" ? <Revenue currency={project.currency} /> : null}
       {activeTab === "costs" ? <Costs currency={project.currency} /> : null}
-      {activeTab === "documents" ? <Documents /> : null}
-      {activeTab === "activity" ? <Activity project={project} /> : null}
+      {activeTab === "documents" ? <ProjectDocuments projectId={project.id} documents={documents} canManage={canManageDocuments} /> : null}
+      {activeTab === "activity" ? <Activity project={project} activities={activities} /> : null}
     </div>
   );
 }
@@ -291,24 +326,36 @@ function Costs({ currency }: { currency: string }) {
   );
 }
 
-function Documents() {
-  return <EmptyPanel icon={FolderOpen} title="No documents added yet" text="Contracts, purchase orders, delivery evidence and transaction attachments will be available from this Project." />;
-}
-
-function Activity({ project }: { project: ProjectDetailRow }) {
+function Activity({ project, activities }: { project: ProjectDetailRow; activities: ProjectActivityRow[] }) {
+  const timeline = activities.length ? activities : [{
+    id: `created-${project.id}`,
+    eventType: "PROJECT_CREATED",
+    title: "Project created",
+    description: "Initial project setup was recorded.",
+    actorName: null,
+    metadata: null,
+    createdAt: project.createdAt,
+  }];
   return (
     <section className="rounded-xl border border-[var(--app-border)] bg-white">
       <div className="border-b border-[var(--app-border)] px-6 py-5">
         <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Activity</h2>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">The Project’s chronological audit trail.</p>
       </div>
-      <div className="flex gap-4 px-6 py-6">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#E7F2EC] text-[var(--positive)]"><History className="h-4 w-4" /></div>
-        <div>
-          <p className="text-sm font-medium text-[var(--text-primary)]">Project created</p>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">Initial project setup was recorded.</p>
-          <p className="mt-2 text-xs text-[var(--text-secondary)]">{formatDate(project.createdAt)}</p>
-        </div>
+      <div className="divide-y divide-[var(--app-border)]">
+        {timeline.map((activity) => (
+          <div key={activity.id} className="flex gap-4 px-6 py-5">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#E7F2EC] text-[var(--positive)]"><History className="h-4 w-4" /></div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-[var(--text-primary)]">{activity.title}</p>
+                <span className="font-code text-[11px] text-[var(--text-secondary)]">{activity.eventType}</span>
+              </div>
+              {activity.description ? <p className="mt-1 text-sm text-[var(--text-secondary)]">{activity.description}</p> : null}
+              <p className="mt-2 text-xs text-[var(--text-secondary)]">{formatDateTime(activity.createdAt)}{activity.actorName ? ` · ${activity.actorName}` : ""}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -355,4 +402,8 @@ function parseBillingSchedule(value: unknown): BillingMilestone[] {
     const candidate = item as Record<string, unknown>;
     return typeof candidate.percentage === "number" && typeof candidate.expectedDate === "string";
   });
+}
+
+function formatDateTime(value: Date) {
+  return new Intl.DateTimeFormat("en-NG", { dateStyle: "medium", timeStyle: "short" }).format(value);
 }

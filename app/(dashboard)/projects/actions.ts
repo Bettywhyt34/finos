@@ -95,21 +95,32 @@ export async function createProject(
   }
 
   try {
-    await prisma.$executeRaw`
-      INSERT INTO "projects" (
-        "tenant_id", "customer_id", "name", "code", "description", "status", "currency",
-        "start_date", "end_date", "contract_value", "cost_budget", "margin_target",
-        "default_income_account_id", "contract_asset_account_id", "unearned_income_account_id",
-        "billing_schedule", "notes", "created_by"
-      ) VALUES (
-        ${tenantId}, ${data.customerId}, ${data.name}, ${data.code || null}, ${data.description || null},
-        ${data.status}::"ProjectStatus", ${data.currency.toUpperCase()}, ${data.startDate}, ${data.endDate ?? null},
-        ${data.contractValue}, ${data.costBudget ?? null}, ${data.marginTarget ?? null},
-        ${data.defaultIncomeAccountId || null}, ${data.contractAssetAccountId || null},
-        ${data.unearnedIncomeAccountId || null},
-        CAST(${JSON.stringify(billingPercentages)} AS jsonb), ${data.notes || null}, ${userId}
-      )
-    `;
+    await prisma.$transaction(async (tx) => {
+      const projects = await tx.$queryRaw<Array<{ id: string }>>`
+        INSERT INTO "projects" (
+          "tenant_id", "customer_id", "name", "code", "description", "status", "currency",
+          "start_date", "end_date", "contract_value", "cost_budget", "margin_target",
+          "default_income_account_id", "contract_asset_account_id", "unearned_income_account_id",
+          "billing_schedule", "notes", "created_by"
+        ) VALUES (
+          ${tenantId}, ${data.customerId}, ${data.name}, ${data.code || null}, ${data.description || null},
+          ${data.status}::"ProjectStatus", ${data.currency.toUpperCase()}, ${data.startDate}, ${data.endDate ?? null},
+          ${data.contractValue}, ${data.costBudget ?? null}, ${data.marginTarget ?? null},
+          ${data.defaultIncomeAccountId || null}, ${data.contractAssetAccountId || null},
+          ${data.unearnedIncomeAccountId || null},
+          CAST(${JSON.stringify(billingPercentages)} AS jsonb), ${data.notes || null}, ${userId}
+        ) RETURNING "id"
+      `;
+      await tx.$executeRaw`
+        INSERT INTO "project_activities" (
+          "tenant_id", "project_id", "event_type", "title", "description", "actor_id", "actor_name", "metadata"
+        ) VALUES (
+          ${tenantId}::uuid, ${projects[0].id}, 'PROJECT_CREATED', 'Project created',
+          'Initial project setup was recorded.', ${userId}, ${session.user.email ?? null},
+          CAST(${JSON.stringify({ status: data.status, contractValue: data.contractValue, currency: data.currency.toUpperCase() })} AS jsonb)
+        )
+      `;
+    });
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "P2010") {
       return { error: "The project could not be saved. Check that the local Projects migration has been applied." };

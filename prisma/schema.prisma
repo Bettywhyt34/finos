@@ -137,6 +137,8 @@ model Tenant {
   reportingTagOptions        ReportingTagOption[]
   webTabs                    WebTab[]
   projects                   Project[]
+  projectDocuments           ProjectDocument[]
+  projectActivities          ProjectActivity[]
 
   @@map("tenants")
 }
@@ -1185,12 +1187,56 @@ model Project {
   expenses              Expense[]
   journalEntryLines     JournalEntryLine[]
   journalLines          JournalLine[]
+  documents             ProjectDocument[]
+  activities            ProjectActivity[]
 
   @@unique([tenantId, code])
   @@index([tenantId, status])
   @@index([tenantId, customerId])
   @@index([tenantId, startDate, endDate])
   @@map("projects")
+}
+
+model ProjectDocument {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  projectId    String   @map("project_id")
+  title        String
+  category     String
+  fileName     String   @map("file_name")
+  storagePath  String   @map("storage_path")
+  mimeType     String   @map("mime_type")
+  fileSize     Int      @map("file_size")
+  status       String   @default("ACTIVE")
+  uploadedBy   String   @map("uploaded_by")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+  archivedBy   String?  @map("archived_by")
+  archivedAt   DateTime? @map("archived_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, status])
+  @@map("project_documents")
+}
+
+model ProjectActivity {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  projectId   String   @map("project_id")
+  eventType   String   @map("event_type")
+  title       String
+  description String?
+  actorId     String   @map("actor_id")
+  actorName   String?  @map("actor_name")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, createdAt])
+  @@map("project_activities")
 }
 
 model RevflowInvoice {
