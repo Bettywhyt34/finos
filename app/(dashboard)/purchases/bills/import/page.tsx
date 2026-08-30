@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   Upload, FileText, CheckCircle2, AlertCircle,
-  ArrowLeft, X, Loader2, Tag, ChevronRight,
+  ArrowLeft, X, Loader2, ChevronRight,
   Building2, UserPlus, ArrowRightLeft,
 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -208,7 +208,6 @@ export default function BillImportPage() {
   }
 
   const totalValue   = allBills.reduce((s, b) => s + b.totalAmount, 0)
-  const withCampaign = allBills.filter((b) => b.campaignRef).length
   const allResolved  = unknownVendors.length > 0 && unknownVendors.every((n) => !!resolutions[n])
 
   return (
@@ -263,7 +262,6 @@ export default function BillImportPage() {
                 <p className="text-sm font-medium text-slate-900">{fileName}</p>
                 <p className="text-xs text-slate-500">
                   {allBills.length} bills · {formatCurrency(totalValue)} total
-                  {withCampaign > 0 && ` · ${withCampaign} with campaign`}
                 </p>
               </div>
             </div>
@@ -291,7 +289,6 @@ export default function BillImportPage() {
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Due</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Lines</th>
                     <th className="text-right px-3 py-2 font-medium text-slate-600">Total</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Campaign</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Status</th>
                   </tr>
                 </thead>
@@ -305,14 +302,6 @@ export default function BillImportPage() {
                       <td className="px-3 py-2 text-slate-500">{bill.lines.length}</td>
                       <td className="px-3 py-2 text-right font-medium text-slate-900">
                         {formatCurrency(bill.totalAmount)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {bill.campaignRef ? (
-                          <span className="inline-flex items-center gap-1 text-purple-700">
-                            <Tag className="h-3 w-3" />
-                            <span className="truncate max-w-[80px]">{bill.campaignRef}</span>
-                          </span>
-                        ) : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-3 py-2">
                         <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", statusColors[bill.status] ?? "bg-slate-100 text-slate-600")}>

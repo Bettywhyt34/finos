@@ -15,10 +15,8 @@ const PatchSchema = z.object({
 });
 
 // PATCH /api/settings/customization/transaction-number-series/[seriesId]
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { seriesId: string } },
-) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ seriesId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response;
 

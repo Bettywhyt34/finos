@@ -18,10 +18,8 @@ async function getTaxRate(id: string, tenantId: string) {
   return prisma.taxRate.findFirst({ where: { id, tenantId, isActive: true } });
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -59,10 +57,8 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

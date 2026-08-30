@@ -29,8 +29,9 @@ const PatchLineSchema = z.object({
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { batchId: string; lineId: string } },
+  props: { params: Promise<{ batchId: string; lineId: string }> }
 ) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -78,8 +79,9 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { batchId: string; lineId: string } },
+  props: { params: Promise<{ batchId: string; lineId: string }> }
 ) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

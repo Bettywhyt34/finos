@@ -17,11 +17,12 @@ interface TrialBalanceLine {
 
 const DEBIT_NORMAL = new Set(["ASSET", "EXPENSE"]);
 
-export default async function TrialBalancePage({
-  searchParams,
-}: {
-  searchParams: { period?: string; activeOnly?: string };
-}) {
+export default async function TrialBalancePage(
+  props: {
+    searchParams: Promise<{ period?: string; activeOnly?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

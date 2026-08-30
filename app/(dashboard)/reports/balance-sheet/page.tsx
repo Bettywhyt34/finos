@@ -3,11 +3,12 @@ import { getAccountBalances, sumByType } from "@/lib/statements";
 import { formatCurrency } from "@/lib/utils";
 import { BalanceSheetExport } from "./balance-sheet-export";
 
-export default async function BalanceSheetPage({
-  searchParams,
-}: {
-  searchParams: { asOf?: string; compareAsOf?: string };
-}) {
+export default async function BalanceSheetPage(
+  props: {
+    searchParams: Promise<{ asOf?: string; compareAsOf?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

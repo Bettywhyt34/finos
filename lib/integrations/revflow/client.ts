@@ -7,18 +7,16 @@
  * API base:       https://revflowapp.com/api/finos  (REVFLOW_API_BASE)
  *
  * Spec entity types for ?entity= param:
- *   campaigns | documents | clients | payments | journal_entries | chart_of_accounts
+ *   documents | clients | payments | journal_entries | chart_of_accounts
  *   "documents" is Revflow's name for what FINOS calls "invoices".
  */
 import "server-only";
 import { z } from "zod";
 import { BaseOAuthClient } from "@/lib/integrations/base-client";
 import {
-  RFCampaignSchema,
   RFInvoiceSchema,
   RFPaymentSchema,
   RFJournalEntrySchema,
-  type RFCampaign,
   type RFInvoice,
   type RFPayment,
   type RFJournalEntry,
@@ -26,7 +24,6 @@ import {
 
 /** Revflow entity type identifiers (as defined in the Revflow API spec). */
 export const RF_ENTITY = {
-  CAMPAIGNS:       "campaigns",
   /** Revflow calls invoices "documents" */
   DOCUMENTS:       "documents",
   CLIENTS:         "clients",
@@ -75,11 +72,6 @@ export class RevflowClient extends BaseOAuthClient {
   }
 
   // ── Typed convenience methods ──────────────────────────────────────────────
-
-  async getCampaigns(since?: string): Promise<RFCampaign[]> {
-    const raw = await this.sync({ entity: RF_ENTITY.CAMPAIGNS, ...(since ? { since } : {}) });
-    return parseEntityArray(raw, RFCampaignSchema, "campaigns");
-  }
 
   /** Revflow entity name: "documents" (= invoices in FINOS) */
   async getInvoices(since?: string): Promise<RFInvoice[]> {

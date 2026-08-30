@@ -15,14 +15,10 @@ export async function POST(req: NextRequest) {
   const incoming = body.expenses ?? []
 
   // Pre-load lookup data
-  const [categories, campaigns, existing] = await Promise.all([
+  const [categories, existing] = await Promise.all([
     prisma.expenseCategory.findMany({
       where: { tenantId },
       select: { id: true, name: true },
-    }),
-    prisma.revflowCampaign.findMany({
-      where: { tenantId },
-      select: { id: true, revflowId: true, campaignCode: true, campaignName: true },
     }),
     prisma.expense.findMany({
       where: { tenantId, externalExpenseId: { not: null } },
@@ -34,29 +30,9 @@ export async function POST(req: NextRequest) {
   const catByName = new Map(
     categories.map((c) => [c.name.toLowerCase().trim(), c.id])
   )
-  const campaignByRevflowId = new Map(campaigns.map((c) => [c.revflowId, c.id]))
-  const campaignByCode = new Map(
-    campaigns
-      .filter((c) => c.campaignCode)
-      .map((c) => [c.campaignCode!.toLowerCase(), c.id])
-  )
-  const campaignByName = new Map(
-    campaigns.map((c) => [c.campaignName.toLowerCase(), c.id])
-  )
   const existingByExternalId = new Map(
     existing.map((e) => [e.externalExpenseId!, e.id])
   )
-
-  function resolveCampaign(ref: string | null): string | null {
-    if (!ref) return null
-    const r = ref.trim()
-    return (
-      campaignByRevflowId.get(r) ??
-      campaignByCode.get(r.toLowerCase()) ??
-      campaignByName.get(r.toLowerCase()) ??
-      null
-    )
-  }
 
   let imported = 0
   let updated = 0
@@ -78,8 +54,6 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    const campaignId = resolveCampaign(e.campaignRef)
-
     const expenseData = {
       categoryId,
       expenseDate:        new Date(e.expenseDate),
@@ -88,7 +62,6 @@ export async function POST(req: NextRequest) {
       taxAmount:          e.taxAmount,
       totalAmount:        e.totalAmount,
       status:             e.status as ExpenseStatus,
-      campaignId:         campaignId ?? null,
       externalExpenseId:  e.externalExpenseId,
     }
 

@@ -16,11 +16,12 @@ const SOURCE_LABELS: Record<string, string> = {
   reversal: "Reversal",
 };
 
-export default async function JournalEntryDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function JournalEntryDetailPage(
+  props: {
+    params: Promise<{ id: string }>;
+  }
+) {
+  const params = await props.params;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

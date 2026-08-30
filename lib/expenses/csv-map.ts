@@ -10,9 +10,6 @@
  *   Expense Account       → categoryName (matched to ExpenseCategory by name)
  *   Expense Account Code  → categoryCode (fallback for matching)
  *   Vendor                → appended to description if present
- *   Project Name          → campaignRef (matched to RevflowCampaign.campaignCode)
- *   Campaign id           → campaignRef (direct Revflow ID, checked first)
- *   Campaign Outlet       → campaignRef (fallback)
  *   Tax Amount            → taxAmount
  *   Expense Amount        → amount (net before tax)
  *   Total                 → totalAmount (gross)
@@ -29,7 +26,6 @@ export interface MappedExpense {
   categoryName: string            // Expense Account column
   categoryCode: string | null     // Expense Account Code column
   vendor: string | null
-  campaignRef: string | null      // campaign_id → campaign_outlet → project_name
   taxAmount: number
   amount: number                  // net (Expense Amount)
   totalAmount: number             // gross (Total)
@@ -119,13 +115,6 @@ export function parseZohoExpenseCsv(csvText: string): {
     const categoryName = cell(row, "expense_account")
     if (!categoryName) { skipped++; continue }
 
-    // Campaign: campaign_id first (Revflow direct), then campaign_outlet, then project_name
-    const campaignRef =
-      cell(row, "campaign_id") ||
-      cell(row, "campaign_outlet") ||
-      cell(row, "project_name") ||
-      null
-
     const amount     = parseFloat(cell(row, "expense_amount")) || 0
     const taxAmount  = parseFloat(cell(row, "tax_amount"))     || 0
     const total      = parseFloat(cell(row, "total"))          || amount + taxAmount
@@ -145,7 +134,6 @@ export function parseZohoExpenseCsv(csvText: string): {
       categoryName,
       categoryCode:      cell(row, "expense_account_code") || null,
       vendor,
-      campaignRef:       campaignRef || null,
       taxAmount,
       amount,
       totalAmount:       total,

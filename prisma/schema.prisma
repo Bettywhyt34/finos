@@ -36,12 +36,12 @@ model Session {
 }
 
 model User {
-  id            String            @id @default(cuid())
-  name          String?
-  email         String            @unique
-  emailVerified DateTime?         @map("email_verified")
-  image         String?
-  password      String?
+  id              String             @id @default(cuid())
+  name            String?
+  email           String             @unique
+  emailVerified   DateTime?          @map("email_verified")
+  image           String?
+  password        String?
   accounts        Account[]
   memberships     TenantMembership[]
   sessions        Session[]
@@ -60,83 +60,83 @@ model VerificationToken {
 }
 
 model Tenant {
-  id                      String   @id @default(uuid())
+  id                      String    @id @default(uuid())
   name                    String
-  slug                    String   @unique
-  currency                String   @default("NGN")
-  fiscalYearEnd           String?  @default("12-31") @map("fiscal_year_end")
-  fiscalYearStart         Int      @default(1) @map("fiscal_year_start")
-  countryCode             String   @default("NG") @map("country_code")
-  industryCode            String?  @map("industry_code")
-  timezone                String   @default("Africa/Lagos")
-  status                  String   @default("active")
-  benchmarkConsent        Boolean? @map("benchmark_consent")
+  slug                    String    @unique
+  currency                String    @default("NGN")
+  fiscalYearEnd           String?   @default("12-31") @map("fiscal_year_end")
+  fiscalYearStart         Int       @default(1) @map("fiscal_year_start")
+  countryCode             String    @default("NG") @map("country_code")
+  industryCode            String?   @map("industry_code")
+  timezone                String    @default("Africa/Lagos")
+  status                  String    @default("active")
+  benchmarkConsent        Boolean?  @map("benchmark_consent")
   benchmarkConsentAt      DateTime? @map("benchmark_consent_at")
-  benchmarkConsentVersion String?  @map("benchmark_consent_version")
-  logoUrl                 String?  @map("logo_url")
-  address1                String?  @map("address1")
-  address2                String?  @map("address2")
+  benchmarkConsentVersion String?   @map("benchmark_consent_version")
+  logoUrl                 String?   @map("logo_url")
+  address1                String?   @map("address1")
+  address2                String?   @map("address2")
   city                    String?
   state                   String?
   zip                     String?
   phone                   String?
   fax                     String?
   website                 String?
-  companyId               String?  @map("company_id")
-  taxId                   String?  @map("tax_id")
-  additionalFields        Json?    @map("additional_fields")
-  createdAt               DateTime @default(now()) @map("created_at")
+  companyId               String?   @map("company_id")
+  taxId                   String?   @map("tax_id")
+  additionalFields        Json?     @map("additional_fields")
+  createdAt               DateTime  @default(now()) @map("created_at")
 
   // Core accounting
-  periods                AccountingPeriod[]
-  bankAccounts           BankAccount[]
-  bills                  Bill[]
-  chartOfAccounts        ChartOfAccounts[]
-  creditNotes            CreditNote[]
-  customerPayments       CustomerPayment[]
-  customers              Customer[]
-  expenseCategories      ExpenseCategory[]
-  expenses               Expense[]
-  budgets                Budget[]
-  fxRevaluations         FxRevaluation[]
-  invoices               Invoice[]
-  itemCategories         ItemCategory[]
-  items                  Item[]
-  journalEntries         JournalEntry[]
-  memberships            TenantMembership[]
-  vendors                Vendor[]
-  vendorPayments         VendorPayment[]
-  reportConfig           TenantReportConfig?
+  periods           AccountingPeriod[]
+  bankAccounts      BankAccount[]
+  bills             Bill[]
+  chartOfAccounts   ChartOfAccounts[]
+  creditNotes       CreditNote[]
+  customerPayments  CustomerPayment[]
+  customers         Customer[]
+  expenseCategories ExpenseCategory[]
+  expenses          Expense[]
+  budgets           Budget[]
+  fxRevaluations    FxRevaluation[]
+  invoices          Invoice[]
+  itemCategories    ItemCategory[]
+  items             Item[]
+  journalEntries    JournalEntry[]
+  memberships       TenantMembership[]
+  vendors           Vendor[]
+  vendorPayments    VendorPayment[]
+  reportConfig      TenantReportConfig?
 
   // Phase 2 integrations
-  integrationConnections IntegrationConnection[]
-  tenantIntegrations     TenantIntegration[]
-  accountMappings        AccountMapping[]
-  oauthStates            OAuthState[]
-  syncLogs               SyncLog[]
-  syncQuarantine         SyncQuarantine[]
-  unifiedCache           UnifiedTransactionsCache[]
-  revflowCampaigns       RevflowCampaign[]
-  revflowInvoices        RevflowInvoice[]
-  earnmark360Employees   Earnmark360Employee[]
-  earnmark360PayrollRuns Earnmark360PayrollRun[]
-  inventoryMovements     InventoryMovement[]
-  journalLines           JournalLine[]
-  taxRates               TaxRate[]
-  locationsEnabled       Boolean    @default(false) @map("locations_enabled")
-  keepBranding           Boolean    @default(true)  @map("keep_branding")
-  recommendApp           Boolean    @default(true)  @map("recommend_app")
-  locations              Location[]
-  invitations            TenantInvitation[]
-  paymentTerms           PaymentTerm[]
-  openingBalanceBatches  OpeningBalanceBatch[]
-  reminderRules               ReminderRule[]
-  transactionNumberSeries     TransactionNumberSeries[]
-  pdfTemplates                PdfTemplate[]
-  emailNotificationTemplates  EmailNotificationTemplate[]
-  reportingTags               ReportingTag[]
-  reportingTagOptions         ReportingTagOption[]
-  webTabs                     WebTab[]
+  integrationConnections     IntegrationConnection[]
+  tenantIntegrations         TenantIntegration[]
+  accountMappings            AccountMapping[]
+  oauthStates                OAuthState[]
+  syncLogs                   SyncLog[]
+  syncQuarantine             SyncQuarantine[]
+  unifiedCache               UnifiedTransactionsCache[]
+  revflowInvoices            RevflowInvoice[]
+  earnmark360Employees       Earnmark360Employee[]
+  earnmark360PayrollRuns     Earnmark360PayrollRun[]
+  inventoryMovements         InventoryMovement[]
+  journalLines               JournalLine[]
+  taxRates                   TaxRate[]
+  locationsEnabled           Boolean                     @default(false) @map("locations_enabled")
+  keepBranding               Boolean                     @default(true) @map("keep_branding")
+  recommendApp               Boolean                     @default(true) @map("recommend_app")
+  locations                  Location[]
+  invitations                TenantInvitation[]
+  paymentTerms               PaymentTerm[]
+  openingBalanceBatches      OpeningBalanceBatch[]
+  reminderRules              ReminderRule[]
+  transactionNumberSeries    TransactionNumberSeries[]
+  pdfTemplates               PdfTemplate[]
+  emailNotificationTemplates EmailNotificationTemplate[]
+  reportingTags              ReportingTag[]
+  reportingTagOptions        ReportingTagOption[]
+  webTabs                    WebTab[]
+  projects                   Project[]
 
   @@map("tenants")
 }
@@ -197,25 +197,28 @@ model TenantMembership {
 }
 
 model ChartOfAccounts {
-  id                String             @id @default(uuid())
-  tenantId          String             @map("tenant_id")
-  code              String
-  name              String
-  type              AccountType
-  subtype           String?
-  parentId          String?            @map("parent_id")
-  isActive          Boolean            @default(true) @map("is_active")
-  financialCategory FinancialCategory? @map("financial_category")
-  migrationStatus   String             @default("pending") @map("migration_status")
-  createdAt         DateTime           @default(now()) @map("created_at")
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  parent            ChartOfAccounts?   @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children          ChartOfAccounts[]  @relation("AccountHierarchy")
-  journalLines      JournalEntryLine[]
-  canonicalLines    JournalLine[]
-  budgetLines       BudgetLine[]
+  id                        String             @id @default(uuid())
+  tenantId                  String             @map("tenant_id")
+  code                      String
+  name                      String
+  type                      AccountType
+  subtype                   String?
+  parentId                  String?            @map("parent_id")
+  isActive                  Boolean            @default(true) @map("is_active")
+  financialCategory         FinancialCategory? @map("financial_category")
+  migrationStatus           String             @default("pending") @map("migration_status")
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  tenant                    Tenant             @relation(fields: [tenantId], references: [id])
+  parent                    ChartOfAccounts?   @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children                  ChartOfAccounts[]  @relation("AccountHierarchy")
+  journalLines              JournalEntryLine[]
+  canonicalLines            JournalLine[]
+  budgetLines               BudgetLine[]
   accountMappings           AccountMapping[]
-  incomeAccountInvoiceLines InvoiceLine[]    @relation("InvoiceLineIncomeAccount")
+  incomeAccountInvoiceLines InvoiceLine[]      @relation("InvoiceLineIncomeAccount")
+  projectIncomeDefaults     Project[]          @relation("ProjectIncomeAccount")
+  projectContractAssets     Project[]          @relation("ProjectContractAssetAccount")
+  projectUnearnedIncome     Project[]          @relation("ProjectUnearnedIncomeAccount")
 
   @@unique([tenantId, code])
   @@map("chart_of_accounts")
@@ -278,6 +281,7 @@ model Customer {
   creditLimit       Decimal?          @map("credit_limit") @db.Decimal(15, 2)
   openingBalance    Decimal           @default(0) @map("opening_balance") @db.Decimal(15, 2)
   customerSubType   String?           @default("business") @map("customer_sub_type")
+  projects          Project[]
   isActive          Boolean           @default(true) @map("is_active")
   createdAt         DateTime          @default(now()) @map("created_at")
   contacts          CustomerContact[]
@@ -302,33 +306,33 @@ model CustomerContact {
 }
 
 model Vendor {
-  id               String          @id @default(uuid())
-  tenantId         String          @map("tenant_id")
-  vendorCode       String          @map("vendor_code")
-  companyName      String          @map("company_name")
-  contactName      String?         @map("contact_name")
-  email            String?
-  phone            String?
-  address          String?
-  billingAddress   String?         @map("billing_address")
-  billingCity      String?         @map("billing_city")
-  billingState     String?         @map("billing_state")
-  billingCountry   String?         @map("billing_country")
-  billingPostalCode String?        @map("billing_postal_code")
-  paymentTerms     Int             @default(30) @map("payment_terms")
-  openingBalance   Decimal         @default(0) @map("opening_balance") @db.Decimal(15, 2)
-  currency         String          @default("NGN")
-  notes            String?
-  website          String?
-  bankName         String?         @map("bank_name")
-  bankAccount      String?         @map("bank_account")
-  isWhtEligible    Boolean         @default(false) @map("is_wht_eligible")
-  isActive         Boolean         @default(true) @map("is_active")
-  externalVendorId String?         @map("external_vendor_id")
-  createdAt        DateTime        @default(now()) @map("created_at")
-  bills            Bill[]
-  vendorPayments   VendorPayment[]
-  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  id                String          @id @default(uuid())
+  tenantId          String          @map("tenant_id")
+  vendorCode        String          @map("vendor_code")
+  companyName       String          @map("company_name")
+  contactName       String?         @map("contact_name")
+  email             String?
+  phone             String?
+  address           String?
+  billingAddress    String?         @map("billing_address")
+  billingCity       String?         @map("billing_city")
+  billingState      String?         @map("billing_state")
+  billingCountry    String?         @map("billing_country")
+  billingPostalCode String?         @map("billing_postal_code")
+  paymentTerms      Int             @default(30) @map("payment_terms")
+  openingBalance    Decimal         @default(0) @map("opening_balance") @db.Decimal(15, 2)
+  currency          String          @default("NGN")
+  notes             String?
+  website           String?
+  bankName          String?         @map("bank_name")
+  bankAccount       String?         @map("bank_account")
+  isWhtEligible     Boolean         @default(false) @map("is_wht_eligible")
+  isActive          Boolean         @default(true) @map("is_active")
+  externalVendorId  String?         @map("external_vendor_id")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  bills             Bill[]
+  vendorPayments    VendorPayment[]
+  tenant            Tenant          @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, vendorCode])
   @@unique([tenantId, externalVendorId])
@@ -336,30 +340,30 @@ model Vendor {
 }
 
 model Item {
-  id               String        @id @default(uuid())
-  tenantId         String        @map("tenant_id")
-  itemCode         String        @map("item_code")
+  id               String              @id @default(uuid())
+  tenantId         String              @map("tenant_id")
+  itemCode         String              @map("item_code")
   name             String
   description      String?
   type             ItemType
-  categoryId       String?       @map("category_id")
-  unit             String        @default("each")
-  salesPrice       Decimal?      @map("sales_price") @db.Decimal(15, 2)
-  costPrice        Decimal?      @map("cost_price") @db.Decimal(15, 2)
-  incomeAccountId  String?       @map("income_account_id")
-  expenseAccountId String?       @map("expense_account_id")
-  assetAccountId   String?       @map("asset_account_id")
-  isActive         Boolean       @default(true) @map("is_active")
+  categoryId       String?             @map("category_id")
+  unit             String              @default("each")
+  salesPrice       Decimal?            @map("sales_price") @db.Decimal(15, 2)
+  costPrice        Decimal?            @map("cost_price") @db.Decimal(15, 2)
+  incomeAccountId  String?             @map("income_account_id")
+  expenseAccountId String?             @map("expense_account_id")
+  assetAccountId   String?             @map("asset_account_id")
+  isActive         Boolean             @default(true) @map("is_active")
   // BettyWhyt inventory tracking
-  qtyOnline        Decimal       @default(0) @map("qty_online") @db.Decimal(18, 2)
-  qtyPos           Decimal       @default(0) @map("qty_pos") @db.Decimal(18, 2)
-  qtyReserved      Decimal       @default(0) @map("qty_reserved") @db.Decimal(18, 2)
-  createdAt        DateTime      @default(now()) @map("created_at")
+  qtyOnline        Decimal             @default(0) @map("qty_online") @db.Decimal(18, 2)
+  qtyPos           Decimal             @default(0) @map("qty_pos") @db.Decimal(18, 2)
+  qtyReserved      Decimal             @default(0) @map("qty_reserved") @db.Decimal(18, 2)
+  createdAt        DateTime            @default(now()) @map("created_at")
   billLines        BillLine[]
   invoiceLines     InvoiceLine[]
   movements        InventoryMovement[]
-  category         ItemCategory? @relation(fields: [categoryId], references: [id])
-  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  category         ItemCategory?       @relation(fields: [categoryId], references: [id])
+  tenant           Tenant              @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, itemCode])
   @@map("items")
@@ -370,7 +374,7 @@ model InventoryMovement {
   tenantId     String   @map("tenant_id")
   itemId       String   @map("item_id")
   movementType String   @map("movement_type") // SALE_ONLINE | SALE_POS | RECEIPT | ADJUSTMENT | RESERVATION | RELEASE
-  channel      String                          // ONLINE | POS | BOTH
+  channel      String // ONLINE | POS | BOTH
   quantity     Decimal  @db.Decimal(18, 2)
   unitCost     Decimal? @map("unit_cost") @db.Decimal(18, 2)
   reference    String?
@@ -387,14 +391,14 @@ model InventoryMovement {
 }
 
 model ItemCategory {
-  id        String         @id @default(uuid())
-  tenantId  String         @map("tenant_id")
-  name      String
-  parentId  String?        @map("parent_id")
-  tenant    Tenant         @relation(fields: [tenantId], references: [id])
-  parent    ItemCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children  ItemCategory[] @relation("CategoryHierarchy")
-  items     Item[]
+  id       String         @id @default(uuid())
+  tenantId String         @map("tenant_id")
+  name     String
+  parentId String?        @map("parent_id")
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  parent   ItemCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children ItemCategory[] @relation("CategoryHierarchy")
+  items    Item[]
 
   @@map("item_categories")
 }
@@ -405,6 +409,7 @@ model Invoice {
   customerId        String                      @map("customer_id")
   invoiceNumber     String                      @map("invoice_number")
   reference         String?
+  orderNumber       String?                     @map("order_number")
   issueDate         DateTime                    @map("issue_date")
   dueDate           DateTime                    @map("due_date")
   status            InvoiceStatus               @default(DRAFT)
@@ -417,8 +422,9 @@ model Invoice {
   amountPaid        Decimal                     @default(0) @map("amount_paid") @db.Decimal(15, 2)
   balanceDue        Decimal                     @map("balance_due") @db.Decimal(15, 2)
   recognitionPeriod String                      @map("recognition_period")
+  paymentTermsDays  Int?                        @map("payment_terms_days")
+  recogniseRevenueOnInvoiceDate Boolean         @default(false) @map("recognise_revenue_on_invoice_date")
   notes             String?
-  campaignId        String?                     @map("campaign_id")
   externalTxnId     String?                     @map("external_txn_id")
   sentAt            DateTime?                   @map("sent_at")
   paidAt            DateTime?                   @map("paid_at")
@@ -436,42 +442,47 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id             String   @id @default(uuid())
-  invoiceId      String   @map("invoice_id")
-  itemId         String?  @map("item_id")
-  description    String
-  quantity       Decimal  @db.Decimal(15, 2)
-  rate           Decimal  @db.Decimal(15, 2)
-  amount         Decimal  @db.Decimal(15, 2)           // gross = qty × rate
-  taxRateId      String?  @map("tax_rate_id")
-  taxName        String?  @map("tax_name")              // snapshot at creation
-  taxRate        Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
-  taxAmount      Decimal  @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  discountType   String   @default("PERCENT") @map("discount_type")
-  discountValue  Decimal  @default(0) @map("discount_value") @db.Decimal(15, 2)
-  discountAmount Decimal  @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  lineTotal      Decimal  @default(0) @map("line_total") @db.Decimal(15, 2)
+  id              String           @id @default(uuid())
+  invoiceId       String           @map("invoice_id")
+  itemId          String?          @map("item_id")
+  description     String
+  quantity        Decimal          @db.Decimal(15, 2)
+  rate            Decimal          @db.Decimal(15, 2)
+  amount          Decimal          @db.Decimal(15, 2) // gross = qty × rate
+  taxRateId       String?          @map("tax_rate_id")
+  taxName         String?          @map("tax_name") // snapshot at creation
+  taxRate         Decimal          @default(0) @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount       Decimal          @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  discountType    String           @default("PERCENT") @map("discount_type")
+  discountValue   Decimal          @default(0) @map("discount_value") @db.Decimal(15, 2)
+  discountAmount  Decimal          @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  lineTotal       Decimal          @default(0) @map("line_total") @db.Decimal(15, 2)
   incomeAccountId String?          @map("income_account_id")
+  projectId       String?          @map("project_id")
+  reportingTags   Json?            @map("reporting_tags")
   invoice         Invoice          @relation(fields: [invoiceId], references: [id])
   item            Item?            @relation(fields: [itemId], references: [id])
   taxRateRef      TaxRate?         @relation(fields: [taxRateId], references: [id])
   incomeAccount   ChartOfAccounts? @relation("InvoiceLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: SetNull)
+  project         Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
 
   @@map("invoice_lines")
 }
 
 model CreditNote {
-  id            String           @id @default(uuid())
-  tenantId      String           @map("tenant_id")
-  customerId    String           @map("customer_id")
-  creditNumber  String           @map("credit_number")
-  invoiceId     String?          @map("invoice_id")
-  issueDate     DateTime         @map("issue_date")
-  amount        Decimal          @db.Decimal(15, 2)
-  reason        String
-  status        CreditNoteStatus @default(DRAFT)
-  createdAt     DateTime         @default(now()) @map("created_at")
-  tenant        Tenant           @relation(fields: [tenantId], references: [id])
+  id           String           @id @default(uuid())
+  tenantId     String           @map("tenant_id")
+  customerId   String           @map("customer_id")
+  creditNumber String           @map("credit_number")
+  invoiceId    String?          @map("invoice_id")
+  issueDate    DateTime         @map("issue_date")
+  amount       Decimal          @db.Decimal(15, 2)
+  reason       String
+  status       CreditNoteStatus @default(DRAFT)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
 
   @@map("credit_notes")
 }
@@ -506,29 +517,27 @@ model CustomerPaymentAllocation {
 }
 
 model Bill {
-  id                  String          @id @default(uuid())
-  tenantId            String          @map("tenant_id")
-  vendorId            String          @map("vendor_id")
-  billNumber          String          @map("bill_number")
-  vendorRef           String?         @map("vendor_reference")
-  billDate            DateTime        @map("bill_date")
-  dueDate             DateTime        @map("due_date")
-  status              BillStatus      @default(DRAFT)
-  currency            String          @default("NGN")
-  exchangeRate        Decimal         @default(1) @map("exchange_rate") @db.Decimal(15, 6)
-  subtotal            Decimal         @db.Decimal(15, 2)
-  taxAmount           Decimal         @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  totalAmount         Decimal         @map("total_amount") @db.Decimal(15, 2)
-  amountPaid          Decimal         @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  id                  String           @id @default(uuid())
+  tenantId            String           @map("tenant_id")
+  vendorId            String           @map("vendor_id")
+  billNumber          String           @map("bill_number")
+  vendorRef           String?          @map("vendor_reference")
+  billDate            DateTime         @map("bill_date")
+  dueDate             DateTime         @map("due_date")
+  status              BillStatus       @default(DRAFT)
+  currency            String           @default("NGN")
+  exchangeRate        Decimal          @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  subtotal            Decimal          @db.Decimal(15, 2)
+  taxAmount           Decimal          @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount         Decimal          @map("total_amount") @db.Decimal(15, 2)
+  amountPaid          Decimal          @default(0) @map("amount_paid") @db.Decimal(15, 2)
   notes               String?
-  campaignId          String?         @map("campaign_id")
-  externalBillId      String?         @map("external_bill_id")
-  purchaseOrderNumber String?         @map("purchase_order_number")
-  createdAt           DateTime        @default(now()) @map("created_at")
+  externalBillId      String?          @map("external_bill_id")
+  purchaseOrderNumber String?          @map("purchase_order_number")
+  createdAt           DateTime         @default(now()) @map("created_at")
   lines               BillLine[]
-  tenant              Tenant          @relation(fields: [tenantId], references: [id])
-  vendor              Vendor          @relation(fields: [vendorId], references: [id])
-  campaign            RevflowCampaign? @relation(fields: [campaignId], references: [id])
+  tenant              Tenant           @relation(fields: [tenantId], references: [id])
+  vendor              Vendor           @relation(fields: [vendorId], references: [id])
 
   @@unique([tenantId, externalBillId])
   @@map("bills")
@@ -543,8 +552,13 @@ model BillLine {
   rate        Decimal @db.Decimal(15, 2)
   amount      Decimal @db.Decimal(15, 2)
   accountId   String  @map("account_id")
+  projectId   String? @map("project_id")
+  reportingTags Json? @map("reporting_tags")
   bill        Bill    @relation(fields: [billId], references: [id])
   item        Item?   @relation(fields: [itemId], references: [id])
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
 
   @@map("bill_lines")
 }
@@ -567,27 +581,29 @@ model VendorPayment {
 }
 
 model Expense {
-  id           String          @id @default(uuid())
-  tenantId     String          @map("tenant_id")
-  employeeId   String?         @map("employee_id")
-  categoryId   String          @map("category_id")
-  expenseDate  DateTime        @map("expense_date")
-  description  String
-  amount       Decimal         @db.Decimal(15, 2)
-  taxAmount    Decimal         @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  totalAmount  Decimal         @map("total_amount") @db.Decimal(15, 2)
-  status       ExpenseStatus   @default(DRAFT)
-  receiptUrl   String?          @map("receipt_url")
-  approvedBy   String?          @map("approved_by")
-  approvedAt   DateTime?        @map("approved_at")
-  campaignId          String?          @map("campaign_id")
-  externalExpenseId   String?          @map("external_expense_id")
-  createdAt           DateTime         @default(now()) @map("created_at")
-  category     ExpenseCategory  @relation(fields: [categoryId], references: [id])
-  tenant       Tenant           @relation(fields: [tenantId], references: [id])
-  campaign     RevflowCampaign? @relation(fields: [campaignId], references: [id])
+  id                String           @id @default(uuid())
+  tenantId          String           @map("tenant_id")
+  employeeId        String?          @map("employee_id")
+  categoryId        String           @map("category_id")
+  expenseDate       DateTime         @map("expense_date")
+  description       String
+  amount            Decimal          @db.Decimal(15, 2)
+  taxAmount         Decimal          @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount       Decimal          @map("total_amount") @db.Decimal(15, 2)
+  status            ExpenseStatus    @default(DRAFT)
+  receiptUrl        String?          @map("receipt_url")
+  approvedBy        String?          @map("approved_by")
+  approvedAt        DateTime?        @map("approved_at")
+  projectId         String?          @map("project_id")
+  reportingTags     Json?            @map("reporting_tags")
+  externalExpenseId String?          @map("external_expense_id")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  category          ExpenseCategory  @relation(fields: [categoryId], references: [id])
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, externalExpenseId])
+  @@index([projectId])
   @@map("expenses")
 }
 
@@ -603,25 +619,25 @@ model ExpenseCategory {
 }
 
 model JournalEntry {
-  id                String             @id @default(uuid())
-  tenantId          String             @map("tenant_id")
-  entryNumber       String             @map("entry_number")
-  entryDate         DateTime           @map("entry_date")
-  reference         String?
-  description       String
-  recognitionPeriod String             @map("recognition_period")
-  isReversing       Boolean            @default(false) @map("is_reversing")
-  reversedById      String?            @map("reversed_by_id")
-  reversalReason    String?            @map("reversal_reason")
-  attachmentUrl     String?            @map("attachment_url")
-  isLocked          Boolean            @default(false) @map("is_locked")
-  source            String             @default("manual")
-  sourceId          String?            @map("source_id")
-  createdBy         String             @map("created_by")
-  createdAt         DateTime           @default(now()) @map("created_at")
+  id                     String                     @id @default(uuid())
+  tenantId               String                     @map("tenant_id")
+  entryNumber            String                     @map("entry_number")
+  entryDate              DateTime                   @map("entry_date")
+  reference              String?
+  description            String
+  recognitionPeriod      String                     @map("recognition_period")
+  isReversing            Boolean                    @default(false) @map("is_reversing")
+  reversedById           String?                    @map("reversed_by_id")
+  reversalReason         String?                    @map("reversal_reason")
+  attachmentUrl          String?                    @map("attachment_url")
+  isLocked               Boolean                    @default(false) @map("is_locked")
+  source                 String                     @default("manual")
+  sourceId               String?                    @map("source_id")
+  createdBy              String                     @map("created_by")
+  createdAt              DateTime                   @default(now()) @map("created_at")
   bankTransaction        BankTransaction?
   fxRevaluation          FxRevaluation?
-  tenant                 Tenant             @relation(fields: [tenantId], references: [id])
+  tenant                 Tenant                     @relation(fields: [tenantId], references: [id])
   lines                  JournalEntryLine[]
   journalLines           JournalLine[]
   revflowInvoices        RevflowInvoice[]
@@ -639,22 +655,27 @@ model JournalEntryLine {
   description String?
   debit       Decimal         @db.Decimal(15, 2)
   credit      Decimal         @db.Decimal(15, 2)
+  projectId   String?         @map("project_id")
+  reportingTags Json?         @map("reporting_tags")
   account     ChartOfAccounts @relation(fields: [accountId], references: [id])
   entry       JournalEntry    @relation(fields: [entryId], references: [id])
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
 
   @@map("journal_entry_lines")
 }
 
 model AccountingPeriod {
-  id        String   @id @default(uuid())
-  tenantId  String   @map("tenant_id")
-  year      Int
-  month     Int
-  period    String
-  isClosed  Boolean  @default(false) @map("is_closed")
-  closedBy  String?  @map("closed_by")
-  closedAt  DateTime? @map("closed_at")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  id       String    @id @default(uuid())
+  tenantId String    @map("tenant_id")
+  year     Int
+  month    Int
+  period   String
+  isClosed Boolean   @default(false) @map("is_closed")
+  closedBy String?   @map("closed_by")
+  closedAt DateTime? @map("closed_at")
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, period])
   @@map("accounting_periods")
@@ -687,11 +708,11 @@ enum InvitationStatus {
 model TaxRate {
   id           String        @id @default(uuid())
   tenantId     String        @map("tenant_id")
-  name         String                              // e.g. "VAT", "WHT 5%", "PAYE"
-  type         String                              // VAT | WHT | PAYE | CUSTOM
-  rate         Decimal       @db.Decimal(5, 2)    // percentage, e.g. 7.50
+  name         String // e.g. "VAT", "WHT 5%", "PAYE"
+  type         String // VAT | WHT | PAYE | CUSTOM
+  rate         Decimal       @db.Decimal(5, 2) // percentage, e.g. 7.50
   isDefault    Boolean       @default(false) @map("is_default")
-  isActive     Boolean       @default(true)  @map("is_active")
+  isActive     Boolean       @default(true) @map("is_active")
   createdAt    DateTime      @default(now()) @map("created_at")
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoiceLines InvoiceLine[]
@@ -719,21 +740,21 @@ enum PaymentTermAppliesTo {
 }
 
 model PaymentTerm {
-  id          String               @id @default(uuid())
-  tenantId    String               @map("tenant_id")
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name        String
-  dueInDays   Int?                 @map("due_in_days")
-  dueType     PaymentTermDueType   @default(FIXED_DAYS) @map("due_type")
-  appliesTo   PaymentTermAppliesTo @default(BOTH)       @map("applies_to")
+  name      String
+  dueInDays Int?                 @map("due_in_days")
+  dueType   PaymentTermDueType   @default(FIXED_DAYS) @map("due_type")
+  appliesTo PaymentTermAppliesTo @default(BOTH) @map("applies_to")
 
-  isDefault   Boolean  @default(false) @map("is_default")
-  isSystem    Boolean  @default(false) @map("is_system")
-  isActive    Boolean  @default(true)  @map("is_active")
+  isDefault Boolean @default(false) @map("is_default")
+  isSystem  Boolean @default(false) @map("is_system")
+  isActive  Boolean @default(true) @map("is_active")
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -927,7 +948,7 @@ model BudgetLine {
   accountId       String          @map("account_id")
   department      String?
   project         String?
-  period          String          // YYYY-MM
+  period          String // YYYY-MM
   amount          Decimal         @default(0) @db.Decimal(15, 2)
   notes           String?
   budget          Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
@@ -977,22 +998,22 @@ model BudgetOverrideLog {
 // ─── Phase 2: Multi-Source Integration ────────────────────────────────────────
 
 model IntegrationConnection {
-  id            String    @id @default(uuid())
-  tenantId      String    @map("tenant_id")
-  sourceApp     String    @map("source_app")       // 'revflow' | 'xpenxflow' | 'earnmark360'
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  sourceApp String @map("source_app") // 'revflow' | 'xpenxflow' | 'earnmark360'
   // status: DISCONNECTED | CONNECTING | CONNECTED | ERROR | TOKEN_EXPIRED
-  status        String    @default("DISCONNECTED") @map("status")
+  status    String @default("DISCONNECTED") @map("status")
 
   // Legacy API key field (kept for backward compat; unused after OAuth migration)
-  apiKeyEncrypted String?   @map("api_key_encrypted")
-  apiUrl          String?   @map("api_url")
+  apiKeyEncrypted String? @map("api_key_encrypted")
+  apiUrl          String? @map("api_url")
 
   // OAuth 2.0 fields
-  accessTokenEncrypted  String?   @map("access_token_encrypted")   // short-lived, AES-256-GCM
-  refreshTokenEncrypted String?   @map("refresh_token_encrypted")  // long-lived, AES-256-GCM
+  accessTokenEncrypted  String?   @map("access_token_encrypted") // short-lived, AES-256-GCM
+  refreshTokenEncrypted String?   @map("refresh_token_encrypted") // long-lived, AES-256-GCM
   tokenExpiresAt        DateTime? @map("token_expires_at")
   scope                 String?
-  sourceOrgId           String?   @map("source_org_id")            // their ID in source system
+  sourceOrgId           String?   @map("source_org_id") // their ID in source system
   sourceOrgName         String?   @map("source_org_name")
   connectedByUserId     String?   @map("connected_by_user_id")
 
@@ -1049,9 +1070,9 @@ model AccountMapping {
 model SyncLog {
   id                 String    @id @default(uuid())
   tenantId           String    @map("tenant_id")
-  connectionId       String?   @map("connection_id")   // optional FK to integration_connections
+  connectionId       String?   @map("connection_id") // optional FK to integration_connections
   sourceApp          String    @map("source_app")
-  syncType           String    @map("sync_type")        // 'full' | 'incremental' | 'manual' | 'webhook'
+  syncType           String    @map("sync_type") // 'full' | 'incremental' | 'manual' | 'webhook'
   status             String    @default("RUNNING") @map("status")
   startedAt          DateTime  @default(now()) @map("started_at")
   completedAt        DateTime? @map("completed_at")
@@ -1086,8 +1107,8 @@ model SyncQuarantine {
   resolvedAt  DateTime? @map("resolved_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  syncLog SyncLog  @relation(fields: [syncLogId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  syncLog SyncLog @relation(fields: [syncLogId], references: [id], onDelete: Cascade)
 
   @@map("sync_quarantine")
 }
@@ -1103,9 +1124,9 @@ model UnifiedTransactionsCache {
   syncedAt          DateTime @default(now()) @map("synced_at")
 
   // Three-date model (Phase 2.5 B.3)
-  sourceDate        DateTime? @map("source_date") @db.Date
-  postingDate       DateTime? @map("posting_date") @db.Date
-  recognitionDate   DateTime? @map("recognition_date") @db.Date
+  sourceDate      DateTime? @map("source_date") @db.Date
+  postingDate     DateTime? @map("posting_date") @db.Date
+  recognitionDate DateTime? @map("recognition_date") @db.Date
 
   // Lifecycle / data quality fields
   dataQualityState String?   @default("clean") @map("data_quality_state")
@@ -1122,34 +1143,60 @@ model UnifiedTransactionsCache {
   @@map("unified_transactions_cache")
 }
 
-model RevflowCampaign {
-  id               String    @id @default(uuid())
-  tenantId         String    @map("tenant_id")
-  revflowId        String    @map("revflow_id")
-  clientName       String    @map("client_name")
-  campaignName     String    @map("campaign_name")
-  campaignCode     String?   @map("campaign_code")
-  startDate        DateTime? @map("start_date")
-  endDate          DateTime? @map("end_date")
-  contractedAmount Decimal?  @map("contracted_amount") @db.Decimal(15, 2)
-  currency         String    @default("NGN")
-  status           String?
-  syncedAt         DateTime  @default(now()) @map("synced_at")
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
 
-  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invoices RevflowInvoice[]
-  bills    Bill[]
-  expenses Expense[]
+model Project {
+  id                      String        @id @default(uuid())
+  tenantId                String        @map("tenant_id")
+  customerId              String        @map("customer_id")
+  name                    String
+  code                    String?
+  description             String?
+  status                  ProjectStatus @default(DRAFT)
+  currency                String        @default("NGN")
+  startDate               DateTime      @map("start_date") @db.Date
+  endDate                 DateTime?     @map("end_date") @db.Date
+  contractValue           Decimal       @default(0) @map("contract_value") @db.Decimal(15, 2)
+  costBudget              Decimal?      @map("cost_budget") @db.Decimal(15, 2)
+  marginTarget            Decimal?      @map("margin_target") @db.Decimal(5, 2)
+  defaultIncomeAccountId  String?       @map("default_income_account_id")
+  contractAssetAccountId  String?       @map("contract_asset_account_id")
+  unearnedIncomeAccountId String?       @map("unearned_income_account_id")
+  billingSchedule         Json?         @map("billing_schedule")
+  reportingTags           Json?         @map("reporting_tags")
+  notes                   String?
+  createdBy               String        @map("created_by")
+  createdAt               DateTime      @default(now()) @map("created_at")
+  updatedAt               DateTime      @updatedAt @map("updated_at")
 
-  @@unique([tenantId, revflowId])
-  @@map("revflow_campaigns")
+  tenant                Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer              Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  defaultIncomeAccount  ChartOfAccounts? @relation("ProjectIncomeAccount", fields: [defaultIncomeAccountId], references: [id], onDelete: SetNull)
+  contractAssetAccount  ChartOfAccounts? @relation("ProjectContractAssetAccount", fields: [contractAssetAccountId], references: [id], onDelete: SetNull)
+  unearnedIncomeAccount ChartOfAccounts? @relation("ProjectUnearnedIncomeAccount", fields: [unearnedIncomeAccountId], references: [id], onDelete: SetNull)
+  invoiceLines          InvoiceLine[]
+  billLines             BillLine[]
+  expenses              Expense[]
+  journalEntryLines     JournalEntryLine[]
+  journalLines          JournalLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, customerId])
+  @@index([tenantId, startDate, endDate])
+  @@map("projects")
 }
 
 model RevflowInvoice {
   id                String    @id @default(uuid())
   tenantId          String    @map("tenant_id")
   revflowId         String    @map("revflow_id")
-  campaignId        String?   @map("campaign_id")
   invoiceNumber     String    @map("invoice_number")
   clientName        String    @map("client_name")
   invoiceDate       DateTime  @map("invoice_date")
@@ -1166,7 +1213,6 @@ model RevflowInvoice {
   syncedAt          DateTime  @default(now()) @map("synced_at")
 
   tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  campaign     RevflowCampaign? @relation(fields: [campaignId], references: [id])
   journalEntry JournalEntry?    @relation(fields: [finosJournalId], references: [id])
 
   @@unique([tenantId, revflowId])
@@ -1199,7 +1245,7 @@ model Earnmark360PayrollRun {
   id              String   @id @default(uuid())
   tenantId        String   @map("tenant_id")
   earnmarkId      String   @map("earnmark_id")
-  payrollPeriod   String   @map("payroll_period")   // YYYY-MM
+  payrollPeriod   String   @map("payroll_period") // YYYY-MM
   payrollDate     DateTime @map("payroll_date")
   grossPay        Decimal  @default(0) @map("gross_pay") @db.Decimal(15, 2)
   payeTax         Decimal  @default(0) @map("paye_tax") @db.Decimal(15, 2)
@@ -1225,17 +1271,22 @@ model Earnmark360PayrollRun {
 // ─── Phase 2.5 Week 3: Canonical journal model ────────────────────────────────
 
 model JournalLine {
-  id          String          @id @default(uuid())
-  jeId        String          @map("je_id")
-  tenantId    String          @map("tenant_id")
-  accountId   String          @map("account_id")
-  direction   String          @map("direction")    // 'DR' | 'CR'
-  amountNgn   Decimal         @map("amount_ngn") @db.Decimal(15, 2)
+  id          String  @id @default(uuid())
+  jeId        String  @map("je_id")
+  tenantId    String  @map("tenant_id")
+  accountId   String  @map("account_id")
+  direction   String  @map("direction") // 'DR' | 'CR'
+  amountNgn   Decimal @map("amount_ngn") @db.Decimal(15, 2)
   description String?
+  projectId   String? @map("project_id")
+  reportingTags Json? @map("reporting_tags")
 
-  journalEntry JournalEntry    @relation(fields: [jeId],      references: [id], onDelete: Cascade)
-  tenant       Tenant          @relation(fields: [tenantId],  references: [id])
+  journalEntry JournalEntry    @relation(fields: [jeId], references: [id], onDelete: Cascade)
+  tenant       Tenant          @relation(fields: [tenantId], references: [id])
   account      ChartOfAccounts @relation(fields: [accountId], references: [id])
+  project      Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
 
   @@map("journal_lines")
 }
@@ -1243,12 +1294,12 @@ model JournalLine {
 // ─── Phase 2.5: Tenant report configuration ───────────────────────────────────
 
 model TenantReportConfig {
-  id                   String   @id @default(uuid())
-  tenantId             String   @unique @map("tenant_id")
-  otherIncomePosition  String   @default("top") @map("other_income_position")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
-  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique @map("tenant_id")
+  otherIncomePosition String   @default("top") @map("other_income_position")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("tenant_report_config")
 }
@@ -1259,7 +1310,7 @@ model IntegrationRegistry {
   id           String   @id @default(uuid())
   sourceApp    String   @unique @map("source_app")
   displayName  String   @map("display_name")
-  category     String   // revenue | expense | payroll | inventory | banking | all
+  category     String // revenue | expense | payroll | inventory | banking | all
   capabilities Json     @default("{}")
   configSchema Json     @default("{}") @map("config_schema")
   isActive     Boolean  @default(true) @map("is_active")
@@ -1331,22 +1382,22 @@ enum OpeningBalanceLineType {
 }
 
 model OpeningBalanceBatch {
-  id             String               @id @default(cuid())
-  tenantId       String               @map("tenant_id")
-  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  migrationDate  DateTime             @map("migration_date")
-  status         OpeningBalanceStatus @default(DRAFT)
+  migrationDate DateTime             @map("migration_date")
+  status        OpeningBalanceStatus @default(DRAFT)
 
   notes          String?
-  finalisedAt    DateTime?            @map("finalised_at")
-  finalisedById  String?              @map("finalised_by_id")
-  journalEntryId String?              @unique @map("journal_entry_id")
+  finalisedAt    DateTime? @map("finalised_at")
+  finalisedById  String?   @map("finalised_by_id")
+  journalEntryId String?   @unique @map("journal_entry_id")
 
-  createdAt      DateTime             @default(now()) @map("created_at")
-  updatedAt      DateTime             @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  lines          OpeningBalanceLine[]
+  lines OpeningBalanceLine[]
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -1354,30 +1405,30 @@ model OpeningBalanceBatch {
 }
 
 model OpeningBalanceLine {
-  id              String                 @id @default(cuid())
-  batchId         String                 @map("batch_id")
-  batch           OpeningBalanceBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  id      String              @id @default(cuid())
+  batchId String              @map("batch_id")
+  batch   OpeningBalanceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
-  tenantId        String                 @map("tenant_id")
-  accountId       String?                @map("account_id")
+  tenantId  String  @map("tenant_id")
+  accountId String? @map("account_id")
 
-  lineType        OpeningBalanceLineType @default(ACCOUNT) @map("line_type")
+  lineType OpeningBalanceLineType @default(ACCOUNT) @map("line_type")
 
-  customerId      String?                @map("customer_id")
-  vendorId        String?                @map("vendor_id")
-  bankAccountId   String?                @map("bank_account_id")
+  customerId    String? @map("customer_id")
+  vendorId      String? @map("vendor_id")
+  bankAccountId String? @map("bank_account_id")
 
   label           String
-  accountCategory String?                @map("account_category")
+  accountCategory String? @map("account_category")
 
-  currency        String                 @default("NGN")
-  exchangeRate    Decimal                @default(1)  @map("exchange_rate") @db.Decimal(15, 6)
+  currency     String  @default("NGN")
+  exchangeRate Decimal @default(1) @map("exchange_rate") @db.Decimal(15, 6)
 
-  debit           Decimal                @default(0)                         @db.Decimal(15, 2)
-  credit          Decimal                @default(0)                         @db.Decimal(15, 2)
+  debit  Decimal @default(0) @db.Decimal(15, 2)
+  credit Decimal @default(0) @db.Decimal(15, 2)
 
-  createdAt       DateTime               @default(now()) @map("created_at")
-  updatedAt       DateTime               @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([tenantId])
   @@index([batchId])
@@ -1420,26 +1471,26 @@ enum ReminderDirection {
 // ─── ReminderRule model ───────────────────────────────────────────────────────
 
 model ReminderRule {
-  id            String               @id @default(cuid())
-  tenantId      String               @map("tenant_id")
-  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  entityType    ReminderEntityType   @map("entity_type")
-  kind          ReminderKind         @default(AUTOMATED) @map("kind")
-  name          String
-  description   String?
-  triggerBasis  ReminderTriggerBasis @default(DUE_DATE) @map("trigger_basis")
-  direction     ReminderDirection    @default(AFTER) @map("direction")
-  offsetDays    Int                  @default(0) @map("offset_days")
+  entityType   ReminderEntityType   @map("entity_type")
+  kind         ReminderKind         @default(AUTOMATED) @map("kind")
+  name         String
+  description  String?
+  triggerBasis ReminderTriggerBasis @default(DUE_DATE) @map("trigger_basis")
+  direction    ReminderDirection    @default(AFTER) @map("direction")
+  offsetDays   Int                  @default(0) @map("offset_days")
 
-  isSystem      Boolean              @default(false) @map("is_system")
-  isActive      Boolean              @default(false) @map("is_active")
+  isSystem Boolean @default(false) @map("is_system")
+  isActive Boolean @default(false) @map("is_active")
 
-  subject       String?
-  body          String?
+  subject String?
+  body    String?
 
-  createdAt     DateTime             @default(now()) @map("created_at")
-  updatedAt     DateTime             @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, entityType, name])
   @@index([tenantId])
@@ -1474,23 +1525,23 @@ enum NumberRestartFrequency {
 }
 
 model TransactionNumberSeries {
-  id            String                 @id @default(uuid())
-  tenantId      String                 @map("tenant_id")
-  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  module        TransactionModule      @map("module")
-  prefix        String                 @default("")
-  suffix        String                 @default("")
-  nextNumber    Int                    @default(1)  @map("next_number")
-  padLength     Int                    @default(5)  @map("pad_length")
+  module              TransactionModule      @map("module")
+  prefix              String                 @default("")
+  suffix              String                 @default("")
+  nextNumber          Int                    @default(1) @map("next_number")
+  padLength           Int                    @default(5) @map("pad_length")
   restartFreq         NumberRestartFrequency @default(NEVER) @map("restart_freq")
   lastResetDate       DateTime?              @map("last_reset_date")
-  isEnabled           Boolean                @default(true)  @map("is_enabled")
-  allowManualOverride Boolean                @default(true)  @map("allow_manual_override")
-  preventDuplicates   Boolean                @default(true)  @map("prevent_duplicates")
+  isEnabled           Boolean                @default(true) @map("is_enabled")
+  allowManualOverride Boolean                @default(true) @map("allow_manual_override")
+  preventDuplicates   Boolean                @default(true) @map("prevent_duplicates")
 
-  createdAt     DateTime               @default(now()) @map("created_at")
-  updatedAt     DateTime               @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, module])
   @@index([tenantId])
@@ -1517,24 +1568,24 @@ enum PdfTemplateDocumentType {
 }
 
 model PdfTemplate {
-  id              String                  @id @default(cuid())
-  tenantId        String                  @map("tenant_id")
-  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  documentType    PdfTemplateDocumentType @map("document_type")
-  name            String
-  description     String?
-  layoutKey       String                  @default("standard") @map("layout_key")
+  documentType PdfTemplateDocumentType @map("document_type")
+  name         String
+  description  String?
+  layoutKey    String                  @default("standard") @map("layout_key")
 
-  isSystem        Boolean                 @default(false) @map("is_system")
-  isDefault       Boolean                 @default(false) @map("is_default")
-  isActive        Boolean                 @default(true)  @map("is_active")
+  isSystem  Boolean @default(false) @map("is_system")
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
 
-  config          Json                    @default("{}")
-  previewImageUrl String?                 @map("preview_image_url")
+  config          Json    @default("{}")
+  previewImageUrl String? @map("preview_image_url")
 
-  createdAt       DateTime                @default(now()) @map("created_at")
-  updatedAt       DateTime                @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, documentType, name])
   @@index([tenantId])
@@ -1584,11 +1635,11 @@ model EmailNotificationTemplate {
   event    EmailNotificationEvent
   name     String
   subject  String
-  bodyHtml String  @map("body_html")
-  bodyText String? @map("body_text")
+  bodyHtml String                    @map("body_html")
+  bodyText String?                   @map("body_text")
 
-  isEnabled    Boolean @default(true)  @map("is_enabled")
-  isSystem     Boolean @default(true)  @map("is_system")
+  isEnabled    Boolean @default(true) @map("is_enabled")
+  isSystem     Boolean @default(true) @map("is_system")
   isCustomised Boolean @default(false) @map("is_customised")
   isConnected  Boolean @default(false) @map("is_connected")
 
@@ -1596,7 +1647,7 @@ model EmailNotificationTemplate {
   config             Json @default("{}")
 
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, event])
   @@index([tenantId])
@@ -1619,22 +1670,22 @@ enum ReportingTagEntityScope {
 }
 
 model ReportingTag {
-  id          String   @id @default(cuid())
-  tenantId    String   @map("tenant_id")
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   name        String
   description String?
   color       String?
-  isActive    Boolean  @default(true)  @map("is_active")
-  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean @default(true) @map("is_active")
+  isSystem    Boolean @default(false) @map("is_system")
 
-  appliesTo   ReportingTagEntityScope[] @default([]) @map("applies_to")
+  appliesTo ReportingTagEntityScope[] @default([]) @map("applies_to")
 
-  options     ReportingTagOption[]
+  options ReportingTagOption[]
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -1643,21 +1694,21 @@ model ReportingTag {
 }
 
 model ReportingTagOption {
-  id          String       @id @default(cuid())
-  tagId       String       @map("tag_id")
-  tag         ReportingTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  id    String       @id @default(cuid())
+  tagId String       @map("tag_id")
+  tag   ReportingTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
-  tenantId    String       @map("tenant_id")
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   name        String
   description String?
   color       String?
-  sortOrder   Int          @default(0) @map("sort_order")
-  isActive    Boolean      @default(true) @map("is_active")
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
 
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, tagId, name])
   @@index([tenantId])
@@ -1684,25 +1735,25 @@ enum WebTabPlacement {
 }
 
 model WebTab {
-  id              String          @id @default(cuid())
-  tenantId        String          @map("tenant_id")
-  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  name            String
-  description     String?
-  type            WebTabType
-  url             String
-  placement       WebTabPlacement @default(QUICK_LINKS)
-  icon            String?
-  sortOrder       Int             @default(0)   @map("sort_order")
-  visibleToRoles  String[]        @default([])  @map("visible_to_roles")
+  name           String
+  description    String?
+  type           WebTabType
+  url            String
+  placement      WebTabPlacement @default(QUICK_LINKS)
+  icon           String?
+  sortOrder      Int             @default(0) @map("sort_order")
+  visibleToRoles String[]        @default([]) @map("visible_to_roles")
 
-  isActive        Boolean         @default(true)  @map("is_active")
-  isSystem        Boolean         @default(false) @map("is_system")
-  isConnected     Boolean         @default(false) @map("is_connected")
+  isActive    Boolean @default(true) @map("is_active")
+  isSystem    Boolean @default(false) @map("is_system")
+  isConnected Boolean @default(false) @map("is_connected")
 
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([tenantId, name])
   @@index([tenantId])

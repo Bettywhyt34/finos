@@ -23,7 +23,7 @@
 
 ### 2026-04-07 — Phase 2 Week 5 Day 1 (COMPLETE)
 - Packages: bullmq@5.73.0, ioredis@5.10.1, server-only@0.0.1 installed
-- Prisma schema: 9 new models (IntegrationConnection, AccountMapping, SyncLog, SyncQuarantine, UnifiedTransactionsCache, RevflowCampaign, RevflowInvoice, Earnmark360Employee, Earnmark360PayrollRun)
+- Prisma schema: integration and synchronization models without a parallel campaign record; Projects are the sole commercial record.
 - lib/encryption.ts: AES-256-GCM encrypt/decrypt/isEncrypted, server-only
 - lib/integrations/bullmq-queue.ts: Upstash Redis connection, 3 named queues, enqueueSync(), getQueueMetrics()
 - lib/integrations/sync-engine.ts: startSync(), completeSyncJob(), quarantineRecord(), upsertCache(), resolveAccountMapping(), getIntegrationStatus(), getQuarantineRecords(), retryQuarantine(), resolveQuarantine()

@@ -11,10 +11,11 @@ const CreateOptionSchema = z.object({
   isActive:    z.boolean().optional(),
 });
 
-type RouteCtx = { params: { tagId: string } };
+type RouteCtx = { params: Promise<{ tagId: string }> };
 
 // POST /api/settings/customization/reporting-tags/[tagId]/options
-export async function POST(req: NextRequest, { params }: RouteCtx) {
+export async function POST(req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 

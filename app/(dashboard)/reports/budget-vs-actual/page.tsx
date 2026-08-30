@@ -26,11 +26,12 @@ function pct(v: number | null): string {
   return (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
 }
 
-export default async function BvaPage({
-  searchParams,
-}: {
-  searchParams: { budgetId?: string; versionId?: string; periodFrom?: string; periodTo?: string };
-}) {
+export default async function BvaPage(
+  props: {
+    searchParams: Promise<{ budgetId?: string; versionId?: string; periodFrom?: string; periodTo?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
   const orgId = session.user.tenantId;

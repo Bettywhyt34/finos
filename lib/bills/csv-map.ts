@@ -41,7 +41,6 @@ export interface MappedBill {
   amountPaid: number
   purchaseOrderNumber: string | null
   notes: string | null
-  campaignRef: string | null   // raw value from Campaigns / Campaign Outlet col
   lines: MappedBillLine[]
 }
 
@@ -152,12 +151,6 @@ export function parseZohoBillCsv(csvText: string): {
     // Tax = total - subtotal (Zoho includes tax in total)
     const taxAmount   = Math.max(0, total - subtotal)
 
-    // Campaign: try "campaigns" col first, then "campaign_outlet"
-    const campaignRef =
-      cell(h, "campaigns") ||
-      cell(h, "campaign_outlet") ||
-      null
-
     const lines: MappedBillLine[] = rows
       .map((r: Record<string, string>) => {
         const desc    = cell(r, "description") || cell(r, "item_name") || "—"
@@ -186,7 +179,6 @@ export function parseZohoBillCsv(csvText: string): {
       amountPaid,
       purchaseOrderNumber: cell(h, "purchaseorder") || cell(h, "purchase_order_number") || null,
       notes: cell(h, "vendor_notes") || null,
-      campaignRef: campaignRef || null,
       lines,
     })
   }

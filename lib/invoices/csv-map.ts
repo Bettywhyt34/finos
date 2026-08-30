@@ -20,7 +20,6 @@ export interface InvoiceImportRecord {
   reference?: string        // PO number
   notes?: string
   discountAmount: number
-  campaignId?: string       // Campaign identifier for campaign reports
   externalTxnId?: string    // Deduplication key — prevents re-import of same record
   lines: InvoiceLineImport[]
 }
@@ -198,7 +197,6 @@ export function groupZohoRows(
       mappedLines.push({ description: "Services Rendered", quantity: 1, rate: 0, taxRate: 0 })
     }
 
-    const campaignId = header["Campaign ID"]?.trim() || undefined
     const externalTxnId = header["Transaction ID"]?.trim() || undefined
 
     records.push({
@@ -211,7 +209,6 @@ export function groupZohoRows(
       reference,
       notes: combinedNotes,
       discountAmount,
-      campaignId,
       externalTxnId,
       lines: mappedLines,
     })
@@ -266,7 +263,6 @@ export function groupFinosRows(
       reference: header["PO Number"]?.trim() || undefined,
       notes: header["Notes"]?.trim() || undefined,
       discountAmount: parseFloat(header["Discount Amount"] ?? "0") || 0,
-      campaignId: header["Campaign ID"]?.trim() || undefined,
       externalTxnId: header["Transaction ID"]?.trim() || undefined,
       lines: mappedLines,
     })
@@ -286,7 +282,6 @@ export const FINOS_INVOICE_HEADERS = [
   "Currency",
   "Exchange Rate",
   "PO Number",
-  "Campaign ID",
   "Transaction ID",
   "Notes",
   "Discount Amount",
@@ -353,7 +348,6 @@ type InvoiceExportRecord = {
   exchangeRate: { toString(): string }
   reference?: string | null
   notes?: string | null
-  campaignId?: string | null
   externalTxnId?: string | null
   subtotal: { toString(): string }
   discountAmount: { toString(): string }
@@ -404,7 +398,6 @@ export function invoiceToFinosRows(inv: InvoiceExportRecord): Record<string, str
     "Currency": inv.currency,
     "Exchange Rate": inv.exchangeRate.toString(),
     "PO Number": inv.reference ?? "",
-    "Campaign ID": inv.campaignId ?? "",
     "Transaction ID": inv.externalTxnId ?? "",
     "Notes": inv.notes ?? "",
     "Discount Amount": inv.discountAmount.toString(),

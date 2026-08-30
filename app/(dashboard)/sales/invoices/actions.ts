@@ -9,6 +9,7 @@ import { sendToBettywhyt }               from "@/lib/integrations/bettywhyt/webh
 import { postInvoiceAndMarkSent }        from "@/lib/invoices/post-invoice";
 import { previewTransactionNumber }      from "@/lib/customization/utils";
 import { generateTransactionNumber }     from "@/lib/customization/service";
+import { Prisma }                        from "@prisma/client";
 
 export interface LineItem {
   itemId?:         string;
@@ -19,9 +20,12 @@ export interface LineItem {
   discountType:    "PERCENT" | "FIXED";
   discountValue:   number;
   incomeAccountId?: string;         // FK to ChartOfAccounts ("" or undefined = fallback)
+  projectId?:       string;
+  reportingTags?:   Record<string, string>;
 }
 
 interface ResolvedLine {
+  id:              string;
   itemId:          string | null;
   description:     string;
   quantity:        number;
@@ -36,13 +40,32 @@ interface ResolvedLine {
   discountAmount:  number;
   lineTotal:       number;
   incomeAccountId: string | null;
+  projectId:       string | null;
+  reportingTags:   Record<string, string>;
 }
 
 /** Server-side: resolve tax FKs, income account FKs, snapshot names/rates, compute per-line amounts. */
 async function resolveLines(
   tenantId: string,
+  customerId: string,
   lines:    LineItem[],
 ): Promise<ResolvedLine[]> {
+  const projectIds = Array.from(new Set(lines.map((line) => line.projectId?.trim() || "").filter(Boolean)));
+  const validProjects = projectIds.length ? await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "projects"
+    WHERE "tenant_id" = ${tenantId} AND "customer_id" = ${customerId}
+      AND "id" IN (${Prisma.join(projectIds)})
+  ` : [];
+  const validProjectIds = new Set(validProjects.map((project) => project.id));
+  if (projectIds.some((id) => !validProjectIds.has(id))) throw new Error("One or more selected Projects are invalid for this entity.");
+
+  const submittedTagOptionIds = Array.from(new Set(lines.flatMap((line) => Object.values(line.reportingTags ?? {})).filter(Boolean)));
+  const validTagOptions = submittedTagOptionIds.length ? await prisma.reportingTagOption.findMany({
+    where: { tenantId, id: { in: submittedTagOptionIds }, isActive: true }, select: { id: true },
+  }) : [];
+  const validTagOptionIds = new Set(validTagOptions.map((option) => option.id));
+  if (submittedTagOptionIds.some((id) => !validTagOptionIds.has(id))) throw new Error("One or more Reporting Tags are invalid for this entity.");
+
   // ── Tax rates ──────────────────────────────────────────────────────────────
   const taxIds = Array.from(
     new Set(lines.map((l) => l.taxRateId?.trim() || "").filter(Boolean)),
@@ -125,6 +148,7 @@ async function resolveLines(
       : fallbackIncomeAccountId;
 
     return {
+      id:                crypto.randomUUID(),
       itemId:          l.itemId || null,
       description:     l.description,
       quantity:        l.quantity,
@@ -139,6 +163,8 @@ async function resolveLines(
       discountAmount:  Math.round(disc * 100) / 100,
       lineTotal:       Math.round((taxable + taxAmt) * 100) / 100,
       incomeAccountId: resolvedIncomeId,
+      projectId:       l.projectId?.trim() || null,
+      reportingTags:   Object.fromEntries(Object.entries(l.reportingTags ?? {}).filter(([, optionId]) => optionId)),
     };
   });
 }
@@ -164,6 +190,7 @@ function computeTotals(resolved: ResolvedLine[], invoiceDiscount: number): Total
 export async function createInvoice(data: {
   customerId: string;
   reference?: string;
+  orderNumber?: string;
   issueDate: string;
   dueDate: string;
   notes?: string;
@@ -171,6 +198,8 @@ export async function createInvoice(data: {
   discountAmount: number;
   currency: string;
   exchangeRate: number;
+  paymentTermsDays: number;
+  recogniseRevenueOnInvoiceDate: boolean;
   lines: LineItem[];
   /** Optional invoice number. Only used when allowManualOverride = true. */
   invoiceNumber?: string;
@@ -193,7 +222,7 @@ export async function createInvoice(data: {
   if (!customer) return { error: "Customer not found" };
 
   // Resolve lines server-side (validates taxRateIds, snapshots names, computes amounts)
-  const resolved = await resolveLines(orgId, data.lines);
+  const resolved = await resolveLines(orgId, data.customerId, data.lines);
   const { subtotal, taxAmount, totalAmount } = computeTotals(resolved, data.discountAmount);
 
   try {
@@ -259,7 +288,7 @@ export async function createInvoice(data: {
       }
 
       // Step 4: create invoice + lines
-      return tx.invoice.create({
+      const createdInvoice = await tx.invoice.create({
         data: {
           tenantId:         orgId,
           customerId:       data.customerId,
@@ -280,6 +309,7 @@ export async function createInvoice(data: {
           notes:            data.notes || null,
           lines: {
             create: resolved.map((l) => ({
+              id:              l.id,
               itemId:          l.itemId,
               description:     l.description,
               quantity:        l.quantity,
@@ -298,6 +328,22 @@ export async function createInvoice(data: {
           },
         },
       });
+      await tx.$executeRaw`
+        UPDATE "invoices" SET
+          "order_number" = ${data.orderNumber || null},
+          "payment_terms_days" = ${data.paymentTermsDays},
+          "recognise_revenue_on_invoice_date" = ${data.recogniseRevenueOnInvoiceDate}
+        WHERE "id" = ${createdInvoice.id} AND "tenant_id" = ${orgId}
+      `;
+      for (const line of resolved) {
+        await tx.$executeRaw`
+          UPDATE "invoice_lines" SET
+            "project_id" = ${line.projectId},
+            "reporting_tags" = CAST(${JSON.stringify(line.reportingTags)} AS jsonb)
+          WHERE "id" = ${line.id}
+        `;
+      }
+      return createdInvoice;
     });
 
     // NOTE: No journal posting on draft creation.
@@ -410,7 +456,7 @@ export async function updateDraftInvoice(
     if (!customer) return { error: "Customer not found" };
 
     // Resolve lines server-side before the transaction
-    const resolved = await resolveLines(orgId, data.lines);
+    const resolved = await resolveLines(orgId, data.customerId, data.lines);
     const { subtotal, taxAmount, totalAmount } = computeTotals(resolved, data.discountAmount);
 
     // 3. Resolve invoice number — keep existing by default

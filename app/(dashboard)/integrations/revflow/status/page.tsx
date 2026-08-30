@@ -9,7 +9,7 @@ export default async function RevflowStatusPage() {
   if (!session?.user?.tenantId) redirect("/login");
   const orgId = session.user.tenantId;
 
-  const [connection, recentLogs, campaigns, invoices, quarantineCount] = await Promise.all([
+  const [connection, recentLogs, invoices, quarantineCount] = await Promise.all([
     prisma.integrationConnection.findUnique({
       where:  { tenantId_sourceApp: { tenantId: orgId, sourceApp: "revflow" } },
       select: {
@@ -32,7 +32,6 @@ export default async function RevflowStatusPage() {
         errorMessage: true,
       },
     }),
-    prisma.revflowCampaign.count({ where: { tenantId: orgId } }),
     prisma.revflowInvoice.count({ where: { tenantId: orgId } }),
     prisma.syncQuarantine.count({
       where: { tenantId: orgId, sourceApp: "revflow", resolved: false },
@@ -52,7 +51,7 @@ export default async function RevflowStatusPage() {
           <div>
             <p className="font-semibold text-slate-800">Not connected</p>
             <p className="text-sm text-slate-500 mt-1">
-              Connect Revflow to sync revenue campaigns, invoices, and payments into FINOS.
+              Connect Revflow to sync invoices and payments into FINOS.
             </p>
           </div>
           <Link
@@ -117,7 +116,6 @@ export default async function RevflowStatusPage() {
               ? new Date(connection.lastSyncAt).toLocaleString("en-NG")
               : "Never",
           },
-          { label: "Campaigns",  value: campaigns.toLocaleString() },
           { label: "Invoices",   value: invoices.toLocaleString() },
         ].map((card) => (
           <div key={card.label} className="bg-white border border-slate-200 rounded-xl p-4">

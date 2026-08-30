@@ -6,7 +6,7 @@ export default async function NewInvoicePage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [customers, items, incomeAccounts, taxRates] = await Promise.all([
+  const [customers, items, incomeAccounts, taxRates, projects, paymentTerms, reportingTags] = await Promise.all([
     prisma.customer.findMany({
       where: { tenantId, isActive: true },
       select: { id: true, companyName: true, customerCode: true, paymentTerms: true },
@@ -27,6 +27,22 @@ export default async function NewInvoicePage() {
       select: { id: true, name: true, rate: true, type: true, isDefault: true },
       orderBy: [{ type: "asc" }, { name: "asc" }],
     }),
+    prisma.$queryRaw<Array<{ id: string; name: string; code: string | null; customerId: string }>>`
+      SELECT "id", "name", "code", "customer_id" AS "customerId"
+      FROM "projects"
+      WHERE "tenant_id" = ${tenantId} AND "status" IN ('DRAFT', 'ACTIVE')
+      ORDER BY "name" ASC
+    `.catch(() => []),
+    prisma.paymentTerm.findMany({
+      where: { tenantId, isActive: true, appliesTo: { in: ["CUSTOMERS", "BOTH"] } },
+      select: { id: true, name: true, dueInDays: true, isDefault: true },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    }),
+    prisma.reportingTag.findMany({
+      where: { tenantId, isActive: true, appliesTo: { has: "SALES" } },
+      select: { id: true, name: true, options: { where: { isActive: true }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } } },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -41,6 +57,9 @@ export default async function NewInvoicePage() {
         }))}
         incomeAccounts={incomeAccounts}
         taxRates={taxRates.map((t) => ({ ...t, rate: parseFloat(String(t.rate)) }))}
+        projects={projects}
+        paymentTerms={paymentTerms}
+        reportingTags={reportingTags}
       />
     </div>
   );

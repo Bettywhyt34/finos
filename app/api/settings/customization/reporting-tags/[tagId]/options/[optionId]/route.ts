@@ -15,10 +15,11 @@ const UpdateOptionSchema = z.object({
   isActive:    z.boolean().optional(),
 });
 
-type RouteCtx = { params: { tagId: string; optionId: string } };
+type RouteCtx = { params: Promise<{ tagId: string; optionId: string }> };
 
 // PATCH /api/settings/customization/reporting-tags/[tagId]/options/[optionId]
-export async function PATCH(req: NextRequest, { params }: RouteCtx) {
+export async function PATCH(req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 
@@ -57,7 +58,8 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
 }
 
 // DELETE /api/settings/customization/reporting-tags/[tagId]/options/[optionId]
-export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
+export async function DELETE(_req: NextRequest, props: RouteCtx) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response!;
 

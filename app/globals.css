@@ -10,38 +10,44 @@
 
 @layer base {
   :root {
-    /* ── FINOS accent (user-configurable) ───────────────────────────── */
-    --finos-accent: #4088f4;
+    /* ── Approved FINOS visual foundation ──────────────────────────── */
+    --finos-foundation:      #173f35;
+    --finos-foundation-dark: #102f28;
+    --finos-accent:          #16856f;
+    --finos-accent-hover:    #106b5a;
 
-    /* ── App canvas — always light regardless of pane mode ─────────── */
-    --app-bg:        #f5f7fb;
+    --app-bg:        #f7f7f3;
     --surface:       #ffffff;
-    --surface-muted: #f1f5f9;
-    --surface-soft:  #eef4ff;
+    --surface-muted: #efeee8;
+    --surface-soft:  #efeee8;
 
     /* ── Semantic content text ──────────────────────────────────────── */
-    --text-primary:   #0f172a;
-    --text-secondary: #475569;
-    --text-muted:     #64748b;
+    --text-primary:   #18241f;
+    --text-secondary: #626d68;
+    --text-muted:     #626d68;
     --text-inverse:   #ffffff;
 
     /* ── Content borders ────────────────────────────────────────────── */
-    --app-border: #e2e8f0;
+    --app-border: #d9deda;
+
+    --positive:  #287a55;
+    --attention: #b7791f;
+    --critical:  #b54747;
 
     /* ── Pane chrome defaults — Dark Pane (no data-pane attr yet) ───── */
-    --sidebar-bg:          #0b1220;
-    --sidebar-text:        #cbd5e1;
-    --sidebar-muted:       #94a3b8;
-    --sidebar-hover:       #172033;
-    --sidebar-active:      #1f2d44;
+    --sidebar-bg:          #173f35;
+    --sidebar-text:        rgba(255, 255, 255, 0.9);
+    --sidebar-muted:       rgba(255, 255, 255, 0.65);
+    --sidebar-hover:       #102f28;
+    --sidebar-active:      #16856f;
     --sidebar-active-text: #ffffff;
-    --sidebar-border:      rgba(255, 255, 255, 0.1);
+    --sidebar-border:      rgba(255, 255, 255, 0.14);
 
-    --topbar-bg:        #0b1220;
-    --topbar-text:      #ffffff;
-    --topbar-org:       #94a3b8;
-    --topbar-border:    rgba(255, 255, 255, 0.1);
-    --topbar-avatar-bg: #1e293b;
+    --topbar-bg:        #f7f7f3;
+    --topbar-text:      #18241f;
+    --topbar-org:       #626d68;
+    --topbar-border:    #d9deda;
+    --topbar-avatar-bg: #efeee8;
 
     /* ── shadcn/ui component tokens — light only, no .dark override ── */
     --background:            oklch(1 0 0);
@@ -78,38 +84,13 @@
     --sidebar-ring:          oklch(0.708 0 0);
   }
 
-  /* ── Dark Pane (explicit; mirrors :root defaults above) ───────────── */
+  /* Legacy pane attributes retain the approved fixed FINOS foundation. */
   [data-pane="dark"] {
-    --sidebar-bg:          #0b1220;
-    --sidebar-text:        #cbd5e1;
-    --sidebar-muted:       #94a3b8;
-    --sidebar-hover:       #172033;
-    --sidebar-active:      #1f2d44;
-    --sidebar-active-text: #ffffff;
-    --sidebar-border:      rgba(255, 255, 255, 0.1);
-
-    --topbar-bg:        #0b1220;
-    --topbar-text:      #ffffff;
-    --topbar-org:       #94a3b8;
-    --topbar-border:    rgba(255, 255, 255, 0.1);
-    --topbar-avatar-bg: #1e293b;
+    --sidebar-bg: #173f35;
   }
 
-  /* ── Light Pane ──────────────────────────────────────────────────── */
   [data-pane="light"] {
-    --sidebar-bg:          #ffffff;
-    --sidebar-text:        #334155;
-    --sidebar-muted:       #64748b;
-    --sidebar-hover:       #f1f5f9;
-    --sidebar-active:      #eff6ff;
-    --sidebar-active-text: var(--finos-accent);
-    --sidebar-border:      #e2e8f0;
-
-    --topbar-bg:        #ffffff;
-    --topbar-text:      #0f172a;
-    --topbar-org:       #475569;
-    --topbar-border:    #e2e8f0;
-    --topbar-avatar-bg: #f1f5f9;
+    --sidebar-bg: #173f35;
   }
 
   /* ── Global resets ───────────────────────────────────────────────── */
@@ -120,9 +101,35 @@
   body {
     background-color: var(--app-bg);
     color: var(--text-primary);
+    font-family: var(--font-geist-sans), Arial, sans-serif;
   }
 
   html {
     @apply font-sans;
+  }
+
+  /* Approved FINOS typography: Source Serif 4 for major page headings. */
+  h1 {
+    font-family: var(--font-source-serif), Georgia, serif;
+  }
+}
+
+@layer utilities {
+  /* Major headings, financial figures and FINOS Intelligence content. */
+  .font-display,
+  .font-financial,
+  .font-intelligence {
+    font-family: var(--font-source-serif), Georgia, serif;
+  }
+
+  /* Financial values align vertically in tables, cards and reports. */
+  .font-financial,
+  .tabular-nums {
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  /* Accounting codes, transaction references and technical identifiers. */
+  .font-code {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
   }
 }

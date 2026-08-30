@@ -48,22 +48,14 @@ export async function requireAuth(): Promise<AuthResult> {
  * 401 = unauthenticated, 403 = authenticated but wrong role.
  */
 export async function requireMutationRole(allowedRoles: UserRole[]): Promise<AuthResult> {
-  const session = await auth();
-  if (!session?.user?.id || !session.user.tenantId) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return { ctx: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
-  if (!session.user.role || !allowedRoles.includes(session.user.role)) {
+  if (!allowedRoles.includes(ctx.role)) {
     return { ctx: null, response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
-  return {
-    ctx: {
-      userId:   session.user.id,
-      tenantId: session.user.tenantId,
-      role:     session.user.role,
-      email:    session.user.email,
-    },
-    response: null,
-  };
+  return { ctx, response: null };
 }
 
 // ─── Convenience predicates ───────────────────────────────────────────────────
@@ -72,6 +64,7 @@ export function canMutateSettings(role: UserRole): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
-export function canViewSettings(_role: UserRole): boolean {
+export function canViewSettings(role: UserRole): boolean {
+  void role;
   return true;
 }

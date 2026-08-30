@@ -1,76 +1,79 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { LogOut, User, Plus } from "lucide-react";
+import { CalendarDays, ChevronDown, Download, Menu } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 interface HeaderProps {
-  userName: string | null | undefined;
-  userImage: string | null | undefined;
   orgName: string | null | undefined;
+  currency: string;
 }
 
-export function Header({ userName, userImage, orgName }: HeaderProps) {
+export function Header({ orgName, currency }: HeaderProps) {
   const router = useRouter();
-
-  const initials = userName
-    ? userName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()
-    : "U";
+  const now = new Date();
+  const period = new Intl.DateTimeFormat("en", {
+    month: "short",
+    year: "numeric",
+  }).format(now);
 
   return (
-    <header className="h-14 flex items-center justify-between px-6 shrink-0 border-b border-[var(--topbar-border)] bg-[var(--topbar-bg)]">
-      <p className="text-sm font-medium text-[var(--topbar-org)] truncate">{orgName}</p>
-
-      <div className="flex items-center gap-3">
-        {/* New Invoice — always accent-coloured so it pops in both pane modes */}
-        <Link
-          href="/sales/invoices/new"
-          className="inline-flex items-center gap-1.5 h-8 px-3 text-sm font-medium rounded-md text-white transition-opacity hover:opacity-90"
-          style={{ backgroundColor: "var(--finos-accent)" }}
-        >
-          <Plus className="h-4 w-4" />
-          New Invoice
-        </Link>
+    <header className="flex h-[88px] shrink-0 items-center justify-between border-b border-[var(--topbar-border)] bg-[var(--topbar-bg)] px-8">
+      <div className="flex items-center gap-5">
+        <button type="button" aria-label="Collapse navigation" className="grid h-10 w-10 place-items-center rounded-lg text-[var(--topbar-text)] hover:bg-[var(--surface-muted)]">
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="h-8 w-px bg-[var(--topbar-border)]" />
 
         <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex items-center justify-center h-8 w-8 rounded-full text-xs font-semibold focus:outline-none overflow-hidden transition-opacity hover:opacity-80 text-[var(--topbar-text)] bg-[var(--topbar-avatar-bg)]"
-          >
-            {userImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={userImage} alt={userName ?? "User"} className="h-full w-full object-cover" />
-            ) : (
-              initials
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <div className="px-3 py-2">
-              <p className="text-sm font-medium truncate">{userName}</p>
+          <DropdownMenuTrigger className="flex min-w-[220px] items-center gap-4 rounded-lg px-3 py-2 text-left hover:bg-[var(--surface-muted)] focus:outline-none">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-[var(--topbar-text)]">{orgName ?? "Your company"}</p>
+              <p className="mt-0.5 text-xs text-[var(--topbar-org)]">Company · {currency}</p>
             </div>
+            <ChevronDown className="h-4 w-4 text-[var(--topbar-org)]" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-80 border-[var(--app-border)] bg-white p-2">
+            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Group overview</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/settings/organization")} className="cursor-pointer">
-              <User className="h-4 w-4 mr-2" />
-              Profile
+            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Companies</DropdownMenuLabel>
+            <DropdownMenuItem className="rounded-md bg-[var(--surface-muted)] px-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">{orgName ?? "Your company"}</p>
+                <p className="text-xs text-[var(--text-muted)]">Company · {currency}</p>
+              </div>
             </DropdownMenuItem>
+            <DropdownMenuLabel className="mt-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Investment / holding entities</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Personal workspaces</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              variant="destructive"
-              className="cursor-pointer"
+              onClick={() => router.push("/settings/organization")}
+              className="cursor-pointer rounded-md px-3 py-2 text-sm font-medium text-[var(--finos-accent)]"
             >
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign out
+              Entity management
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <p className="hidden text-xs text-[var(--text-muted)] xl:block">Last updated: Today</p>
+        <button type="button" className="flex h-10 items-center gap-2 rounded-lg border border-[var(--app-border)] bg-white px-4 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--surface-muted)]">
+          <CalendarDays className="h-4 w-4" />
+          {period}
+          <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+        </button>
+        <button type="button" className="flex h-10 items-center gap-2 rounded-lg bg-[var(--finos-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--finos-accent-hover)]">
+          <Download className="h-4 w-4" />
+          Export
+        </button>
       </div>
     </header>
   );

@@ -376,7 +376,6 @@ export default function InvoiceImportPage() {
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Currency</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Lines</th>
                     <th className="text-right px-3 py-2 font-medium text-slate-600">Total</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Campaign ID</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Transaction ID</th>
                   </tr>
                 </thead>
@@ -397,9 +396,6 @@ export default function InvoiceImportPage() {
                         </td>
                         <td className="px-3 py-2 text-right font-mono font-medium text-slate-900">
                           {formatCurrency(total, rec.currency)}
-                        </td>
-                        <td className="px-3 py-2 text-slate-500 max-w-[120px] truncate">
-                          {rec.campaignId || <span className="text-slate-300">—</span>}
                         </td>
                         <td className="px-3 py-2 font-mono text-slate-500 max-w-[140px] truncate">
                           {rec.externalTxnId || <span className="text-slate-300">—</span>}

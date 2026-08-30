@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getAccountBalances, sumByType } from "@/lib/statements";
 import { formatCurrency, getRecognitionPeriod } from "@/lib/utils";
 
 function toNum(val: unknown): number {
@@ -35,6 +36,127 @@ export interface RecentBill {
   totalAmount: string;
   status: string;
   billDate: Date;
+}
+
+export interface FinancialOverviewData {
+  currency: string;
+  cash: {
+    total: number;
+    accounts: { id: string; name: string; bank: string; amount: number }[];
+  };
+  attention: {
+    overdueInvoiceCount: number;
+    overdueInvoiceAmount: number;
+    billsDueCount: number;
+    billsDueAmount: number;
+  };
+  performance: {
+    revenue: number;
+    grossProfit: number;
+    operatingProfit: number;
+    netProfit: number;
+  };
+  receivables: {
+    id: string;
+    invoiceNumber: string;
+    customerName: string;
+    dueDate: Date;
+    amount: number;
+    daysOverdue: number;
+    status: string;
+  }[];
+}
+
+export async function getFinancialOverview(tenantId: string): Promise<FinancialOverviewData> {
+  const now = new Date();
+  const currentPeriod = getRecognitionPeriod(now);
+  const yearStart = `${now.getFullYear()}-01`;
+  const inSevenDays = new Date(now);
+  inSevenDays.setDate(inSevenDays.getDate() + 7);
+
+  const [tenant, bankAccounts, overdueInvoices, billsDue, balances] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } }),
+    prisma.bankAccount.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, accountName: true, bankName: true, currentBalance: true },
+      orderBy: { currentBalance: "desc" },
+    }),
+    prisma.invoice.findMany({
+      where: {
+        tenantId,
+        dueDate: { lt: now },
+        balanceDue: { gt: 0 },
+        status: { in: ["SENT", "PARTIAL", "OVERDUE"] },
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        dueDate: true,
+        balanceDue: true,
+        status: true,
+        customer: { select: { companyName: true } },
+      },
+      orderBy: [{ balanceDue: "desc" }, { dueDate: "asc" }],
+    }),
+    prisma.bill.findMany({
+      where: {
+        tenantId,
+        dueDate: { gte: now, lte: inSevenDays },
+        status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
+      },
+      select: { totalAmount: true, amountPaid: true },
+    }),
+    getAccountBalances(tenantId, currentPeriod, yearStart),
+  ]);
+
+  const totalIncome = sumByType(balances, "INCOME");
+  const totalExpenses = sumByType(balances, "EXPENSE");
+  const otherIncome = balances
+    .filter((balance) => balance.financialCategory === "OTHER_INCOME")
+    .reduce((sum, balance) => sum + balance.balance, 0);
+  const revenue = totalIncome - otherIncome;
+  const directCosts = balances
+    .filter((balance) => balance.financialCategory === "COST_OF_SALES" || balance.financialCategory === "DIRECT_EXPENSES")
+    .reduce((sum, balance) => sum + balance.balance, 0);
+  const otherExpenses = balances
+    .filter((balance) => balance.financialCategory === "OTHER_EXPENSES")
+    .reduce((sum, balance) => sum + balance.balance, 0);
+  const operatingExpenses = totalExpenses - directCosts - otherExpenses;
+  const grossProfit = revenue - directCosts;
+  const operatingProfit = grossProfit - operatingExpenses;
+  const netProfit = totalIncome - totalExpenses;
+
+  return {
+    currency: tenant?.currency ?? "NGN",
+    cash: {
+      total: bankAccounts.reduce((sum, account) => sum + toNum(account.currentBalance), 0),
+      accounts: bankAccounts.slice(0, 3).map((account) => ({
+        id: account.id,
+        name: account.accountName,
+        bank: account.bankName,
+        amount: toNum(account.currentBalance),
+      })),
+    },
+    attention: {
+      overdueInvoiceCount: overdueInvoices.length,
+      overdueInvoiceAmount: overdueInvoices.reduce((sum, invoice) => sum + toNum(invoice.balanceDue), 0),
+      billsDueCount: billsDue.length,
+      billsDueAmount: billsDue.reduce(
+        (sum, bill) => sum + toNum(bill.totalAmount) - toNum(bill.amountPaid),
+        0
+      ),
+    },
+    performance: { revenue, grossProfit, operatingProfit, netProfit },
+    receivables: overdueInvoices.slice(0, 6).map((invoice) => ({
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      customerName: invoice.customer.companyName,
+      dueDate: invoice.dueDate,
+      amount: toNum(invoice.balanceDue),
+      daysOverdue: Math.max(0, Math.floor((now.getTime() - invoice.dueDate.getTime()) / 86_400_000)),
+      status: invoice.status,
+    })),
+  };
 }
 
 export async function getDashboardKpis(

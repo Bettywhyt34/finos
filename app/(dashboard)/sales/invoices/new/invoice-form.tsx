@@ -16,6 +16,8 @@ import {
   type LineItemData,
   type TaxRateOption,
   type IncomeAccountOption,
+  type ProjectOption,
+  type ReportingTagDefinition,
   computeLineAmount,
   buildTaxBreakdown,
   emptyLine,
@@ -23,6 +25,7 @@ import {
 
 interface Customer { id: string; companyName: string; customerCode: string; paymentTerms: number; }
 interface Item { id: string; itemCode: string; name: string; salesPrice: number | null; type: string; incomeAccountId: string | null; }
+interface PaymentTermOption { id: string; name: string; dueInDays: number | null; isDefault: boolean; }
 
 function today() { return new Date().toISOString().split("T")[0]; }
 function addDays(d: string, n: number) { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
@@ -33,11 +36,17 @@ export function InvoiceForm({
   items,
   incomeAccounts,
   taxRates,
+  projects,
+  paymentTerms,
+  reportingTags,
 }: {
   customers:      Customer[];
   items:          Item[];
   incomeAccounts: IncomeAccountOption[];
   taxRates:       TaxRateOption[];
+  projects:       ProjectOption[];
+  paymentTerms:   PaymentTermOption[];
+  reportingTags:  ReportingTagDefinition[];
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -54,6 +63,8 @@ export function InvoiceForm({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceNumberTouched, setInvoiceNumberTouched] = useState(false);
   const [numberLoading, setNumberLoading] = useState(true);
+  const [paymentTermsDays, setPaymentTermsDays] = useState(paymentTerms.find((term) => term.isDefault)?.dueInDays ?? 30);
+  const [recogniseRevenue, setRecogniseRevenue] = useState(false);
   const [numberConfig, setNumberConfig] = useState<{
     suggestedNumber: string | null;
     allowManualOverride: boolean;
@@ -112,14 +123,17 @@ export function InvoiceForm({
   function handleCustomerChange(id: string) {
     setCustomerId(id);
     const cust = customers.find((c) => c.id === id);
-    if (cust) setDueDate(addDays(issueDate, cust.paymentTerms));
+    if (cust) {
+      setPaymentTermsDays(cust.paymentTerms);
+      setDueDate(addDays(issueDate, cust.paymentTerms));
+      setLines((current) => current.map((line) => ({ ...line, projectId: "" })));
+    }
   }
 
   function handleIssueDateChange(val: string) {
     setIssueDate(val);
     setRecognitionPeriod(getMonthPeriod(val));
-    const cust = customers.find((c) => c.id === customerId);
-    if (cust) setDueDate(addDays(val, cust.paymentTerms));
+    setDueDate(addDays(val, paymentTermsDays));
   }
 
   // ── Totals (live, client-side) ────────────────────────────────────────────
@@ -146,12 +160,15 @@ export function InvoiceForm({
       customerId,
       invoiceNumber: invoiceNumberTouched ? (invoiceNumber.trim() || undefined) : undefined,
       reference: String(fd.get("reference") || ""),
+      orderNumber: String(fd.get("orderNumber") || ""),
       issueDate,
       dueDate,
       discountAmount,
       recognitionPeriod,
       currency,
       exchangeRate: isNGN ? 1 : exchangeRate,
+      paymentTermsDays,
+      recogniseRevenueOnInvoiceDate: recogniseRevenue,
       lines: lines.map((l) => ({
         itemId:          l.itemId || undefined,
         description:     l.description,
@@ -161,6 +178,8 @@ export function InvoiceForm({
         discountType:    l.discountType,
         discountValue:   l.discountValue,
         incomeAccountId: l.incomeAccountId || undefined,
+        projectId:       l.projectId || undefined,
+        reportingTags:   l.reportingTags,
       })),
     });
     setLoading(false);
@@ -184,8 +203,8 @@ export function InvoiceForm({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="reference">Reference (optional)</Label>
-            <Input id="reference" name="reference" placeholder="PO-12345" />
+            <Label htmlFor="orderNumber">Order Number</Label>
+            <Input id="orderNumber" name="orderNumber" placeholder="Customer PO or campaign order" />
           </div>
         </div>
 
@@ -242,8 +261,8 @@ export function InvoiceForm({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Recognition Period</Label>
-            <Input value={recognitionPeriod} onChange={(e) => setRecognitionPeriod(e.target.value)} placeholder="YYYY-MM" />
+            <Label htmlFor="reference">Reference / Subject</Label>
+            <Input id="reference" name="reference" placeholder="Invoice subject or internal reference" />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -252,8 +271,15 @@ export function InvoiceForm({
             <Input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Due Date</Label>
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <Label>Payment Terms</Label>
+            <Select value={String(paymentTermsDays)} onValueChange={(value) => { const days = Number(value ?? 0); setPaymentTermsDays(days); setDueDate(addDays(issueDate, days)); }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {paymentTerms.filter((term) => term.dueInDays != null).map((term) => <SelectItem key={term.id} value={String(term.dueInDays)}>{term.name}</SelectItem>)}
+                {!paymentTerms.some((term) => term.dueInDays === paymentTermsDays) ? <SelectItem value={String(paymentTermsDays)}>Net {paymentTermsDays}</SelectItem> : null}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-[var(--text-secondary)]">Due {dueDate}</p>
           </div>
         </div>
       </div>
@@ -308,7 +334,18 @@ export function InvoiceForm({
         defaultIncomeAccountId={defaultIncomeAccountId}
         lines={lines}
         onChange={setLines}
+        customerId={customerId}
+        projects={projects}
+        reportingTags={reportingTags}
       />
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--app-border)] bg-white p-4">
+        <input type="checkbox" checked={recogniseRevenue} onChange={(event) => setRecogniseRevenue(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--finos-accent)]" />
+        <span>
+          <span className="block text-sm font-medium text-[var(--text-primary)]">Recognise revenue on invoice date</span>
+          <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">Unchecked amounts post to the configured Unearned Income account. Earnings can be recognised later from the posted invoice or Project.</span>
+        </span>
+      </label>
 
       {/* Totals */}
       <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">

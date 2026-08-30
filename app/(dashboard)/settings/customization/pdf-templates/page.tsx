@@ -3,11 +3,12 @@ import { auth }              from "@/lib/auth";
 import { getPdfTemplates }   from "@/lib/customization/pdf-service";
 import { PdfTemplatesClient } from "./pdf-templates-client";
 
-export default async function PdfTemplatesPage({
-  searchParams,
-}: {
-  searchParams: { type?: string };
-}) {
+export default async function PdfTemplatesPage(
+  props: {
+    searchParams: Promise<{ type?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
 

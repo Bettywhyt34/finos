@@ -3,11 +3,12 @@ import { auth } from "@/lib/auth";
 import { getAccountBalances, sumByType } from "@/lib/statements";
 import { formatCurrency } from "@/lib/utils";
 
-export default async function CashFlowPage({
-  searchParams,
-}: {
-  searchParams: { periodFrom?: string; periodTo?: string };
-}) {
+export default async function CashFlowPage(
+  props: {
+    searchParams: Promise<{ periodFrom?: string; periodTo?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

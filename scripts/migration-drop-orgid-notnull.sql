@@ -38,7 +38,6 @@ BEGIN
     ('sync_logs'),
     ('sync_quarantine'),
     ('unified_transactions_cache'),
-    ('revflow_campaigns'),
     ('revflow_invoices'),
     ('earnmark360_employees'),
     ('earnmark360_payroll_runs'),

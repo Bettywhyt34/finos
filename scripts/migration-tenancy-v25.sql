@@ -209,11 +209,6 @@ ALTER TABLE unified_transactions_cache ADD COLUMN IF NOT EXISTS tenant_id UUID R
 UPDATE unified_transactions_cache SET tenant_id = organization_id::UUID WHERE tenant_id IS NULL;
 ALTER TABLE unified_transactions_cache ALTER COLUMN tenant_id SET NOT NULL;
 
--- revflow_campaigns
-ALTER TABLE revflow_campaigns ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
-UPDATE revflow_campaigns SET tenant_id = organization_id::UUID WHERE tenant_id IS NULL;
-ALTER TABLE revflow_campaigns ALTER COLUMN tenant_id SET NOT NULL;
-
 -- revflow_invoices
 ALTER TABLE revflow_invoices ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
 UPDATE revflow_invoices SET tenant_id = organization_id::UUID WHERE tenant_id IS NULL;
@@ -379,11 +374,6 @@ DROP POLICY IF EXISTS tenant_isolation ON unified_transactions_cache;
 CREATE POLICY tenant_isolation ON unified_transactions_cache
   FOR ALL USING (tenant_id = current_setting('app.current_tenant', TRUE)::UUID);
 ALTER TABLE unified_transactions_cache ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS tenant_isolation ON revflow_campaigns;
-CREATE POLICY tenant_isolation ON revflow_campaigns
-  FOR ALL USING (tenant_id = current_setting('app.current_tenant', TRUE)::UUID);
-ALTER TABLE revflow_campaigns ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS tenant_isolation ON revflow_invoices;
 CREATE POLICY tenant_isolation ON revflow_invoices

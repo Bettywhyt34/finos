@@ -7,11 +7,12 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-export default async function PeriodClosePage({
-  searchParams,
-}: {
-  searchParams: { year?: string };
-}) {
+export default async function PeriodClosePage(
+  props: {
+    searchParams: Promise<{ year?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

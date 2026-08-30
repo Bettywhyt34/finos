@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const isDevelopment = process.env.NODE_ENV === "development";
 
 const securityHeaders = [
   // Prevent clickjacking
@@ -25,7 +26,7 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       // Scripts: self + inline (Next.js requires unsafe-inline for RSC hydration)
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
       // Styles: self + inline (Tailwind CSS-in-JS)
       "style-src 'self' 'unsafe-inline'",
       // Images: self + data URIs + Supabase storage
@@ -56,14 +57,6 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  eslint: {
-    // Pre-existing unused-var warnings in integration processors — no runtime impact
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    // app/page.tsx intentionally has no default export (route handled by route group)
-    ignoreBuildErrors: true,
-  },
   // -- Redirects for moved settings routes --
   async redirects() {
     return [

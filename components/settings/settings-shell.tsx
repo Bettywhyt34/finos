@@ -161,7 +161,7 @@ export function SettingsHeader({
   search: string;
   onSearch: (v: string) => void;
   onClose: () => void;
-  searchRef: React.RefObject<HTMLInputElement>;
+  searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
     <header className="shrink-0 h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-6 z-10">

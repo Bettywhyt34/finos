@@ -24,8 +24,9 @@ function unslugify(slug: string): string {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { batchId: string; accountId: string } },
+  props: { params: Promise<{ batchId: string; accountId: string }> }
 ) {
+  const params = await props.params;
   const session = await auth();
   if (!session?.user?.tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

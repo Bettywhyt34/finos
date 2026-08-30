@@ -9,11 +9,12 @@ function pct(current: number, prior: number): string {
   return ((current - prior) / Math.abs(prior) * 100).toFixed(1) + "%";
 }
 
-export default async function ProfitLossPage({
-  searchParams,
-}: {
-  searchParams: { periodFrom?: string; periodTo?: string; compare?: string };
-}) {
+export default async function ProfitLossPage(
+  props: {
+    searchParams: Promise<{ periodFrom?: string; periodTo?: string; compare?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return null;

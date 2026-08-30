@@ -24,7 +24,6 @@ export default async function ExpensesPage() {
     where: { tenantId },
     include: {
       category: { select: { name: true } },
-      campaign: { select: { campaignName: true, campaignCode: true } },
     },
     orderBy: { expenseDate: "desc" },
     take: 200,
@@ -100,7 +99,6 @@ export default async function ExpensesPage() {
                 <th className="text-left px-4 py-3 font-medium text-blue-700">Date</th>
                 <th className="text-left px-4 py-3 font-medium text-blue-700">Description</th>
                 <th className="text-left px-4 py-3 font-medium text-blue-700">Category</th>
-                <th className="text-left px-4 py-3 font-medium text-blue-700">Campaign</th>
                 <th className="text-right px-4 py-3 font-medium text-blue-700">Amount</th>
                 <th className="text-right px-4 py-3 font-medium text-blue-700">Tax</th>
                 <th className="text-right px-4 py-3 font-medium text-blue-700">Total</th>
@@ -115,13 +113,6 @@ export default async function ExpensesPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-700 max-w-xs truncate">{e.description}</td>
                   <td className="px-4 py-3 text-slate-500">{e.category.name}</td>
-                  <td className="px-4 py-3 text-slate-500">
-                    {e.campaign ? (
-                      <span className="text-purple-700 text-xs">
-                        {e.campaign.campaignCode ?? e.campaign.campaignName}
-                      </span>
-                    ) : "—"}
-                  </td>
                   <td className="px-4 py-3 text-right text-slate-700">
                     {formatCurrency(parseFloat(String(e.amount)))}
                   </td>

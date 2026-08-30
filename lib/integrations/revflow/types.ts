@@ -29,27 +29,6 @@ export const RFChartOfAccountSchema = z.object({
 export type RFChartOfAccount = z.infer<typeof RFChartOfAccountSchema>;
 export const RFCoAResponseSchema = z.array(RFChartOfAccountSchema);
 
-// ─── Campaign ─────────────────────────────────────────────────────────────────
-
-export const RFCampaignSchema = z.object({
-  id:                   z.string(),
-  name:                 z.string(),
-  clientId:             z.string(),
-  clientName:           z.string(),
-  campaignCode:         z.string().nullable().optional(),
-  plannedValue:         z.number(),
-  currency:             z.string().default("NGN"),
-  exchangeRate:         z.number().default(1),
-  startDate:            z.string().nullable().optional(),   // ISO date
-  endDate:              z.string().nullable().optional(),
-  status:               z.string().nullable().optional(),
-  revenueSplit:         z.record(z.string(), z.number()).nullable().optional(), // YYYY-MM → amount
-  compliancePercentage: z.number().min(0).max(100).nullable().optional(),
-  updatedAt:            z.string(),
-});
-export type RFCampaign = z.infer<typeof RFCampaignSchema>;
-export const RFCampaignPageSchema = RFPagedResponseSchema(RFCampaignSchema);
-
 // ─── Invoice ──────────────────────────────────────────────────────────────────
 
 export const RFInvoiceStatusSchema = z.enum([
@@ -59,7 +38,6 @@ export type RFInvoiceStatus = z.infer<typeof RFInvoiceStatusSchema>;
 
 export const RFInvoiceSchema = z.object({
   id:                z.string(),
-  campaignId:        z.string().nullable().optional(),
   invoiceNumber:     z.string(),
   clientId:          z.string(),
   clientName:        z.string(),
@@ -120,7 +98,6 @@ export const RFJournalEntrySchema = z.object({
   entryType:         RFJournalEntryTypeSchema,
   recognitionPeriod: z.string(),            // YYYY-MM
   clientId:          z.string().nullable().optional(),
-  campaignId:        z.string().nullable().optional(),
   sourceRef:         z.string().nullable().optional(), // invoice / payment ID
   lines:             z.array(RFJournalLineSchema),
   updatedAt:         z.string(),

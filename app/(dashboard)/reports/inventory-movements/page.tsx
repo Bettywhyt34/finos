@@ -19,11 +19,12 @@ const CHANNEL_LABELS: Record<string, string> = {
   BOTH:   "Both",
 };
 
-export default async function InventoryMovementsPage({
-  searchParams,
-}: {
-  searchParams: { from?: string; to?: string; type?: string; channel?: string };
-}) {
+export default async function InventoryMovementsPage(
+  props: {
+    searchParams: Promise<{ from?: string; to?: string; type?: string; channel?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const session = await auth();
   if (!session?.user?.tenantId) redirect("/login");
   const tenantId = session.user.tenantId;

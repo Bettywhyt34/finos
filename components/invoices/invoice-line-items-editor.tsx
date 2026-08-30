@@ -49,6 +49,15 @@ export interface LineItemData {
   discountType:    "PERCENT" | "FIXED";
   discountValue:   number;
   incomeAccountId: string;   // "" = use default resolved server-side
+  projectId?:       string;
+  reportingTags?:   Record<string, string>;
+}
+
+export interface ProjectOption { id: string; name: string; code: string | null; customerId: string; }
+export interface ReportingTagDefinition {
+  id: string;
+  name: string;
+  options: Array<{ id: string; name: string }>;
 }
 
 interface ItemOption {
@@ -68,6 +77,9 @@ interface Props {
   defaultIncomeAccountId: string;
   lines:                  LineItemData[];
   onChange:               (lines: LineItemData[]) => void;
+  customerId?:            string;
+  projects?:              ProjectOption[];
+  reportingTags?:         ReportingTagDefinition[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -118,6 +130,8 @@ export function emptyLine(taxRates: TaxRateOption[], defaultIncomeAccountId?: st
     discountType:    "PERCENT",
     discountValue:   0,
     incomeAccountId: defaultIncomeAccountId ?? "",
+    projectId:       "",
+    reportingTags:   {},
   };
 }
 
@@ -131,6 +145,9 @@ export function InvoiceLineItemsEditor({
   defaultIncomeAccountId,
   lines,
   onChange,
+  customerId = "",
+  projects = [],
+  reportingTags = [],
 }: Props) {
 
   function updateLine(id: string, patch: Partial<LineItemData>) {
@@ -206,6 +223,8 @@ export function InvoiceLineItemsEditor({
           const accountLabel = selectedAccount
             ? `${selectedAccount.code} — ${selectedAccount.name}`
             : "";
+          const availableProjects = projects.filter((project) => project.customerId === customerId);
+          const selectedProject = availableProjects.find((project) => project.id === line.projectId);
 
           return (
             <div key={line.id}>
@@ -328,18 +347,29 @@ export function InvoiceLineItemsEditor({
                 </button>
               </div>
 
-              {/* Income account sub-row */}
-              <div
-                className="grid gap-2 px-4 py-2 bg-slate-50/40 border-t border-dashed border-slate-100"
-                style={{ gridTemplateColumns: "2fr 2fr 1fr 2fr 2fr 2fr 1fr 32px" }}
-              >
-                <div className="col-span-7 flex items-center gap-2">
-                  <span className="text-xs text-slate-400 whitespace-nowrap">Account:</span>
+              {/* Approved line-level accounting context */}
+              <div className="grid gap-3 border-t border-dashed border-[var(--app-border)] bg-[var(--surface-muted)]/45 px-4 py-3 md:grid-cols-3">
+                <label className="text-xs font-medium text-[var(--text-secondary)]">
+                  Project
+                  <Select value={line.projectId ?? ""} onValueChange={(v) => updateLine(line.id, { projectId: v ?? "" })}>
+                    <SelectTrigger className="mt-1 h-8 bg-white text-xs">
+                      <span className={cn("flex-1 truncate text-left", !selectedProject && "text-muted-foreground")}>
+                        {selectedProject ? `${selectedProject.name}${selectedProject.code ? ` · ${selectedProject.code}` : ""}` : "No project"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">No project</SelectItem>
+                      {availableProjects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}{project.code ? ` · ${project.code}` : ""}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="text-xs font-medium text-[var(--text-secondary)]">
+                  Income account
                   <Select
                     value={line.incomeAccountId}
                     onValueChange={(v) => updateLine(line.id, { incomeAccountId: v ?? "" })}
                   >
-                    <SelectTrigger className="h-7 text-xs flex-1">
+                    <SelectTrigger className="mt-1 h-8 bg-white text-xs">
                       <span className={cn("flex-1 truncate text-left", !accountLabel && "text-muted-foreground")}>
                         {accountLabel || "— Select account"}
                       </span>
@@ -353,11 +383,22 @@ export function InvoiceLineItemsEditor({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-xs text-slate-400 whitespace-nowrap hidden sm:block">
-                    Revenue from this line will post to this income account when sent.
-                  </span>
+                </label>
+                <div className="space-y-2">
+                  {reportingTags.length ? reportingTags.map((tag) => {
+                    const selectedOptionId = line.reportingTags?.[tag.id] ?? "";
+                    const selectedOption = tag.options.find((option) => option.id === selectedOptionId);
+                    return (
+                      <label key={tag.id} className="block text-xs font-medium text-[var(--text-secondary)]">
+                        {tag.name}
+                        <Select value={selectedOptionId} onValueChange={(v) => updateLine(line.id, { reportingTags: { ...(line.reportingTags ?? {}), [tag.id]: v ?? "" } })}>
+                          <SelectTrigger className="mt-1 h-8 bg-white text-xs"><span className="truncate">{selectedOption?.name ?? "No tag"}</span></SelectTrigger>
+                          <SelectContent><SelectItem value="">No tag</SelectItem>{tag.options.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </label>
+                    );
+                  }) : <p className="pt-6 text-xs text-[var(--text-secondary)]">No reporting tags configured</p>}
                 </div>
-                <div />
               </div>
             </div>
           );

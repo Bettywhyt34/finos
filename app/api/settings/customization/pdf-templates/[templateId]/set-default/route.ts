@@ -3,10 +3,8 @@ import { requireMutationRole }       from "@/lib/auth/guards";
 import { setDefaultPdfTemplate }     from "@/lib/customization/pdf-service";
 
 // POST /api/settings/customization/pdf-templates/[templateId]/set-default
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { templateId: string } },
-) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ templateId: string }> }) {
+  const params = await props.params;
   const { ctx, response } = await requireMutationRole(["OWNER", "ADMIN"]);
   if (!ctx) return response;
 

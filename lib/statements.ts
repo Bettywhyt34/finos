@@ -11,6 +11,7 @@ export interface AccountBalance {
   name: string;
   type: string;
   subtype: string | null;
+  financialCategory: string | null;
   balance: number;
 }
 
@@ -24,7 +25,7 @@ export async function getAccountBalances(
 ): Promise<AccountBalance[]> {
   const accounts = await prisma.chartOfAccounts.findMany({
     where: { tenantId: orgId, isActive: true },
-    select: { id: true, code: true, name: true, type: true, subtype: true },
+    select: { id: true, code: true, name: true, type: true, subtype: true, financialCategory: true },
     orderBy: { code: "asc" },
   });
 
@@ -53,7 +54,15 @@ export async function getAccountBalances(
   return accounts.map((a) => {
     const { debit = 0, credit = 0 } = lineMap.get(a.id) ?? {};
     const balance = DEBIT_NORMAL.has(a.type) ? debit - credit : credit - debit;
-    return { accountId: a.id, code: a.code, name: a.name, type: a.type, subtype: a.subtype, balance };
+    return {
+      accountId: a.id,
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      subtype: a.subtype,
+      financialCategory: a.financialCategory,
+      balance,
+    };
   });
 }
 

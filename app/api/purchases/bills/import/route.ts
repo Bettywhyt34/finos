@@ -39,15 +39,11 @@ export async function POST(req: NextRequest) {
   const incomingBills = body.bills ?? []
   const vendorResolutions: Record<string, VendorResolution> = body.vendorResolutions ?? {}
 
-  // Pre-load vendors, campaigns, existing bills, GL accounts
-  const [vendors, campaigns, existingBills, defaultAccount] = await Promise.all([
+  // Pre-load vendors, existing bills, GL accounts
+  const [vendors, existingBills, defaultAccount] = await Promise.all([
     prisma.vendor.findMany({
       where: { tenantId },
       select: { id: true, companyName: true, vendorCode: true },
-    }),
-    prisma.revflowCampaign.findMany({
-      where: { tenantId },
-      select: { id: true, revflowId: true, campaignCode: true, campaignName: true },
     }),
     prisma.bill.findMany({
       where: { tenantId, externalBillId: { not: null } },
@@ -83,13 +79,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Campaign lookup
-  const campaignByRevflowId = new Map(campaigns.map((c) => [c.revflowId, c.id]))
-  const campaignByCode = new Map(
-    campaigns.filter((c) => c.campaignCode).map((c) => [c.campaignCode!.toLowerCase(), c.id])
-  )
-  const campaignByName = new Map(campaigns.map((c) => [c.campaignName.toLowerCase(), c.id]))
-
   // Existing bills (dedup)
   const existingByExternalId = new Map(existingBills.map((b) => [b.externalBillId!, b.id]))
 
@@ -107,17 +96,6 @@ export async function POST(req: NextRequest) {
     return defaultAccount?.id ?? null
   }
 
-  function resolveCampaign(ref: string | null): string | null {
-    if (!ref) return null
-    const r = ref.trim()
-    return (
-      campaignByRevflowId.get(r) ??
-      campaignByCode.get(r.toLowerCase()) ??
-      campaignByName.get(r.toLowerCase()) ??
-      null
-    )
-  }
-
   let imported = 0
   let updated = 0
   let skipped = 0
@@ -133,8 +111,6 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    const campaignId = resolveCampaign(b.campaignRef)
-
     const billData = {
       vendorId,
       billNumber: b.billNumber,
@@ -149,7 +125,6 @@ export async function POST(req: NextRequest) {
       totalAmount: b.totalAmount,
       amountPaid: b.amountPaid,
       notes: b.notes ?? null,
-      campaignId: campaignId ?? null,
       externalBillId: b.externalBillId,
       purchaseOrderNumber: b.purchaseOrderNumber ?? null,
     }

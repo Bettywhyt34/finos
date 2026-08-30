@@ -4,10 +4,9 @@
  *
  * Sync order (dependency-safe):
  *   1. Chart of Accounts → validate account mappings exist
- *   2. Campaigns         → upsert RevflowCampaign
- *   3. Invoices          → upsert RevflowInvoice + auto-post GL (DR AR / CR Revenue)
- *   4. Payments          → update invoice.paidAmount + post GL (DR Bank / CR AR + WHT)
- *   5. Journal Entries   → validate balance + cache (no FINOS GL re-post)
+ *   2. Invoices          → upsert RevflowInvoice + auto-post GL (DR AR / CR Revenue)
+ *   3. Payments          → update invoice.paidAmount + post GL (DR Bank / CR AR + WHT)
+ *   4. Journal Entries   → validate balance + cache (no FINOS GL re-post)
  *
  * Auto-post account codes (FINOS standard):
  *   CA-001  Accounts Receivable
@@ -32,7 +31,6 @@ import {
   RFCoAResponseSchema,
   parseRFCursor,
   stringifyRFCursor,
-  type RFCampaign,
   type RFInvoice,
   type RFPayment,
   type RFJournalEntry,
@@ -94,8 +92,7 @@ export async function processRevflow(
   // 1. Validate account mappings (no quarantine — throw to abort sync on missing maps)
   await validateAccountMappings(client, tenantId, since);
 
-  // 2-5. Sync entities in dependency order
-  add(await syncCampaigns(client, tenantId, syncLogId, since));
+  // 2-4. Sync entities in dependency order
   add(await syncInvoices(client, tenantId, syncLogId, since));
   add(await syncPayments(client, tenantId, syncLogId, since));
   add(await syncJournalEntries(client, tenantId, syncLogId, since));
@@ -136,68 +133,7 @@ async function validateAccountMappings(
   }
 }
 
-// ─── Step 2: Campaigns ───────────────────────────────────────────────────────
-
-async function syncCampaigns(
-  client: ReturnType<typeof createRevflowClient>,
-  orgId: string,
-  syncLogId: string,
-  since: string
-): Promise<Counts> {
-  const c    = zero();
-  const data = await client.getCampaigns(since);
-
-  for (const xf of data) {
-    c.processed++;
-    try {
-      (await upsertCampaign(orgId, xf)) === "created" ? c.created++ : c.updated++;
-      await upsertCache(orgId, SOURCE, "campaigns", xf.id, xf as unknown as JsonObject);
-    } catch (err) {
-      c.failed++;
-      c.quarantined++;
-      await quarantineRecord(
-        orgId, syncLogId, SOURCE, "campaigns", xf.id,
-        xf as unknown as JsonObject,
-        String(err instanceof Error ? err.message : err)
-      );
-    }
-  }
-  return c;
-}
-
-async function upsertCampaign(
-  orgId: string,
-  xf: RFCampaign
-): Promise<"created" | "updated"> {
-  const data = {
-    clientName:      xf.clientName,
-    campaignName:    xf.name,
-    campaignCode:    xf.campaignCode ?? undefined,
-    startDate:       xf.startDate ? new Date(xf.startDate) : undefined,
-    endDate:         xf.endDate   ? new Date(xf.endDate)   : undefined,
-    contractedAmount: xf.plannedValue,
-    currency:        xf.currency,
-    status:          xf.status ?? undefined,
-    syncedAt:        new Date(),
-  };
-
-  const existing = await prisma.revflowCampaign.findUnique({
-    where: { tenantId_revflowId: { tenantId: orgId, revflowId: xf.id } },
-    select: { id: true },
-  });
-
-  if (existing) {
-    await prisma.revflowCampaign.update({ where: { id: existing.id }, data });
-    return "updated";
-  }
-
-  await prisma.revflowCampaign.create({
-    data: { ...data, tenantId: orgId, revflowId: xf.id },
-  });
-  return "created";
-}
-
-// ─── Step 3: Invoices + GL auto-post ─────────────────────────────────────────
+// ─── Step 2: Invoices + GL auto-post ─────────────────────────────────────────
 
 async function syncInvoices(
   client: ReturnType<typeof createRevflowClient>,
@@ -235,18 +171,7 @@ async function upsertInvoice(
   orgId: string,
   xf: RFInvoice
 ): Promise<"created" | "updated"> {
-  // Resolve campaign FK (may be null)
-  let campaignId: string | null = null;
-  if (xf.campaignId) {
-    const camp = await prisma.revflowCampaign.findUnique({
-      where: { tenantId_revflowId: { tenantId: orgId, revflowId: xf.campaignId } },
-      select: { id: true },
-    });
-    campaignId = camp?.id ?? null;
-  }
-
   const invoiceData = {
-    campaignId:        campaignId ?? undefined,
     invoiceNumber:     xf.invoiceNumber,
     clientName:        xf.clientName,
     invoiceDate:       new Date(xf.issueDate),

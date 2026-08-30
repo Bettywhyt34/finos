@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   Upload, FileText, CheckCircle2, AlertCircle,
-  ArrowLeft, X, Loader2, Tag,
+  ArrowLeft, X, Loader2,
 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -54,11 +54,6 @@ export default function ExpenseImportPage() {
       }
       if (skipped > 0) {
         toast.warning(`${skipped} row(s) skipped (missing Reference ID or Category)`)
-      }
-
-      const withCampaign = expenses.filter((ex) => ex.campaignRef).length
-      if (withCampaign > 0) {
-        toast.info(`${withCampaign} expense${withCampaign !== 1 ? "s" : ""} have a campaign reference`)
       }
 
       setAllExpenses(expenses)
@@ -116,7 +111,6 @@ export default function ExpenseImportPage() {
   }
 
   const totalValue    = allExpenses.reduce((s, e) => s + e.totalAmount, 0)
-  const withCampaign  = allExpenses.filter((e) => e.campaignRef).length
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -170,7 +164,6 @@ export default function ExpenseImportPage() {
                 <p className="text-sm font-medium text-slate-900">{fileName}</p>
                 <p className="text-xs text-slate-500">
                   {allExpenses.length} expenses · {formatCurrency(totalValue)} total
-                  {withCampaign > 0 && ` · ${withCampaign} with campaign`}
                 </p>
               </div>
             </div>
@@ -199,7 +192,6 @@ export default function ExpenseImportPage() {
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Category</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Vendor</th>
                     <th className="text-right px-3 py-2 font-medium text-slate-600">Total</th>
-                    <th className="text-left px-3 py-2 font-medium text-slate-600">Campaign</th>
                     <th className="text-left px-3 py-2 font-medium text-slate-600">Status</th>
                   </tr>
                 </thead>
@@ -215,16 +207,6 @@ export default function ExpenseImportPage() {
                       <td className="px-3 py-2 text-slate-500 max-w-[100px] truncate">{exp.vendor ?? "—"}</td>
                       <td className="px-3 py-2 text-right font-medium text-slate-900">
                         {formatCurrency(exp.totalAmount)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {exp.campaignRef ? (
-                          <span className="inline-flex items-center gap-1 text-purple-700">
-                            <Tag className="h-3 w-3" />
-                            <span className="truncate max-w-[80px]">{exp.campaignRef}</span>
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
                       </td>
                       <td className="px-3 py-2">
                         <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", statusColors[exp.status] ?? "bg-slate-100 text-slate-600")}>

@@ -13,7 +13,7 @@ const INTEGRATIONS = [
     description: "Sync revenue campaigns, invoices, and payments into your FINOS ledger.",
     connectHref: "/integrations/revflow/connect",
     statusHref:  "/integrations/revflow/status",
-    scopes:      ["Campaigns", "Invoices", "Payments"],
+    scopes:      ["Invoices", "Payments"],
   },
   {
     key:         "xpenxflow" as const,

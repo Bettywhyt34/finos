@@ -256,8 +256,6 @@ export const ZOHO_CSV_HEADERS = [
   "Tax Percentage",
   "Contact Address ID",
   "Source",
-  "Campaign Outlet",
-  "Campaigns",
   "SIRET",
   "Company ID",
 ] as const

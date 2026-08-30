@@ -9,6 +9,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-geist-sans)", "Arial", "sans-serif"],
+        serif: ["var(--font-source-serif)", "Georgia", "serif"],
+        mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
+      },
       colors: {
         background:  "var(--background)",
         foreground:  "var(--foreground)",

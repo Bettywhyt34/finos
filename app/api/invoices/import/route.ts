@@ -176,7 +176,6 @@ export async function POST(req: NextRequest) {
           balanceDue: totalAmount,
           recognitionPeriod: getRecognitionPeriod(rec.invoiceDate),
           notes: rec.notes ?? null,
-          campaignId: rec.campaignId ?? null,
           externalTxnId: rec.externalTxnId ?? null,
           lines: {
             create: rec.lines.map((l) => ({

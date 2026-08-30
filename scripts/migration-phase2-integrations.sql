@@ -136,30 +136,6 @@ CREATE INDEX IF NOT EXISTS idx_unified_cache_period
   ON unified_transactions_cache (organization_id, source_app, recognition_period)
   WHERE recognition_period IS NOT NULL;
 
--- ─── revflow_campaigns ────────────────────────────────────────────────────────
--- Synced from Revflow: one row per campaign.
--- Read-only — never updated directly; overwritten on sync.
-
-CREATE TABLE IF NOT EXISTS revflow_campaigns (
-  id                   TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  organization_id      TEXT        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  revflow_id           TEXT        NOT NULL,  -- Source PK from Revflow
-  client_name          TEXT        NOT NULL,
-  campaign_name        TEXT        NOT NULL,
-  campaign_code        TEXT,
-  start_date           DATE,
-  end_date             DATE,
-  contracted_amount    NUMERIC(15,2),
-  currency             TEXT        NOT NULL DEFAULT 'NGN',
-  status               TEXT,
-  synced_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  CONSTRAINT uq_revflow_campaign UNIQUE (organization_id, revflow_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_revflow_campaigns_org
-  ON revflow_campaigns (organization_id, status);
-
 -- ─── revflow_invoices ─────────────────────────────────────────────────────────
 -- Synced from Revflow: revenue invoices.
 
@@ -167,7 +143,6 @@ CREATE TABLE IF NOT EXISTS revflow_invoices (
   id                   TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
   organization_id      TEXT        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   revflow_id           TEXT        NOT NULL,
-  campaign_id          TEXT        REFERENCES revflow_campaigns(id),
   invoice_number       TEXT        NOT NULL,
   client_name          TEXT        NOT NULL,
   invoice_date         DATE        NOT NULL,
@@ -188,9 +163,6 @@ CREATE TABLE IF NOT EXISTS revflow_invoices (
 
 CREATE INDEX IF NOT EXISTS idx_revflow_invoices_org
   ON revflow_invoices (organization_id, recognition_period, status);
-
-CREATE INDEX IF NOT EXISTS idx_revflow_invoices_campaign
-  ON revflow_invoices (campaign_id);
 
 -- ─── earnmark360_employees ────────────────────────────────────────────────────
 -- Synced from EARNMARK360: employee master data.
@@ -257,7 +229,7 @@ WHERE table_schema = 'public'
   AND table_name IN (
     'integration_connections', 'account_mappings', 'sync_logs',
     'sync_quarantine', 'unified_transactions_cache',
-    'revflow_campaigns', 'revflow_invoices',
+    'revflow_invoices',
     'earnmark360_employees', 'earnmark360_payroll_runs'
   )
 ORDER BY table_name;
