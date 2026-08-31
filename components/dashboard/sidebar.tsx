@@ -31,14 +31,11 @@ const BASE_NAV: NavSection[] = [
     { label: "Customers", href: "/customers" },
     { label: "Invoices", href: "/sales/invoices" },
     { label: "Receipts", href: "/sales/receipts" },
-    { label: "Credit Notes", href: "/sales/credit-notes" },
   ] },
   { key: "money-out", label: "Money Out", icon: WalletCards, children: [
     { label: "Vendors", href: "/vendors" },
-    { label: "Purchase Orders", href: "/purchases/orders" },
     { label: "Bills", href: "/purchases/bills" },
     { label: "Payments Made", href: "/purchases/payments" },
-    { label: "Vendor Credits", href: "/purchases/vendor-credits" },
     { label: "Expenses", href: "/expenses" },
   ] },
   { key: "banking", label: "Banking", icon: Landmark, children: [
