@@ -9,6 +9,7 @@ export type SystemAccountRole =
   | "INPUT_VAT"
   | "OUTPUT_VAT"
   | "WHT_PAYABLE"
+  | "WHT_RECEIVABLE"
   | "RETAINED_EARNINGS"
   | "FX_GAIN"
   | "FX_LOSS"
@@ -23,6 +24,7 @@ const EXPECTED_TYPES: Partial<Record<SystemAccountRole, AccountType[]>> = {
   INPUT_VAT: ["ASSET"],
   OUTPUT_VAT: ["LIABILITY"],
   WHT_PAYABLE: ["LIABILITY"],
+  WHT_RECEIVABLE: ["ASSET"],
   RETAINED_EARNINGS: ["EQUITY"],
   FX_GAIN: ["INCOME"],
   FX_LOSS: ["EXPENSE"],
