@@ -14,6 +14,7 @@ const EXPECTED_TYPES: Record<SystemAccountRole, AccountType[]> = {
   INPUT_VAT: ["ASSET"],
   OUTPUT_VAT: ["LIABILITY"],
   WHT_PAYABLE: ["LIABILITY"],
+  WHT_RECEIVABLE: ["ASSET"],
   RETAINED_EARNINGS: ["EQUITY"],
   FX_GAIN: ["INCOME"],
   FX_LOSS: ["EXPENSE"],
