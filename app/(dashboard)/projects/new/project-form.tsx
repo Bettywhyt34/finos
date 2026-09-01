@@ -85,16 +85,16 @@ export function ProjectForm({ customers, incomeAccounts, assetAccounts, liabilit
 
       <section className="rounded-xl border border-[var(--app-border)] bg-white p-6">
         <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Billing plan</h2>
-        <p className="mt-1 text-sm text-[var(--text-secondary)]">Optional planning milestones only. FINOS will not create invoices or recognise revenue automatically.</p>
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">Optional planning milestones only. Leave all rows blank if billing is not yet planned. FINOS will not create invoices or recognise revenue from these milestones.</p>
         <div className="mt-6 overflow-hidden rounded-lg border border-[var(--app-border)]">
           <div className="grid grid-cols-[80px_1fr_1fr] gap-4 bg-[var(--surface-muted)] px-4 py-3 text-xs font-medium text-[var(--text-secondary)]">
             <span>Stage</span><span>Percentage</span><span>Expected billing date</span>
           </div>
-          {[30, 30, 40].map((percentage, index) => (
-            <div key={index} className="grid grid-cols-[80px_1fr_1fr] items-center gap-4 border-t border-[var(--app-border)] px-4 py-3">
-              <span className="text-sm font-medium text-[var(--text-primary)]">{index + 1}</span>
-              <input aria-label={`Billing percentage ${index + 1}`} className="h-9 rounded-lg border border-[var(--app-border)] px-3 text-sm tabular-nums" name={`billingPercentage${index + 1}`} type="number" min="0" max="100" step="0.01" defaultValue={percentage} />
-              <input aria-label={`Billing date ${index + 1}`} className="h-9 rounded-lg border border-[var(--app-border)] px-3 text-sm" name={`billingDate${index + 1}`} type="date" />
+          {[1, 2, 3].map((stage) => (
+            <div key={stage} className="grid grid-cols-[80px_1fr_1fr] items-center gap-4 border-t border-[var(--app-border)] px-4 py-3">
+              <span className="text-sm font-medium text-[var(--text-primary)]">{stage}</span>
+              <input aria-label={`Billing percentage ${stage}`} className="h-9 rounded-lg border border-[var(--app-border)] px-3 text-sm tabular-nums" name={`billingPercentage${stage}`} type="number" min="0" max="100" step="0.01" placeholder="e.g. 30" />
+              <input aria-label={`Billing date ${stage}`} className="h-9 rounded-lg border border-[var(--app-border)] px-3 text-sm" name={`billingDate${stage}`} type="date" />
             </div>
           ))}
         </div>
