@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { CreditNoteForm, type CreditEligibleInvoice } from "./credit-note-form";
+import { ReverseCreditNoteButton } from "./reverse-credit-note-button";
 
 interface CreditNoteRow {
   id: string;
@@ -99,7 +100,7 @@ export default async function CreditNotesPage() {
         <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-white">
           <div className="border-b border-[var(--app-border)] px-6 py-5"><h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Credit note register</h2></div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[1240px] text-sm">
               <thead className="bg-[var(--surface-muted)] text-left text-xs text-[var(--text-secondary)]">
                 <tr>
                   <th className="px-5 py-3 font-medium">Credit note</th>
@@ -110,13 +111,15 @@ export default async function CreditNotesPage() {
                   <th className="px-5 py-3 text-right font-medium">Credit</th>
                   <th className="px-5 py-3 text-right font-medium">NGN amount</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  {canManage ? <th className="px-5 py-3 text-right font-medium">Action</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--app-border)]">
                 {rows.map((row) => {
                   const rate = Number(row.exchangeRate ?? 1);
+                  const reversed = row.status === "REVERSED";
                   return (
-                    <tr key={row.id} className="hover:bg-[var(--app-bg)]">
+                    <tr key={row.id} className={reversed ? "bg-[var(--surface-muted)] opacity-70" : "hover:bg-[var(--app-bg)]"}>
                       <td className="px-5 py-4 font-code text-xs font-semibold text-[var(--finos-accent)]">{row.creditNumber}</td>
                       <td className="px-5 py-4"><Link href={`/sales/invoices/${row.invoiceId}`} className="text-[var(--finos-accent)] hover:underline">{row.invoiceNumber}</Link></td>
                       <td className="px-5 py-4 font-medium text-[var(--text-primary)]">{row.customerName}</td>
@@ -128,6 +131,11 @@ export default async function CreditNotesPage() {
                         {row.currency !== "NGN" ? <p className="mt-1 font-code text-[11px] text-[var(--text-secondary)]">1 {row.currency} = ₦{rate.toLocaleString("en-NG", { maximumFractionDigits: 6 })}</p> : null}
                       </td>
                       <td className="px-5 py-4"><span className="rounded-md bg-[var(--surface-muted)] px-2 py-1 text-xs font-medium text-[var(--text-secondary)]">{row.status.toLowerCase()}</span></td>
+                      {canManage ? (
+                        <td className="px-5 py-4 text-right">
+                          {row.status === "APPLIED" ? <ReverseCreditNoteButton creditNoteId={row.id} creditNumber={row.creditNumber} /> : <span className="text-xs text-[var(--text-secondary)]">{reversed ? "Reversed" : "—"}</span>}
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
