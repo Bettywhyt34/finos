@@ -33,6 +33,10 @@ interface Props {
 
 interface Allocation { invoiceId: string; invoiceNumber: string; maxAmount: number; amount: number; }
 
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -56,7 +60,8 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
   const [payOpen, setPayOpen] = useState(false);
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
-  const [amount, setAmount] = useState(invoice.balanceDue);
+  const [grossAmount, setGrossAmount] = useState(invoice.balanceDue);
+  const [whtAmount, setWhtAmount] = useState(0);
   const [allocations, setAllocations] = useState<Allocation[]>(() =>
     openInvoices.map((i) => ({
       invoiceId: i.id,
@@ -66,7 +71,8 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     }))
   );
 
-  const totalAllocated = allocations.reduce((s, a) => s + a.amount, 0);
+  const cashAmount = roundMoney(Math.max(0, grossAmount - whtAmount));
+  const totalAllocated = roundMoney(allocations.reduce((s, a) => s + a.amount, 0));
 
   function autoAllocate(total: number) {
     let remaining = total;
@@ -74,7 +80,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
       prev.map((a) => {
         const allocated = Math.min(remaining, a.maxAmount);
         remaining = Math.max(0, remaining - allocated);
-        return { ...a, amount: Math.round(allocated * 100) / 100 };
+        return { ...a, amount: roundMoney(allocated) };
       })
     );
   }
@@ -123,8 +129,16 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
 
   async function handlePayment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (Math.abs(totalAllocated - amount) > 0.01) {
-      toast.error(`Allocated ${formatCurrency(totalAllocated)} ≠ payment ${formatCurrency(amount)}`);
+    if (grossAmount <= 0) {
+      toast.error("Gross AR settled must be greater than zero");
+      return;
+    }
+    if (whtAmount < 0 || whtAmount - grossAmount > 0.01) {
+      toast.error("WHT withheld cannot exceed the gross amount settled");
+      return;
+    }
+    if (Math.abs(totalAllocated - grossAmount) > 0.01) {
+      toast.error(`Allocated ${formatCurrency(totalAllocated)} ≠ gross settled ${formatCurrency(grossAmount)}`);
       return;
     }
     setLoading(true);
@@ -132,7 +146,8 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     const result = await recordCustomerPayment({
       customerId: invoice.customerId,
       paymentDate,
-      amount,
+      amount: cashAmount,
+      whtAmount,
       method,
       reference: String(fd.get("reference") || ""),
       notes: String(fd.get("notes") || ""),
@@ -140,7 +155,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     });
     setLoading(false);
     if (result?.error) { toast.error(result.error); return; }
-    toast.success("Payment recorded");
+    toast.success("Receipt recorded");
     setPayOpen(false);
     router.refresh();
   }
@@ -279,21 +294,51 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
                 <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
               </div>
               <div className="space-y-1.5">
-                <Label>Amount</Label>
+                <Label>Gross AR Settled</Label>
                 <Input
                   type="number"
                   min="0.01"
                   step="0.01"
-                  value={amount}
+                  value={grossAmount}
                   onChange={(e) => {
                     const v = parseFloat(e.target.value) || 0;
-                    setAmount(v);
+                    setGrossAmount(v);
                     autoAllocate(v);
                   }}
                   required
                 />
+                <p className="text-xs text-slate-500">Invoice balance cleared before customer WHT.</p>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>WHT Withheld by Customer</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max={grossAmount}
+                  step="0.01"
+                  value={whtAmount}
+                  onChange={(e) => setWhtAmount(parseFloat(e.target.value) || 0)}
+                />
+                <p className="text-xs text-slate-500">Recognised as a recoverable tax credit.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cash Received</Label>
+                <div className="flex h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 font-mono text-sm font-semibold text-slate-900">
+                  {formatCurrency(cashAmount)}
+                </div>
+                <p className="text-xs text-slate-500">Gross settled less WHT withheld.</p>
+              </div>
+            </div>
+
+            {whtAmount > 0 && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                Accounting: Dr Bank {formatCurrency(cashAmount)} + Dr WHT Receivable {formatCurrency(whtAmount)} / Cr Accounts Receivable {formatCurrency(grossAmount)}.
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Method</Label>
@@ -316,8 +361,8 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
             {openInvoices.length > 1 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Allocate to Invoices</Label>
-                  <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={() => autoAllocate(amount)}>
+                  <Label>Allocate Gross Settlement to Invoices</Label>
+                  <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={() => autoAllocate(grossAmount)}>
                     Auto-allocate
                   </Button>
                 </div>
@@ -340,8 +385,8 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
                     </div>
                   ))}
                 </div>
-                <div className={`text-xs text-right ${Math.abs(totalAllocated - amount) > 0.01 ? "text-red-500" : "text-green-600"}`}>
-                  Allocated: {formatCurrency(totalAllocated)} / {formatCurrency(amount)}
+                <div className={`text-xs text-right ${Math.abs(totalAllocated - grossAmount) > 0.01 ? "text-red-500" : "text-green-600"}`}>
+                  Allocated: {formatCurrency(totalAllocated)} / {formatCurrency(grossAmount)}
                 </div>
               </div>
             )}
@@ -353,7 +398,9 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
 
             <DialogFooter className="pt-2">
               <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-              <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Record Payment"}</Button>
+              <Button type="submit" disabled={loading || grossAmount <= 0 || whtAmount > grossAmount}>
+                {loading ? "Saving…" : "Record Receipt"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
