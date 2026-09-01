@@ -11,7 +11,7 @@
     "check": "npm run typecheck && npm run build",
     "audit:accounting": "node scripts/accounting-integrity.mjs",
     "audit:projects": "node scripts/project-accounting-integrity.mjs",
-    "audit:money-in": "node scripts/money-in-integrity.mjs && node scripts/quote-integrity.mjs"
+    "audit:money-in": "node scripts/money-in-integrity.mjs && node scripts/quote-integrity.mjs && node scripts/invoice-settlement-integrity.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
