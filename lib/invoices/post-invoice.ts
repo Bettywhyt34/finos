@@ -38,6 +38,14 @@ type RevenueGroup = {
   amount: number;
 };
 
+type SourceLineAllocation = {
+  invoiceLineId: string;
+  incomeAccountId: string;
+  projectId: string | null;
+  reportingTags: ReportingTags;
+  amount: number;
+};
+
 function normaliseReportingTags(value: Prisma.JsonValue | null): ReportingTags {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
 
@@ -237,68 +245,72 @@ export async function postInvoiceAndMarkSent(
     };
   }
 
-  // Preserve source economics and dimensions by aggregating only lines with the
-  // same intended income account + Project + Reporting Tags. When revenue is
-  // deferred, the intended income account is retained in the invoice source lines
-  // for the later recognition event while the posting account is Unearned Income.
-  const revenueGroups = new Map<string, RevenueGroup>();
-  for (const line of invoice.lines) {
-    const incomeAccountId = line.incomeAccountId!;
-    const projectId = line.projectId ?? null;
-    const reportingTags = normaliseReportingTags(line.reportingTags);
-    const key = dimensionKey(incomeAccountId, projectId, reportingTags);
-    const gross = parseFloat(String(line.amount));
-    const lineDiscount = parseFloat(String(line.discountAmount));
-    const amount = toNGN(gross - lineDiscount, rate);
-
-    const current = revenueGroups.get(key);
-    if (current) {
-      current.amount = Math.round((current.amount + amount) * 100) / 100;
-    } else {
-      revenueGroups.set(key, {
-        incomeAccountId,
-        projectId,
-        reportingTags,
-        amount: Math.round(amount * 100) / 100,
-      });
-    }
-  }
+  // Build one evidence amount per source line. This mirrors the journal economics
+  // but preserves invoice-line identity for later Project revenue recognition.
+  const sourceLineAllocations: SourceLineAllocation[] = invoice.lines.map((line) => ({
+    invoiceLineId: line.id,
+    incomeAccountId: line.incomeAccountId!,
+    projectId: line.projectId ?? null,
+    reportingTags: normaliseReportingTags(line.reportingTags),
+    amount: toNGN(
+      parseFloat(String(line.amount)) - parseFloat(String(line.discountAmount)),
+      rate,
+    ),
+  }));
 
   if (invoiceDiscountNGN > 0.001) {
-    const totalBeforeInvoiceDiscount = Array.from(revenueGroups.values())
-      .reduce((sum, group) => sum + group.amount, 0);
-
-    if (totalBeforeInvoiceDiscount > 0) {
-      for (const group of revenueGroups.values()) {
+    const beforeInvoiceDiscount = sourceLineAllocations.reduce((sum, line) => sum + line.amount, 0);
+    if (beforeInvoiceDiscount > 0) {
+      for (const line of sourceLineAllocations) {
         const reduction = Math.round(
-          invoiceDiscountNGN * (group.amount / totalBeforeInvoiceDiscount) * 100,
+          invoiceDiscountNGN * (line.amount / beforeInvoiceDiscount) * 100,
         ) / 100;
-        group.amount = Math.round((group.amount - reduction) * 100) / 100;
+        line.amount = Math.round((line.amount - reduction) * 100) / 100;
       }
     }
   }
 
-  const netSalesTotal = Array.from(revenueGroups.values())
-    .reduce((sum, group) => sum + group.amount, 0);
   const expectedNetSales = Math.round((totalAmountNGN - taxAmountNGN) * 100) / 100;
-  const roundingDifference = Math.round((expectedNetSales - netSalesTotal) * 100) / 100;
-
-  if (Math.abs(roundingDifference) > 1) {
+  const sourceLineTotal = sourceLineAllocations.reduce((sum, line) => sum + line.amount, 0);
+  const sourceLineRounding = Math.round((expectedNetSales - sourceLineTotal) * 100) / 100;
+  if (Math.abs(sourceLineRounding) > 1) {
     return {
       error:
-        `Journal rounding imbalance exceeds tolerance (${roundingDifference} NGN). ` +
-        "This may indicate a data inconsistency. Please review the invoice.",
+        `Invoice line allocation imbalance exceeds tolerance (${sourceLineRounding} NGN). ` +
+        "Please review the invoice totals.",
     };
   }
+  if (sourceLineRounding !== 0 && sourceLineAllocations.length) {
+    let largest = sourceLineAllocations[0];
+    for (const line of sourceLineAllocations) {
+      if (line.amount > largest.amount) largest = line;
+    }
+    largest.amount = Math.round((largest.amount + sourceLineRounding) * 100) / 100;
+  }
 
-  if (roundingDifference !== 0 && revenueGroups.size > 0) {
-    let largest: RevenueGroup | null = null;
-    for (const group of revenueGroups.values()) {
-      if (!largest || group.amount > largest.amount) largest = group;
+  // Preserve source economics and dimensions by aggregating only lines with the
+  // same intended income account + Project + Reporting Tags. When revenue is
+  // deferred, the intended income account remains available in the source allocation.
+  const revenueGroups = new Map<string, RevenueGroup>();
+  for (const line of sourceLineAllocations) {
+    const key = dimensionKey(line.incomeAccountId, line.projectId, line.reportingTags);
+    const current = revenueGroups.get(key);
+    if (current) {
+      current.amount = Math.round((current.amount + line.amount) * 100) / 100;
+    } else {
+      revenueGroups.set(key, {
+        incomeAccountId: line.incomeAccountId,
+        projectId: line.projectId,
+        reportingTags: line.reportingTags,
+        amount: line.amount,
+      });
     }
-    if (largest) {
-      largest.amount = Math.round((largest.amount + roundingDifference) * 100) / 100;
-    }
+  }
+
+  const netSalesTotal = Array.from(revenueGroups.values()).reduce((sum, group) => sum + group.amount, 0);
+  const roundingDifference = Math.round((expectedNetSales - netSalesTotal) * 100) / 100;
+  if (Math.abs(roundingDifference) > 0.005) {
+    return { error: `Journal allocation imbalance: ${roundingDifference.toFixed(2)} NGN.` };
   }
 
   const fxNote = rate !== 1 ? ` (${invoice.currency} @ ${rate})` : "";
@@ -366,8 +378,6 @@ export async function postInvoiceAndMarkSent(
         throw new Error("A journal entry already exists for this invoice. Concurrent duplicate prevented.");
       }
 
-      // Billing happens when the invoice is issued. A future revenue-recognition
-      // event must never delay AR, VAT or Unearned Income to another period.
       await postJournalEntryInTransaction(tx, {
         tenantId,
         createdBy: userId,
@@ -381,6 +391,23 @@ export async function postInvoiceAndMarkSent(
         sourceId: invoiceId,
         lines: journalLines,
       });
+
+      // One immutable billing allocation per Project invoice line. Values are stored
+      // in the base ledger currency (NGN), matching the authoritative journal.
+      for (const allocation of sourceLineAllocations) {
+        if (!allocation.projectId || allocation.amount <= 0) continue;
+        await tx.$executeRaw`
+          INSERT INTO "invoice_line_revenue_allocations" (
+            "tenant_id", "project_id", "invoice_id", "invoice_line_id", "income_account_id",
+            "currency", "invoice_amount", "contract_asset_cleared", "immediate_revenue", "unearned_created"
+          ) VALUES (
+            ${tenantId}::uuid, ${allocation.projectId}, ${invoice.id}, ${allocation.invoiceLineId},
+            ${allocation.incomeAccountId}, 'NGN', ${allocation.amount}, 0,
+            ${invoice.recogniseRevenueOnInvoiceDate ? allocation.amount : 0},
+            ${invoice.recogniseRevenueOnInvoiceDate ? 0 : allocation.amount}
+          )
+        `;
+      }
 
       const updated = await tx.invoice.updateMany({
         where: { id: invoiceId, tenantId, status: "DRAFT" },
