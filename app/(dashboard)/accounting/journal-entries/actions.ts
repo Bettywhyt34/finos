@@ -238,7 +238,7 @@ export async function updateJournalEntry(
       // The target period is the relevant control when a draft is moved between months.
       await assertPeriodOpenInTransaction(tx, orgId, data.recognitionPeriod);
 
-      const uniqueAccountIds = Array.from(new Set(lines.map((line) => line.accountId));
+      const uniqueAccountIds = Array.from(new Set(lines.map((line) => line.accountId)));
       const accountCount = await tx.chartOfAccounts.count({
         where: { tenantId: orgId, isActive: true, id: { in: uniqueAccountIds } },
       });
