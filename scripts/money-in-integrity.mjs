@@ -149,6 +149,78 @@ const checks = [
       having abs(i.amount_paid - coalesce(sum(case when cp.id is not null then cpa.amount else 0 end),0)) > 0.01
     `,
   },
+  {
+    name: "Applied credit note has authoritative journal evidence",
+    sql: `
+      select cn.id, cn.tenant_id, cn.credit_number, cn.journal_entry_id
+      from credit_notes cn
+      where cn.status = 'APPLIED'::"CreditNoteStatus"
+        and (
+          cn.journal_entry_id is null
+          or not exists (
+            select 1 from journal_entries je
+            where je.id = cn.journal_entry_id
+              and je.tenant_id = cn.tenant_id
+              and je.source = 'credit_note'
+              and je.source_id = cn.id
+              and je.is_locked = true
+          )
+        )
+    `,
+  },
+  {
+    name: "Reversed credit note has reversal journal evidence",
+    sql: `
+      select cn.id, cn.tenant_id, cn.credit_number, cn.reversal_journal_entry_id
+      from credit_notes cn
+      where cn.status = 'REVERSED'::"CreditNoteStatus"
+        and (
+          cn.reversal_journal_entry_id is null
+          or not exists (
+            select 1 from journal_entries je
+            where je.id = cn.reversal_journal_entry_id
+              and je.tenant_id = cn.tenant_id
+              and je.source = 'credit_note_reversal'
+              and je.source_id = cn.id
+              and je.is_locked = true
+          )
+        )
+    `,
+  },
+  {
+    name: "Credit note invoice customer currency and rate are consistent",
+    sql: `
+      select cn.id, cn.credit_number, cn.tenant_id, i.tenant_id as invoice_tenant,
+             cn.customer_id as credit_customer, i.customer_id as invoice_customer,
+             cn.currency as credit_currency, i.currency as invoice_currency,
+             cn.exchange_rate as credit_rate, i.exchange_rate as invoice_rate
+      from credit_notes cn
+      join invoices i on i.id = cn.invoice_id
+      where cn.tenant_id <> i.tenant_id
+         or cn.customer_id <> i.customer_id
+         or upper(cn.currency) <> upper(i.currency)
+         or abs(cn.exchange_rate - i.exchange_rate) > 0.000001
+    `,
+  },
+  {
+    name: "Credit note base amount matches invoice carrying rate",
+    sql: `
+      select cn.id, cn.credit_number, cn.base_amount,
+             round((cn.amount * cn.exchange_rate)::numeric,2) as expected_base_amount
+      from credit_notes cn
+      where abs(cn.base_amount - round((cn.amount * cn.exchange_rate)::numeric,2)) > 0.01
+    `,
+  },
+  {
+    name: "Applied V1 credit note is not Project linked",
+    sql: `
+      select distinct cn.id, cn.tenant_id, cn.credit_number, cn.invoice_id
+      from credit_notes cn
+      join invoice_lines il on il.invoice_id = cn.invoice_id
+      where cn.status = 'APPLIED'::"CreditNoteStatus"
+        and il.project_id is not null
+    `,
+  },
 ];
 
 let failed = 0;
