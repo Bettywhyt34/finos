@@ -23,6 +23,15 @@ export interface ProjectRevenueHistory {
   reversalReason: string | null;
 }
 
+export interface ProjectCostBreakdownRow {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  source: string;
+  amount: number;
+  entryCount: number;
+}
+
 interface MetricRow {
   revenueEarned: unknown;
   invoiced: unknown;
@@ -45,11 +54,21 @@ interface HistoryRow {
   reversalReason: string | null;
 }
 
+interface CostBreakdownDbRow {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  source: string | null;
+  amount: unknown;
+  entryCount: bigint | number;
+}
+
 export async function getProjectFinancials(tenantId: string, projectId: string): Promise<{
   metrics: ProjectFinancialMetrics;
   history: ProjectRevenueHistory[];
+  costBreakdown: ProjectCostBreakdownRow[];
 }> {
-  const [metricRows, historyRows] = await Promise.all([
+  const [metricRows, historyRows, costRows] = await Promise.all([
     prisma.$queryRaw<MetricRow[]>`
       WITH gl AS (
         SELECT
@@ -106,6 +125,25 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
       WHERE "tenant_id" = ${tenantId}::uuid AND "project_id" = ${projectId}
       ORDER BY "recognition_date" DESC, "created_at" DESC
     `,
+    prisma.$queryRaw<CostBreakdownDbRow[]>`
+      SELECT
+        coa."id" AS "accountId",
+        coa."code" AS "accountCode",
+        coa."name" AS "accountName",
+        je."source",
+        COALESCE(SUM(jel."debit" - jel."credit"), 0) AS "amount",
+        COUNT(DISTINCT je."id") AS "entryCount"
+      FROM "journal_entry_lines" jel
+      INNER JOIN "journal_entries" je ON je."id" = jel."journal_entry_id"
+      INNER JOIN "chart_of_accounts" coa ON coa."id" = jel."account_id"
+      WHERE je."tenant_id" = ${tenantId}::uuid
+        AND jel."project_id" = ${projectId}
+        AND coa."type" = 'EXPENSE'
+        AND je."source" IS DISTINCT FROM 'year-end-close'
+      GROUP BY coa."id", coa."code", coa."name", je."source"
+      HAVING ABS(COALESCE(SUM(jel."debit" - jel."credit"), 0)) > 0.005
+      ORDER BY ABS(COALESCE(SUM(jel."debit" - jel."credit"), 0)) DESC, coa."code" ASC
+    `,
   ]);
 
   const row = metricRows[0];
@@ -136,6 +174,14 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
       journalEntryId: history.journalEntryId,
       reversedAt: history.reversedAt?.toISOString() ?? null,
       reversalReason: history.reversalReason,
+    })),
+    costBreakdown: costRows.map((cost) => ({
+      accountId: cost.accountId,
+      accountCode: cost.accountCode,
+      accountName: cost.accountName,
+      source: cost.source?.trim() || "manual",
+      amount: Number(cost.amount),
+      entryCount: Number(cost.entryCount),
     })),
   };
 }
