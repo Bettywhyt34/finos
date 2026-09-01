@@ -5,8 +5,6 @@ import {
   Banknote,
   CalendarDays,
   CircleDollarSign,
-  FileText,
-  FolderOpen,
   History,
   ReceiptText,
   TrendingUp,
@@ -14,7 +12,11 @@ import {
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { getProjectFinancials, type ProjectFinancialMetrics } from "@/lib/projects/financials";
+import {
+  getProjectFinancials,
+  type ProjectCostBreakdownRow,
+  type ProjectFinancialMetrics,
+} from "@/lib/projects/financials";
 import { ProjectDocuments, type ProjectDocumentRow } from "./project-documents";
 import { ProjectRevenuePanel } from "./project-revenue-panel";
 
@@ -116,7 +118,11 @@ export default async function ProjectDetailPage({
   const costBudget = project.costBudget == null ? null : Number(project.costBudget);
   const plannedMargin = costBudget == null ? null : contractValue - costBudget;
   const milestones = parseBillingSchedule(project.billingSchedule);
-  const { metrics: financialMetrics, history: revenueHistory } = await getProjectFinancials(tenantId, project.id);
+  const {
+    metrics: financialMetrics,
+    history: revenueHistory,
+    costBreakdown,
+  } = await getProjectFinancials(tenantId, project.id);
 
   let documents: ProjectDocumentRow[] = [];
   let activities: ProjectActivityRow[] = [];
@@ -207,7 +213,9 @@ export default async function ProjectDetailPage({
           canManage={canManage}
         />
       ) : null}
-      {activeTab === "costs" ? <Costs metrics={financialMetrics} /> : null}
+      {activeTab === "costs" ? (
+        <Costs metrics={financialMetrics} costBudget={costBudget} projectCurrency={project.currency} breakdown={costBreakdown} />
+      ) : null}
       {activeTab === "documents" ? <ProjectDocuments projectId={project.id} documents={documents} canManage={canManage} /> : null}
       {activeTab === "activity" ? <Activity project={project} activities={activities} /> : null}
     </div>
@@ -319,20 +327,71 @@ function Overview({
   );
 }
 
-function Costs({ metrics }: { metrics: ProjectFinancialMetrics }) {
+function Costs({
+  metrics,
+  costBudget,
+  projectCurrency,
+  breakdown,
+}: {
+  metrics: ProjectFinancialMetrics;
+  costBudget: number | null;
+  projectCurrency: string;
+  breakdown: ProjectCostBreakdownRow[];
+}) {
   return (
     <section className="space-y-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric icon={ReceiptText} label="Costs incurred" value={formatCurrency(metrics.costsIncurred)} />
         <Metric icon={TrendingUp} label="Revenue earned" value={formatCurrency(metrics.revenueEarned)} />
         <Metric icon={CircleDollarSign} label="Gross margin" value={formatCurrency(metrics.grossMargin)} />
-        <Metric icon={Banknote} label="Cost budget variance" value="See commercial plan" />
+        <Metric icon={Banknote} label="Cost budget" value={costBudget == null ? "Not set" : formatCurrency(costBudget, projectCurrency)} />
       </div>
-      <EmptyPanel
-        icon={ReceiptText}
-        title="Project cost detail is being reconstructed"
-        text="The headline cost is already ledger-backed. The next cost layer will break it down by bills, expenses, accruals and direct journals without treating planned cost as incurred cost."
-      />
+
+      {projectCurrency !== "NGN" && costBudget != null ? (
+        <p className="text-xs text-[var(--text-secondary)]">Cost budget is a commercial plan in {projectCurrency}; incurred costs and margin are NGN ledger amounts and are not directly subtracted from that foreign-currency budget without a defined budget FX basis.</p>
+      ) : null}
+
+      <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-white">
+        <div className="border-b border-[var(--app-border)] px-6 py-5">
+          <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Cost ledger</h2>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">Expense activity posted to this Project, grouped by account and source. Payment status does not determine when cost is incurred.</p>
+        </div>
+        {breakdown.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-sm">
+              <thead className="bg-[var(--surface-muted)] text-left text-xs text-[var(--text-secondary)]">
+                <tr>
+                  <th className="px-6 py-3 font-medium">Expense account</th>
+                  <th className="px-6 py-3 font-medium">Source</th>
+                  <th className="px-6 py-3 text-right font-medium">Entries</th>
+                  <th className="px-6 py-3 text-right font-medium">Amount (NGN)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--app-border)]">
+                {breakdown.map((row) => (
+                  <tr key={`${row.accountId}-${row.source}`}>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-[var(--text-primary)]">{row.accountName}</p>
+                      <p className="font-code mt-0.5 text-xs text-[var(--text-secondary)]">{row.accountCode}</p>
+                    </td>
+                    <td className="px-6 py-4 text-[var(--text-secondary)]">{formatSource(row.source)}</td>
+                    <td className="tabular-nums px-6 py-4 text-right text-[var(--text-secondary)]">{row.entryCount}</td>
+                    <td className="font-financial tabular-nums px-6 py-4 text-right font-medium text-[var(--text-primary)]">{formatCurrency(row.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t border-[var(--app-border)] bg-[var(--surface-muted)]">
+                <tr>
+                  <td colSpan={3} className="px-6 py-4 font-medium text-[var(--text-primary)]">Total costs incurred</td>
+                  <td className="font-financial px-6 py-4 text-right font-semibold text-[var(--text-primary)]">{formatCurrency(metrics.costsIncurred)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <EmptyCompact text="No expense entries have been posted to this Project yet." />
+        )}
+      </section>
     </section>
   );
 }
@@ -390,18 +449,6 @@ function Detail({ label, value, financial, code }: { label: string; value: strin
   );
 }
 
-function EmptyPanel({ icon: Icon, title, text }: { icon: typeof FolderOpen; title: string; text: string }) {
-  return (
-    <section className="grid min-h-80 place-items-center rounded-xl border border-[var(--app-border)] bg-white px-6 py-14 text-center">
-      <div className="max-w-lg">
-        <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[var(--surface-muted)] text-[var(--finos-accent)]"><Icon className="h-5 w-5" /></div>
-        <h2 className="font-serif mt-5 text-xl font-medium text-[var(--text-primary)]">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{text}</p>
-      </div>
-    </section>
-  );
-}
-
 function EmptyCompact({ text }: { text: string }) {
   return <p className="px-6 py-10 text-center text-sm text-[var(--text-secondary)]">{text}</p>;
 }
@@ -413,6 +460,12 @@ function parseBillingSchedule(value: unknown): BillingMilestone[] {
     const candidate = item as Record<string, unknown>;
     return typeof candidate.percentage === "number" && typeof candidate.expectedDate === "string";
   });
+}
+
+function formatSource(source: string) {
+  return source
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatDateTime(value: Date) {
