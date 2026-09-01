@@ -7,13 +7,21 @@ import { postJournalEntryInTransaction } from "@/lib/journal";
 import { resolveSystemAccount } from "@/lib/accounting/system-accounts";
 import { getRecognitionPeriod } from "@/lib/utils";
 
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 export async function recordCustomerPayment(data: {
   customerId: string;
   paymentDate: string;
+  /** Cash actually received into the business. */
   amount: number;
+  /** Tax withheld by the customer and recoverable by the business. */
+  whtAmount?: number;
   method: string;
   reference?: string;
   notes?: string;
+  /** Gross AR settled; allocations include both cash and WHT. */
   invoiceAllocations: { invoiceId: string; amount: number }[];
 }) {
   const session = await auth();
@@ -21,16 +29,30 @@ export async function recordCustomerPayment(data: {
   const userId = session?.user?.id;
   if (!tenantId || !userId) return { error: "Unauthorized" };
 
-  if (!Number.isFinite(data.amount) || data.amount <= 0) {
-    return { error: "Payment amount must be greater than zero" };
+  const cashAmount = roundMoney(data.amount);
+  const whtAmount = roundMoney(data.whtAmount ?? 0);
+  const grossSettled = roundMoney(cashAmount + whtAmount);
+
+  if (!Number.isFinite(cashAmount) || cashAmount < 0) {
+    return { error: "Cash received cannot be negative" };
+  }
+  if (!Number.isFinite(whtAmount) || whtAmount < 0) {
+    return { error: "WHT withheld cannot be negative" };
+  }
+  if (grossSettled <= 0) {
+    return { error: "Gross amount settled must be greater than zero" };
   }
   if (!data.invoiceAllocations.length) {
-    return { error: "Allocate the payment to at least one invoice" };
+    return { error: "Allocate the receipt to at least one invoice" };
   }
 
-  const totalAllocated = data.invoiceAllocations.reduce((sum, allocation) => sum + allocation.amount, 0);
-  if (Math.abs(totalAllocated - data.amount) > 0.01) {
-    return { error: "Allocated amount must equal payment amount" };
+  const totalAllocated = roundMoney(
+    data.invoiceAllocations.reduce((sum, allocation) => sum + allocation.amount, 0),
+  );
+  if (Math.abs(totalAllocated - grossSettled) > 0.01) {
+    return {
+      error: `Allocated amount must equal gross AR settled (${grossSettled.toFixed(2)})`,
+    };
   }
 
   const paymentDate = new Date(data.paymentDate);
@@ -83,7 +105,12 @@ export async function recordCustomerPayment(data: {
       }
 
       const arAccount = await resolveSystemAccount(tx, tenantId, "ACCOUNTS_RECEIVABLE", "CA-001");
-      const bankAccount = await resolveSystemAccount(tx, tenantId, "DEFAULT_BANK", "CA-003");
+      const bankAccount = cashAmount > 0
+        ? await resolveSystemAccount(tx, tenantId, "DEFAULT_BANK", "CA-003")
+        : null;
+      const whtReceivableAccount = whtAmount > 0
+        ? await resolveSystemAccount(tx, tenantId, "WHT_RECEIVABLE")
+        : null;
 
       // Prevent receipt-number collisions for concurrent customer payments.
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:customer-payment:${tenantId}`}))`;
@@ -96,7 +123,7 @@ export async function recordCustomerPayment(data: {
           customerId: data.customerId,
           paymentNumber,
           paymentDate,
-          amount: data.amount,
+          amount: cashAmount,
           method: data.method as "BANK_TRANSFER" | "CHECK" | "CASH" | "CARD",
           reference: data.reference || null,
           notes: data.notes || null,
@@ -110,10 +137,19 @@ export async function recordCustomerPayment(data: {
         select: { id: true },
       });
 
+      // Prisma schema sync for this additive field is deferred; keep the live
+      // payment row and WHT snapshot in the same transaction via scoped SQL.
+      await tx.$executeRaw`
+        UPDATE "customer_payments"
+        SET "wht_amount" = ${whtAmount}
+        WHERE "id" = ${payment.id}
+          AND "tenant_id" = ${tenantId}::uuid
+      `;
+
       for (const allocation of data.invoiceAllocations) {
         const invoice = invoiceMap.get(allocation.invoiceId)!;
-        const newPaid = Math.round((Number(invoice.amountPaid) + allocation.amount) * 100) / 100;
-        const newBalance = Math.max(0, Math.round((Number(invoice.balanceDue) - allocation.amount) * 100) / 100);
+        const newPaid = roundMoney(Number(invoice.amountPaid) + allocation.amount);
+        const newBalance = Math.max(0, roundMoney(Number(invoice.balanceDue) - allocation.amount));
         const newStatus = newBalance <= 0.01 ? "PAID" : "PARTIAL";
 
         await tx.invoice.update({
@@ -127,29 +163,45 @@ export async function recordCustomerPayment(data: {
         });
       }
 
+      const lines = [] as Array<{
+        accountId: string;
+        description: string;
+        debit: number;
+        credit: number;
+      }>;
+      if (bankAccount && cashAmount > 0) {
+        lines.push({
+          accountId: bankAccount.id,
+          description: `Cash receipt - ${paymentNumber}`,
+          debit: cashAmount,
+          credit: 0,
+        });
+      }
+      if (whtReceivableAccount && whtAmount > 0) {
+        lines.push({
+          accountId: whtReceivableAccount.id,
+          description: `WHT withheld by customer - ${paymentNumber}`,
+          debit: whtAmount,
+          credit: 0,
+        });
+      }
+      lines.push({
+        accountId: arAccount.id,
+        description: `AR cleared - ${paymentNumber}`,
+        debit: 0,
+        credit: grossSettled,
+      });
+
       await postJournalEntryInTransaction(tx, {
         tenantId,
         createdBy: userId,
         entryDate: paymentDate,
         reference: paymentNumber,
-        description: `Customer payment ${paymentNumber}`,
+        description: `Customer receipt ${paymentNumber}`,
         recognitionPeriod: getRecognitionPeriod(paymentDate),
         source: "customer_payment",
         sourceId: payment.id,
-        lines: [
-          {
-            accountId: bankAccount.id,
-            description: `Receipt - ${paymentNumber}`,
-            debit: data.amount,
-            credit: 0,
-          },
-          {
-            accountId: arAccount.id,
-            description: `AR cleared - ${paymentNumber}`,
-            debit: 0,
-            credit: data.amount,
-          },
-        ],
+        lines,
       });
 
       return payment.id;
