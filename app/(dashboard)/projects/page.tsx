@@ -59,7 +59,7 @@ export default async function ProjectsPage() {
           COALESCE(SUM(CASE WHEN coa."type" = 'INCOME' THEN jel."credit" - jel."debit" ELSE 0 END), 0) AS "revenueEarned",
           COALESCE(SUM(CASE WHEN coa."type" = 'EXPENSE' THEN jel."debit" - jel."credit" ELSE 0 END), 0) AS "costsIncurred"
         FROM "journal_entry_lines" jel
-        INNER JOIN "journal_entries" je ON je."id" = jel."journal_entry_id"
+        INNER JOIN "journal_entries" je ON je."id" = jel."entry_id"
         INNER JOIN "chart_of_accounts" coa ON coa."id" = jel."account_id"
         WHERE je."tenant_id" = p."tenant_id"
           AND jel."project_id" = p."id"
