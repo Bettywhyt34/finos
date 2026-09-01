@@ -1,9 +1,16 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { postJournalEntry } from "@/lib/journal";
+import {
+  assertPeriodOpenInTransaction,
+  postJournalEntryInTransaction,
+} from "@/lib/journal";
+import { resolveSystemAccount } from "@/lib/accounting/system-accounts";
 import { getRecognitionPeriod } from "@/lib/utils";
+
+type DbClient = Prisma.TransactionClient | typeof prisma;
 
 async function getOrgAndUser() {
   const session = await auth();
@@ -48,12 +55,13 @@ export interface APItem {
   bookedNGN: number;
 }
 
-export async function calculateFXExposure(
+async function calculateFXExposureWithDb(
+  db: DbClient,
   orgId: string,
   currency: string,
-  closingRate: number
+  closingRate: number,
 ): Promise<FXExposureResult> {
-  const invoices = await prisma.invoice.findMany({
+  const invoices = await db.invoice.findMany({
     where: {
       tenantId: orgId,
       currency,
@@ -68,7 +76,7 @@ export async function calculateFXExposure(
     },
   });
 
-  const bills = await prisma.bill.findMany({
+  const bills = await db.bill.findMany({
     where: {
       tenantId: orgId,
       currency,
@@ -143,6 +151,14 @@ export async function calculateFXExposure(
   };
 }
 
+export async function calculateFXExposure(
+  orgId: string,
+  currency: string,
+  closingRate: number,
+): Promise<FXExposureResult> {
+  return calculateFXExposureWithDb(prisma, orgId, currency, closingRate);
+}
+
 export async function postFXRevaluation(data: {
   period: string;
   currency: string;
@@ -164,164 +180,182 @@ export async function postFXRevaluation(data: {
 }) {
   try {
     const { orgId, userId } = await getOrgAndUser();
+    if (!/^\d{4}-\d{2}$/.test(data.period)) throw new Error("Invalid revaluation period.");
+    if (!Number.isFinite(data.closingRate) || data.closingRate <= 0) {
+      throw new Error("Closing FX rate must be greater than zero.");
+    }
+    if (!Number.isFinite(data.openingRate) || data.openingRate <= 0) {
+      throw new Error("Opening FX rate must be greater than zero.");
+    }
 
-    const existing = await prisma.fxRevaluation.findUnique({
-      where: {
-        tenantId_period_currency: {
-          tenantId: orgId,
-          period: data.period,
-          currency: data.currency,
+    const revaluationDate = new Date(data.revaluationDate);
+    if (Number.isNaN(revaluationDate.getTime())) throw new Error("Invalid revaluation date.");
+    if (getRecognitionPeriod(revaluationDate) !== data.period) {
+      throw new Error("Revaluation date must fall inside the selected accounting period.");
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Lock the accounting period before taking the exposure snapshot, so a close
+      // cannot race this posting. Business postings use the same period lock.
+      await assertPeriodOpenInTransaction(tx, orgId, data.period);
+
+      const existing = await tx.fxRevaluation.findUnique({
+        where: {
+          tenantId_period_currency: {
+            tenantId: orgId,
+            period: data.period,
+            currency: data.currency,
+          },
         },
-      },
-    });
-    if (existing && existing.status !== "REVERSED") {
-      return {
-        error:
-          "Revaluation for " + data.period + " / " + data.currency + " already exists",
-      };
-    }
+        select: { id: true, status: true, updatedAt: true },
+      });
+      if (existing && existing.status !== "REVERSED") {
+        throw new Error(`Revaluation for ${data.period} / ${data.currency} already exists`);
+      }
 
-    const lines: { accountCode: string; description: string; debit: number; credit: number }[] =
-      [];
-    const { arGainLoss, apGainLoss } = data;
+      // Recalculate from FINOS books at posting time rather than trusting stale/UI totals.
+      const exposure = await calculateFXExposureWithDb(tx, orgId, data.currency, data.closingRate);
+      const { arGainLoss, apGainLoss } = exposure;
 
-    // AR component
-    if (arGainLoss > 0.005) {
-      lines.push({
-        accountCode: "CA-001",
-        description: "FX revaluation AR gain (" + data.currency + ")",
-        debit: arGainLoss,
-        credit: 0,
-      });
-      lines.push({
-        accountCode: data.fxGainAccountCode,
-        description: "FX revaluation AR gain (" + data.currency + ")",
-        debit: 0,
-        credit: arGainLoss,
-      });
-    } else if (arGainLoss < -0.005) {
-      lines.push({
-        accountCode: data.fxLossAccountCode,
-        description: "FX revaluation AR loss (" + data.currency + ")",
-        debit: Math.abs(arGainLoss),
-        credit: 0,
-      });
-      lines.push({
-        accountCode: "CA-001",
-        description: "FX revaluation AR loss (" + data.currency + ")",
-        debit: 0,
-        credit: Math.abs(arGainLoss),
-      });
-    }
+      const [arAccount, apAccount, gainAccount, lossAccount] = await Promise.all([
+        resolveSystemAccount(tx, orgId, "ACCOUNTS_RECEIVABLE", "CA-001"),
+        resolveSystemAccount(tx, orgId, "ACCOUNTS_PAYABLE", "CL-001"),
+        resolveSystemAccount(tx, orgId, "FX_GAIN", data.fxGainAccountCode),
+        resolveSystemAccount(tx, orgId, "FX_LOSS", data.fxLossAccountCode),
+      ]);
 
-    // AP component
-    if (apGainLoss > 0.005) {
-      lines.push({
-        accountCode: "CL-001",
-        description: "FX revaluation AP gain (" + data.currency + ")",
-        debit: apGainLoss,
-        credit: 0,
-      });
-      lines.push({
-        accountCode: data.fxGainAccountCode,
-        description: "FX revaluation AP gain (" + data.currency + ")",
-        debit: 0,
-        credit: apGainLoss,
-      });
-    } else if (apGainLoss < -0.005) {
-      lines.push({
-        accountCode: data.fxLossAccountCode,
-        description: "FX revaluation AP loss (" + data.currency + ")",
-        debit: Math.abs(apGainLoss),
-        credit: 0,
-      });
-      lines.push({
-        accountCode: "CL-001",
-        description: "FX revaluation AP loss (" + data.currency + ")",
-        debit: 0,
-        credit: Math.abs(apGainLoss),
-      });
-    }
+      const lines: {
+        accountId: string;
+        description: string;
+        debit: number;
+        credit: number;
+      }[] = [];
 
-    if (lines.length === 0) {
-      return { error: "Net revaluation is zero — no journal entry required" };
-    }
+      if (arGainLoss > 0.005) {
+        lines.push({
+          accountId: arAccount.id,
+          description: `FX revaluation AR gain (${data.currency})`,
+          debit: arGainLoss,
+          credit: 0,
+        });
+        lines.push({
+          accountId: gainAccount.id,
+          description: `FX revaluation AR gain (${data.currency})`,
+          debit: 0,
+          credit: arGainLoss,
+        });
+      } else if (arGainLoss < -0.005) {
+        lines.push({
+          accountId: lossAccount.id,
+          description: `FX revaluation AR loss (${data.currency})`,
+          debit: Math.abs(arGainLoss),
+          credit: 0,
+        });
+        lines.push({
+          accountId: arAccount.id,
+          description: `FX revaluation AR loss (${data.currency})`,
+          debit: 0,
+          credit: Math.abs(arGainLoss),
+        });
+      }
 
-    const ref = "FXR-" + data.period + "-" + data.currency;
-    const journalEntryId = await postJournalEntry({
-      tenantId: orgId,
-      entryDate: new Date(data.revaluationDate),
-      reference: ref,
-      description:
-        "FX Revaluation " +
-        data.currency +
-        " " +
-        data.period +
-        " — unrealised " +
-        (data.unrealizedGainLoss >= 0 ? "gain" : "loss") +
-        " N" +
-        Math.abs(data.unrealizedGainLoss).toLocaleString("en-NG", { minimumFractionDigits: 2 }),
-      recognitionPeriod: data.period,
-      source: "fx-revaluation",
-      sourceId: data.period + "-" + data.currency,
-      createdBy: userId,
-      lines,
-    });
+      if (apGainLoss > 0.005) {
+        lines.push({
+          accountId: apAccount.id,
+          description: `FX revaluation AP gain (${data.currency})`,
+          debit: apGainLoss,
+          credit: 0,
+        });
+        lines.push({
+          accountId: gainAccount.id,
+          description: `FX revaluation AP gain (${data.currency})`,
+          debit: 0,
+          credit: apGainLoss,
+        });
+      } else if (apGainLoss < -0.005) {
+        lines.push({
+          accountId: lossAccount.id,
+          description: `FX revaluation AP loss (${data.currency})`,
+          debit: Math.abs(apGainLoss),
+          credit: 0,
+        });
+        lines.push({
+          accountId: apAccount.id,
+          description: `FX revaluation AP loss (${data.currency})`,
+          debit: 0,
+          credit: Math.abs(apGainLoss),
+        });
+      }
 
-    const reval = await prisma.fxRevaluation.upsert({
-      where: {
-        tenantId_period_currency: {
-          tenantId: orgId,
-          period: data.period,
-          currency: data.currency,
-        },
-      },
-      create: {
+      if (lines.length === 0) {
+        throw new Error("Net revaluation is zero — no journal entry required");
+      }
+
+      const ref = `FXR-${data.period}-${data.currency}`;
+      // A reversed revaluation can be corrected and re-posted. The reversed row's
+      // update timestamp gives the correction cycle a deterministic idempotency key.
+      const sourceId = existing
+        ? `${data.period}-${data.currency}-repost-${existing.updatedAt.getTime()}`
+        : `${data.period}-${data.currency}`;
+
+      const journalEntryId = await postJournalEntryInTransaction(tx, {
         tenantId: orgId,
-        revaluationDate: new Date(data.revaluationDate),
-        period: data.period,
-        currency: data.currency,
+        entryDate: revaluationDate,
+        reference: ref,
+        description:
+          `FX Revaluation ${data.currency} ${data.period} — unrealised ` +
+          `${exposure.unrealizedGainLoss >= 0 ? "gain" : "loss"} N` +
+          Math.abs(exposure.unrealizedGainLoss).toLocaleString("en-NG", { minimumFractionDigits: 2 }),
+        recognitionPeriod: data.period,
+        source: "fx-revaluation",
+        sourceId,
+        createdBy: userId,
+        lines,
+      });
+
+      const recordData = {
+        revaluationDate,
         openingRate: data.openingRate,
         closingRate: data.closingRate,
-        arExposure: data.arExposure,
-        apExposure: data.apExposure,
-        arBookedNGN: data.arBookedNGN,
-        apBookedNGN: data.apBookedNGN,
-        arCurrentNGN: data.arCurrentNGN,
-        apCurrentNGN: data.apCurrentNGN,
-        arGainLoss: data.arGainLoss,
-        apGainLoss: data.apGainLoss,
-        unrealizedGainLoss: data.unrealizedGainLoss,
-        fxGainAccountCode: data.fxGainAccountCode,
-        fxLossAccountCode: data.fxLossAccountCode,
+        arExposure: exposure.arExposure,
+        apExposure: exposure.apExposure,
+        arBookedNGN: exposure.arBookedNGN,
+        apBookedNGN: exposure.apBookedNGN,
+        arCurrentNGN: exposure.arCurrentNGN,
+        apCurrentNGN: exposure.apCurrentNGN,
+        arGainLoss: exposure.arGainLoss,
+        apGainLoss: exposure.apGainLoss,
+        unrealizedGainLoss: exposure.unrealizedGainLoss,
+        fxGainAccountCode: gainAccount.code,
+        fxLossAccountCode: lossAccount.code,
         journalEntryId,
-        status: "POSTED",
+        status: "POSTED" as const,
         notes: data.notes,
         postedAt: new Date(),
         postedBy: userId,
-      },
-      update: {
-        closingRate: data.closingRate,
-        arExposure: data.arExposure,
-        apExposure: data.apExposure,
-        arBookedNGN: data.arBookedNGN,
-        apBookedNGN: data.apBookedNGN,
-        arCurrentNGN: data.arCurrentNGN,
-        apCurrentNGN: data.apCurrentNGN,
-        arGainLoss: data.arGainLoss,
-        apGainLoss: data.apGainLoss,
-        unrealizedGainLoss: data.unrealizedGainLoss,
-        fxGainAccountCode: data.fxGainAccountCode,
-        fxLossAccountCode: data.fxLossAccountCode,
-        journalEntryId,
-        status: "POSTED",
-        notes: data.notes,
-        postedAt: new Date(),
-        postedBy: userId,
-      },
+      };
+
+      const reval = await tx.fxRevaluation.upsert({
+        where: {
+          tenantId_period_currency: {
+            tenantId: orgId,
+            period: data.period,
+            currency: data.currency,
+          },
+        },
+        create: {
+          tenantId: orgId,
+          period: data.period,
+          currency: data.currency,
+          ...recordData,
+        },
+        update: recordData,
+      });
+
+      return reval.id;
     });
 
-    return { success: true, id: reval.id };
+    return { success: true, id: result };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to post revaluation";
     return { error: msg };
@@ -331,47 +365,51 @@ export async function postFXRevaluation(data: {
 export async function reverseFXRevaluation(revalId: string) {
   try {
     const { orgId, userId } = await getOrgAndUser();
-
-    const reval = await prisma.fxRevaluation.findFirst({
-      where: { id: revalId, tenantId: orgId, status: "POSTED" },
-      include: {
-        journalEntry: {
-          include: { lines: { include: { account: true } } },
-        },
-      },
-    });
-
-    if (!reval) return { error: "Revaluation not found or not in POSTED status" };
-
-    const originalLines = reval.journalEntry?.lines ?? [];
-    if (originalLines.length === 0) return { error: "No journal lines to reverse" };
-
-    const reversingLines = originalLines.map((l) => ({
-      accountCode: l.account.code,
-      description: "REVERSAL: " + (l.description ?? ""),
-      debit: Number(l.credit),
-      credit: Number(l.debit),
-    }));
-
     const today = new Date();
-    const refRev = "FXR-REV-" + reval.period + "-" + reval.currency;
+    const reversalPeriod = getRecognitionPeriod(today);
 
-    await postJournalEntry({
-      tenantId: orgId,
-      entryDate: today,
-      reference: refRev,
-      description:
-        "Reversal: FX Revaluation " + reval.currency + " " + reval.period,
-      recognitionPeriod: getRecognitionPeriod(today),
-      source: "fx-revaluation-reversal",
-      sourceId: reval.id,
-      createdBy: userId,
-      lines: reversingLines,
-    });
+    await prisma.$transaction(async (tx) => {
+      const reval = await tx.fxRevaluation.findFirst({
+        where: { id: revalId, tenantId: orgId, status: "POSTED" },
+        include: {
+          journalEntry: {
+            include: { lines: true },
+          },
+        },
+      });
+      if (!reval) throw new Error("Revaluation not found or not in POSTED status");
 
-    await prisma.fxRevaluation.update({
-      where: { id: revalId },
-      data: { status: "REVERSED" },
+      const originalLines = reval.journalEntry?.lines ?? [];
+      if (originalLines.length === 0 || !reval.journalEntry) {
+        throw new Error("No journal lines to reverse");
+      }
+
+      await postJournalEntryInTransaction(tx, {
+        tenantId: orgId,
+        entryDate: today,
+        reference: `FXR-REV-${reval.period}-${reval.currency}`,
+        description: `Reversal: FX Revaluation ${reval.currency} ${reval.period}`,
+        recognitionPeriod: reversalPeriod,
+        source: "fx-revaluation-reversal",
+        sourceId: `${reval.id}:${reval.journalEntry.id}`,
+        createdBy: userId,
+        lines: originalLines.map((line) => ({
+          accountId: line.accountId,
+          description: "REVERSAL: " + (line.description ?? ""),
+          debit: Number(line.credit),
+          credit: Number(line.debit),
+          projectId: line.projectId,
+          reportingTags:
+            line.reportingTags && typeof line.reportingTags === "object" && !Array.isArray(line.reportingTags)
+              ? (line.reportingTags as Record<string, string>)
+              : null,
+        })),
+      });
+
+      await tx.fxRevaluation.update({
+        where: { id: revalId },
+        data: { status: "REVERSED" },
+      });
     });
 
     return { success: true };
