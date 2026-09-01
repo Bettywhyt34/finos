@@ -14,7 +14,9 @@ import {
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { getProjectFinancials, type ProjectFinancialMetrics } from "@/lib/projects/financials";
 import { ProjectDocuments, type ProjectDocumentRow } from "./project-documents";
+import { ProjectRevenuePanel } from "./project-revenue-panel";
 
 interface ProjectDetailRow {
   id: string;
@@ -114,10 +116,12 @@ export default async function ProjectDetailPage({
   const costBudget = project.costBudget == null ? null : Number(project.costBudget);
   const plannedMargin = costBudget == null ? null : contractValue - costBudget;
   const milestones = parseBillingSchedule(project.billingSchedule);
+  const { metrics: financialMetrics, history: revenueHistory } = await getProjectFinancials(tenantId, project.id);
+
   let documents: ProjectDocumentRow[] = [];
   let activities: ProjectActivityRow[] = [];
   if (activeTab === "documents") {
-    const rows = await prisma.$queryRaw<Array<Omit<ProjectDocumentRow, "uploadedAt"> & { uploadedAt: Date }>>`
+    const documentRows = await prisma.$queryRaw<Array<Omit<ProjectDocumentRow, "uploadedAt"> & { uploadedAt: Date }>>`
       SELECT d."id", d."title", d."category", d."file_name" AS "fileName",
         d."mime_type" AS "mimeType", d."file_size" AS "fileSize", d."uploaded_at" AS "uploadedAt",
         COALESCE(u."name", u."email", d."uploaded_by") AS "uploadedByName"
@@ -126,7 +130,7 @@ export default async function ProjectDetailPage({
       WHERE d."tenant_id" = ${tenantId}::uuid AND d."project_id" = ${project.id} AND d."status" = 'ACTIVE'
       ORDER BY d."uploaded_at" DESC
     `;
-    documents = rows.map((row) => ({ ...row, uploadedAt: row.uploadedAt.toISOString() }));
+    documents = documentRows.map((row) => ({ ...row, uploadedAt: row.uploadedAt.toISOString() }));
   }
   if (activeTab === "activity") {
     activities = await prisma.$queryRaw<ProjectActivityRow[]>`
@@ -137,7 +141,7 @@ export default async function ProjectDetailPage({
       ORDER BY "created_at" DESC
     `;
   }
-  const canManageDocuments = ["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "");
+  const canManage = ["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "");
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -185,11 +189,26 @@ export default async function ProjectDetailPage({
       </nav>
 
       {activeTab === "overview" ? (
-        <Overview project={project} contractValue={contractValue} costBudget={costBudget} plannedMargin={plannedMargin} milestones={milestones} />
+        <Overview
+          project={project}
+          contractValue={contractValue}
+          costBudget={costBudget}
+          plannedMargin={plannedMargin}
+          milestones={milestones}
+          financialMetrics={financialMetrics}
+        />
       ) : null}
-      {activeTab === "revenue" ? <Revenue currency={project.currency} /> : null}
-      {activeTab === "costs" ? <Costs currency={project.currency} /> : null}
-      {activeTab === "documents" ? <ProjectDocuments projectId={project.id} documents={documents} canManage={canManageDocuments} /> : null}
+      {activeTab === "revenue" ? (
+        <ProjectRevenuePanel
+          projectId={project.id}
+          projectCurrency={project.currency}
+          metrics={financialMetrics}
+          history={revenueHistory}
+          canManage={canManage}
+        />
+      ) : null}
+      {activeTab === "costs" ? <Costs metrics={financialMetrics} /> : null}
+      {activeTab === "documents" ? <ProjectDocuments projectId={project.id} documents={documents} canManage={canManage} /> : null}
       {activeTab === "activity" ? <Activity project={project} activities={activities} /> : null}
     </div>
   );
@@ -201,26 +220,36 @@ function Overview({
   costBudget,
   plannedMargin,
   milestones,
+  financialMetrics,
 }: {
   project: ProjectDetailRow;
   contractValue: number;
   costBudget: number | null;
   plannedMargin: number | null;
   milestones: BillingMilestone[];
+  financialMetrics: ProjectFinancialMetrics;
 }) {
+  const marginPercent = financialMetrics.revenueEarned
+    ? (financialMetrics.grossMargin / financialMetrics.revenueEarned) * 100
+    : null;
   const metrics = [
     ["Contract value", formatCurrency(contractValue, project.currency)],
-    ["Revenue earned", "—"],
-    ["Amount invoiced", "—"],
-    ["Amount collected", "—"],
-    ["Costs incurred", "—"],
-    ["Actual gross margin", "—"],
-    ["Contract Asset", "—"],
-    ["Unearned Income", "—"],
+    ["Revenue earned", formatCurrency(financialMetrics.revenueEarned)],
+    ["Amount invoiced", formatCurrency(financialMetrics.invoiced)],
+    ["Costs incurred", formatCurrency(financialMetrics.costsIncurred)],
+    ["Actual gross margin", formatCurrency(financialMetrics.grossMargin)],
+    ["Actual margin %", marginPercent == null ? "—" : `${marginPercent.toFixed(1)}%`],
+    ["Contract Asset", formatCurrency(financialMetrics.contractAsset)],
+    ["Unearned Income", formatCurrency(financialMetrics.unearnedIncome)],
   ];
 
   return (
     <div className="space-y-5">
+      {project.currency !== "NGN" ? (
+        <div className="rounded-xl border border-[var(--app-border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+          Contract value is shown in {project.currency}; accounting metrics are shown in NGN, the FINOS base ledger currency.
+        </div>
+      ) : null}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(([label, value]) => (
           <div key={label} className="rounded-xl border border-[var(--app-border)] bg-white p-5">
@@ -262,7 +291,7 @@ function Overview({
         <div className="flex items-center justify-between border-b border-[var(--app-border)] px-6 py-5">
           <div>
             <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Billing plan</h2>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">Planning and reminders only; milestones do not create invoices.</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Optional planning and reminders only. It does not determine billing or revenue recognition.</p>
           </div>
           <CalendarDays className="h-5 w-5 text-[var(--finos-accent)]" />
         </div>
@@ -290,37 +319,19 @@ function Overview({
   );
 }
 
-function Revenue({ currency }: { currency: string }) {
+function Costs({ metrics }: { metrics: ProjectFinancialMetrics }) {
   return (
     <section className="space-y-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={TrendingUp} label="Revenue earned" value="—" />
-        <Metric icon={ReceiptText} label="Invoiced" value="—" />
-        <Metric icon={CircleDollarSign} label="Contract Asset" value="—" />
-        <Metric icon={Banknote} label="Unearned Income" value="—" />
-      </div>
-      <EmptyPanel
-        icon={TrendingUp}
-        title="No revenue recognition events yet"
-        text={`Recognition events, invoice coverage and Contract Asset matching will appear here in ${currency}. No revenue has been inferred from the project plan.`}
-      />
-    </section>
-  );
-}
-
-function Costs({ currency }: { currency: string }) {
-  return (
-    <section className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={ReceiptText} label="Costs incurred" value="—" />
-        <Metric icon={FileText} label="Vendor billed" value="—" />
-        <Metric icon={CircleDollarSign} label="Accrued costs" value="—" />
-        <Metric icon={Banknote} label="Paid" value="—" />
+        <Metric icon={ReceiptText} label="Costs incurred" value={formatCurrency(metrics.costsIncurred)} />
+        <Metric icon={TrendingUp} label="Revenue earned" value={formatCurrency(metrics.revenueEarned)} />
+        <Metric icon={CircleDollarSign} label="Gross margin" value={formatCurrency(metrics.grossMargin)} />
+        <Metric icon={Banknote} label="Cost budget variance" value="See commercial plan" />
       </div>
       <EmptyPanel
         icon={ReceiptText}
-        title="No project costs linked yet"
-        text={`Bills, expenses, accruals, provisions and project-linked journals will appear here in ${currency}. Planned cost is not treated as an incurred cost.`}
+        title="Project cost detail is being reconstructed"
+        text="The headline cost is already ledger-backed. The next cost layer will break it down by bills, expenses, accruals and direct journals without treating planned cost as incurred cost."
       />
     </section>
   );
