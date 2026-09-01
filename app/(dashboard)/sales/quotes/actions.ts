@@ -65,6 +65,12 @@ export async function createQuote(input: {
       const customer = await tx.customer.findFirst({ where: { id: input.customerId, tenantId, isActive: true }, select: { id: true } });
       if (!customer) throw new Error("Select an active customer in this entity.");
 
+      const itemIds = [...new Set(input.lines.map((line) => line.itemId).filter((id): id is string => Boolean(id)))];
+      if (itemIds.length) {
+        const items = await tx.item.findMany({ where: { tenantId, id: { in: itemIds }, isActive: true }, select: { id: true } });
+        if (items.length !== itemIds.length) throw new Error("One or more quote items are invalid or inactive.");
+      }
+
       const taxIds = [...new Set(input.lines.map((line) => line.taxRateId).filter((id): id is string => Boolean(id)))];
       const taxRates = taxIds.length
         ? await tx.taxRate.findMany({ where: { tenantId, id: { in: taxIds }, isActive: true }, select: { id: true, name: true, rate: true } })
@@ -94,7 +100,7 @@ export async function createQuote(input: {
         if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`Quote line ${index + 1} needs a quantity greater than zero.`);
         if (!Number.isFinite(rate) || rate < 0) throw new Error(`Quote line ${index + 1} has an invalid rate.`);
         if (!Number.isFinite(discountValue) || discountValue < 0) throw new Error(`Quote line ${index + 1} has an invalid discount.`);
-        if (!['PERCENT','FIXED'].includes(discountType)) throw new Error(`Quote line ${index + 1} has an invalid discount type.`);
+        if (!["PERCENT", "FIXED"].includes(discountType)) throw new Error(`Quote line ${index + 1} has an invalid discount type.`);
 
         const gross = roundMoney(quantity * rate);
         const rawDiscount = discountType === "PERCENT" ? gross * Math.min(discountValue, 100) / 100 : discountValue;
@@ -105,22 +111,10 @@ export async function createQuote(input: {
         const taxAmount = roundMoney(net * taxRate / 100);
         const lineTotal = roundMoney(net + taxAmount);
         return {
-          id: crypto.randomUUID(),
-          itemId: line.itemId || null,
-          description,
-          quantity,
-          rate,
-          amount: gross,
-          taxRateId: line.taxRateId || null,
-          taxName: tax?.name ?? null,
-          taxRate,
-          taxAmount,
-          discountType,
-          discountValue,
-          discountAmount: lineDiscount,
-          lineTotal,
-          incomeAccountId: line.incomeAccountId || null,
-          projectId: line.projectId || null,
+          id: crypto.randomUUID(), itemId: line.itemId || null, description, quantity, rate, amount: gross,
+          taxRateId: line.taxRateId || null, taxName: tax?.name ?? null, taxRate, taxAmount,
+          discountType, discountValue, discountAmount: lineDiscount, lineTotal,
+          incomeAccountId: line.incomeAccountId || null, projectId: line.projectId || null,
           reportingTags: line.reportingTags ?? null,
         };
       });
@@ -173,7 +167,6 @@ export async function createQuote(input: {
 const TRANSITIONS: Record<string, string[]> = {
   DRAFT: ["SENT", "REJECTED"],
   SENT: ["ACCEPTED", "REJECTED"],
-  ACCEPTED: ["CONVERTED"],
 };
 
 export async function changeQuoteStatus(input: { quoteId: string; status: string }): Promise<{ success: true } | { error: string }> {
@@ -194,10 +187,9 @@ export async function changeQuoteStatus(input: { quoteId: string; status: string
       const quote = rows[0];
       if (!quote) throw new Error("Quote not found.");
       if (new Date(quote.expiryDate) < new Date() && ["DRAFT", "SENT"].includes(quote.status)) {
-        await tx.$executeRaw`UPDATE "quotes" SET "status"='EXPIRED', "updated_at"=now() WHERE "id"=${input.quoteId} AND "tenant_id"=${tenantId}::uuid`;
         throw new Error("This quote has expired and cannot be progressed.");
       }
-      if (!(TRANSITIONS[quote.status] ?? []).includes(requested) || requested === "CONVERTED") {
+      if (!(TRANSITIONS[quote.status] ?? []).includes(requested)) {
         throw new Error(`Quote cannot move directly from ${quote.status.toLowerCase()} to ${requested.toLowerCase()}.`);
       }
       await tx.$executeRaw`
@@ -264,44 +256,18 @@ export async function convertQuoteToDraftInvoice(quoteId: string): Promise<{ suc
 
       const invoice = await tx.invoice.create({
         data: {
-          tenantId,
-          customerId: quote.customerId,
-          invoiceNumber,
-          reference: quote.reference,
-          orderNumber: quote.orderNumber,
-          issueDate,
-          dueDate,
-          status: "DRAFT",
-          currency: quote.currency,
-          exchangeRate: Number(quote.exchangeRate),
-          subtotal: Number(quote.subtotal),
-          discountAmount: Number(quote.discountAmount),
-          taxAmount: Number(quote.taxAmount),
-          totalAmount: Number(quote.totalAmount),
-          amountPaid: 0,
-          balanceDue: Number(quote.totalAmount),
-          recognitionPeriod,
-          paymentTermsDays: customer.paymentTerms,
-          recogniseRevenueOnInvoiceDate: false,
-          notes: quote.notes,
+          tenantId, customerId: quote.customerId, invoiceNumber, reference: quote.reference, orderNumber: quote.orderNumber,
+          issueDate, dueDate, status: "DRAFT", currency: quote.currency, exchangeRate: Number(quote.exchangeRate),
+          subtotal: Number(quote.subtotal), discountAmount: Number(quote.discountAmount), taxAmount: Number(quote.taxAmount),
+          totalAmount: Number(quote.totalAmount), amountPaid: 0, balanceDue: Number(quote.totalAmount), recognitionPeriod,
+          paymentTermsDays: customer.paymentTerms, recogniseRevenueOnInvoiceDate: false, notes: quote.notes,
           lines: {
             create: lines.map((line) => ({
-              itemId: line.itemId,
-              description: line.description,
-              quantity: Number(line.quantity),
-              rate: Number(line.rate),
-              amount: Number(line.amount),
-              taxRateId: line.taxRateId,
-              taxName: line.taxName,
-              taxRate: Number(line.taxRate),
-              taxAmount: Number(line.taxAmount),
-              discountType: line.discountType,
-              discountValue: Number(line.discountValue),
-              discountAmount: Number(line.discountAmount),
-              lineTotal: Number(line.lineTotal),
-              incomeAccountId: line.incomeAccountId,
-              projectId: line.projectId,
-              reportingTags: line.reportingTags ?? undefined,
+              itemId: line.itemId, description: line.description, quantity: Number(line.quantity), rate: Number(line.rate),
+              amount: Number(line.amount), taxRateId: line.taxRateId, taxName: line.taxName, taxRate: Number(line.taxRate),
+              taxAmount: Number(line.taxAmount), discountType: line.discountType, discountValue: Number(line.discountValue),
+              discountAmount: Number(line.discountAmount), lineTotal: Number(line.lineTotal), incomeAccountId: line.incomeAccountId,
+              projectId: line.projectId, reportingTags: line.reportingTags ?? undefined,
             })),
           },
         },
