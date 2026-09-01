@@ -240,37 +240,43 @@ export async function yearEndClose(year: number, retainedEarningsAccountId: stri
         const credit = Number(line._sum.credit ?? 0);
 
         if (account.type === "INCOME") {
-          const balance = credit - debit;
-          if (Math.abs(balance) > 0.005) {
+          // Signed natural balance: positive = normal credit, negative = debit balance.
+          const signedIncome = credit - debit;
+          if (Math.abs(signedIncome) > 0.005) {
             closingLines.push({
               accountId: line.accountId,
               description: `Year-end close: ${account.name}`,
-              debit: balance,
-              credit: 0,
+              debit: signedIncome > 0 ? signedIncome : 0,
+              credit: signedIncome < 0 ? Math.abs(signedIncome) : 0,
             });
-            netToRetained += balance;
+            netToRetained += signedIncome;
           }
         } else {
-          const balance = debit - credit;
-          if (Math.abs(balance) > 0.005) {
+          // Signed natural balance: positive = normal debit, negative = credit balance.
+          const signedExpense = debit - credit;
+          if (Math.abs(signedExpense) > 0.005) {
             closingLines.push({
               accountId: line.accountId,
               description: `Year-end close: ${account.name}`,
-              debit: 0,
-              credit: balance,
+              debit: signedExpense < 0 ? Math.abs(signedExpense) : 0,
+              credit: signedExpense > 0 ? signedExpense : 0,
             });
-            netToRetained -= balance;
+            netToRetained -= signedExpense;
           }
         }
       }
 
       if (closingLines.length > 0) {
-        closingLines.push({
-          accountId: retained.id,
-          description: "Year-end close: Transfer to Retained Earnings",
-          debit: netToRetained < 0 ? Math.abs(netToRetained) : 0,
-          credit: netToRetained > 0 ? netToRetained : 0,
-        });
+        // If profit/loss nets to exactly zero, the P&L closing lines already balance
+        // and no zero-value retained earnings line should be created.
+        if (Math.abs(netToRetained) > 0.005) {
+          closingLines.push({
+            accountId: retained.id,
+            description: "Year-end close: Transfer to Retained Earnings",
+            debit: netToRetained < 0 ? Math.abs(netToRetained) : 0,
+            credit: netToRetained > 0 ? netToRetained : 0,
+          });
+        }
 
         await postJournalEntryInTransaction(tx, {
           tenantId: orgId,
