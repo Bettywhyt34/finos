@@ -80,6 +80,7 @@ const SETTINGS: SettingSection[] = [
         Icon: BookOpen,
         items: [
           { label: "Chart of accounts", href: "/accounting/chart-of-accounts" },
+          { label: "System accounts", href: "/settings/accounting/system-accounts" },
           { label: "Journal entries", href: "/accounting/journal-entries" },
           { label: "Trial balance", href: "/accounting/trial-balance" },
           { label: "Period close", href: "/accounting/period-close" },
