@@ -133,7 +133,7 @@ export async function applyInvoiceCreditNote(input: {
       const countRows = await tx.$queryRaw<Array<{ count: bigint }>>`
         SELECT COUNT(*)::bigint AS "count" FROM "credit_notes" WHERE "tenant_id" = ${tenantId}::uuid
       `;
-      const nextNumber = Number(countRows[0]?.count ?? 0n) + 1;
+      const nextNumber = Number(countRows[0]?.count ?? 0) + 1;
       const creditNumber = `CN-${String(nextNumber).padStart(5, "0")}`;
       const ratio = amount / totalAmount;
       const lines = proportionalReversal(originalJournal.lines, ratio, creditNumber);
@@ -168,7 +168,6 @@ export async function applyInvoiceCreditNote(input: {
         where: { id: invoice.id },
         data: {
           balanceDue: newBalance,
-          // A credit note settles AR but is not cash. Preserve SENT/PARTIAL rather than mislabeling it PAID.
           status: Number(invoice.amountPaid) > 0 ? "PARTIAL" : invoice.status,
           paidAt: null,
         },
