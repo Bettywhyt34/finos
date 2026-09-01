@@ -92,7 +92,15 @@ export async function recogniseDeferredProjectRevenue(input: {
           ila."income_account_id" AS "incomeAccountId",
           ila."unearned_income_account_id" AS "unearnedIncomeAccountId",
           il."reporting_tags" AS "reportingTags",
-          (ila."unearned_created" - COALESCE(SUM(CASE WHEN prr."status" = 'POSTED' THEN rria."amount" ELSE 0 END), 0)) AS "remaining"
+          (
+            ila."unearned_created" -
+            COALESCE(SUM(
+              CASE
+                WHEN prr."status" = 'POSTED' AND rria."allocation_type" = 'UNEARNED_RELEASE' THEN rria."amount"
+                ELSE 0
+              END
+            ), 0)
+          ) AS "remaining"
         FROM "invoice_line_revenue_allocations" ila
         INNER JOIN "invoice_lines" il ON il."id" = ila."invoice_line_id"
         INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
@@ -106,7 +114,15 @@ export async function recogniseDeferredProjectRevenue(input: {
           AND i."status" <> 'VOIDED'
         GROUP BY ila."id", ila."income_account_id", ila."unearned_income_account_id",
           il."reporting_tags", ila."unearned_created", ila."posted_at"
-        HAVING (ila."unearned_created" - COALESCE(SUM(CASE WHEN prr."status" = 'POSTED' THEN rria."amount" ELSE 0 END), 0)) > 0.005
+        HAVING (
+          ila."unearned_created" -
+          COALESCE(SUM(
+            CASE
+              WHEN prr."status" = 'POSTED' AND rria."allocation_type" = 'UNEARNED_RELEASE' THEN rria."amount"
+              ELSE 0
+            END
+          ), 0)
+        ) > 0.005
         ORDER BY ila."posted_at" ASC, ila."id" ASC
       `;
 
@@ -271,8 +287,11 @@ export async function recogniseDeferredProjectRevenue(input: {
       for (const allocation of chosen) {
         await tx.$executeRaw`
           INSERT INTO "revenue_recognition_invoice_allocations" (
-            "tenant_id", "recognition_id", "invoice_line_allocation_id", "amount"
-          ) VALUES (${tenantId}::uuid, ${recognitionId}::uuid, ${allocation.allocationId}::uuid, ${allocation.amount})
+            "tenant_id", "recognition_id", "invoice_line_allocation_id", "amount", "allocation_type"
+          ) VALUES (
+            ${tenantId}::uuid, ${recognitionId}::uuid, ${allocation.allocationId}::uuid,
+            ${allocation.amount}, 'UNEARNED_RELEASE'
+          )
         `;
       }
 
@@ -349,7 +368,7 @@ export async function reverseProjectRevenueRecognition(input: {
           INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
           WHERE rria."tenant_id" = ${tenantId}::uuid
             AND rria."recognition_id" = ${row.id}::uuid
-            AND ila."contract_asset_cleared" > 0
+            AND rria."allocation_type" = 'CONTRACT_ASSET_CLEARANCE'
             AND i."status" <> 'VOIDED'
         `;
         if (Number(cleared[0]?.amount ?? 0) > 0.005) {
