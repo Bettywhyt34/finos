@@ -4,7 +4,7 @@
  *
  * Sync order (dependency-safe):
  *   1. Bills      → upsert Vendor (resolved from cache) + Bill + BillLines
- *   2. Expenses   → upsert Expense (category resolved from cache)
+ *   2. Expenses   → upsert Expense + accounting lifecycle atomically
  *   3. Journals   → cache to unified_transactions_cache (no FINOS GL re-post)
  *   4. Assets     → cache to unified_transactions_cache
  *   5. Budgets    → cache to unified_transactions_cache
@@ -26,6 +26,7 @@ import {
 import { getValidAccessToken } from "@/lib/integrations/oauth-refresh";
 import { markTokenExpired } from "@/lib/integrations/oauth-refresh";
 import { buildCallbackUri } from "@/lib/integrations/oauth-config";
+import { upsertXpenxflowExpenseWithAccounting } from "./expense-accounting";
 import {
   createXFClient,
   XPENXFLOW_TOKEN_EXPIRED,
@@ -35,7 +36,6 @@ import {
   parseCursor,
   stringifyCursor,
   type XFBill,
-  type XFExpense,
   type XFJournal,
   type XFAsset,
   type XFBudget,
@@ -248,7 +248,9 @@ async function syncExpenses(
   for (const raw of data) {
     c.processed++;
     try {
-      (await upsertExpense(orgId, raw)) === "created" ? c.created++ : c.updated++;
+      (await upsertXpenxflowExpenseWithAccounting(orgId, raw)) === "created"
+        ? c.created++
+        : c.updated++;
       await upsertCache(orgId, SOURCE, "expenses", raw.id, raw as unknown as JsonObject);
     } catch (err) {
       c.failed++;
@@ -261,70 +263,6 @@ async function syncExpenses(
     }
   }
   return c;
-}
-
-async function upsertExpense(orgId: string, xf: XFExpense): Promise<"created" | "updated"> {
-  const catCache = await prisma.unifiedTransactionsCache.findFirst({
-    where: {
-      tenantId: orgId,
-      sourceApp:      SOURCE,
-      sourceTable:    "expense_categories",
-      sourceId:       xf.category_id,
-    },
-    select: { dataJson: true },
-  });
-
-  let categoryId: string | undefined;
-  if (catCache?.dataJson) {
-    const catName  = (catCache.dataJson as unknown as { name: string }).name;
-    const finosCat = await prisma.expenseCategory.findFirst({
-      where:  { tenantId: orgId, name: catName },
-      select: { id: true },
-    });
-    categoryId = finosCat?.id;
-  }
-
-  if (!categoryId) {
-    throw new Error(
-      `Expense category "${xf.category_id}" not in FINOS. Sync categories before expenses.`
-    );
-  }
-
-  const statusMap: Record<string, "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "REIMBURSED"> = {
-    draft:      "DRAFT",
-    submitted:  "PENDING",
-    approved:   "APPROVED",
-    rejected:   "REJECTED",
-    reimbursed: "REIMBURSED",
-    cancelled:  "DRAFT",
-  };
-
-  const desc        = `${xf.expense_number} — ${xf.description} (${xf.employee_name})`;
-  const expenseData = {
-    categoryId,
-    expenseDate: new Date(xf.expense_date),
-    description: desc,
-    amount:      xf.amount,
-    taxAmount:   xf.tax_amount,
-    totalAmount: xf.total_amount,
-    status:      statusMap[xf.status] ?? "DRAFT",
-    receiptUrl:  xf.receipt_url  ?? undefined,
-    approvedBy:  xf.approved_by  ?? undefined,
-    approvedAt:  xf.approved_at  ? new Date(xf.approved_at)  : undefined,
-  };
-
-  const existing = await prisma.expense.findFirst({
-    where:  { tenantId: orgId, description: { startsWith: `${xf.expense_number} —` } },
-    select: { id: true },
-  });
-
-  if (existing) {
-    await prisma.expense.update({ where: { id: existing.id }, data: expenseData });
-    return "updated";
-  }
-
-  await prisma.expense.create({ data: { ...expenseData, tenantId: orgId } });
-  return "created";
 }
 
 // ─── Journals (cached — no FINOS GL re-post to avoid duplicates) ─────────────
