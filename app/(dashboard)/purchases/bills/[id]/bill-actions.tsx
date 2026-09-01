@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard } from "lucide-react";
+import { CheckCircle2, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { recordBillPayment } from "../actions";
+import { postBill, recordBillPayment } from "../actions";
 import { formatCurrency } from "@/lib/utils";
 
 interface OpenBill { id: string; billNumber: string; balance: number; }
@@ -24,6 +24,7 @@ export function BillActions({ bill, openBills }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState(bill.balance);
@@ -50,6 +51,18 @@ export function BillActions({ bill, openBills }: Props) {
     );
   }
 
+  async function handlePost() {
+    setPosting(true);
+    const result = await postBill(bill.id);
+    setPosting(false);
+    if (result?.error) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Bill posted to Accounts Payable");
+    router.refresh();
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (Math.abs(totalAllocated - amount) > 0.01) {
@@ -74,16 +87,25 @@ export function BillActions({ bill, openBills }: Props) {
     router.refresh();
   }
 
-  const canPay = bill.balance > 0;
+  const isDraft = bill.status === "DRAFT";
+  const canPay = !isDraft && bill.balance > 0 && bill.status !== "PAID";
 
   return (
     <>
-      {canPay && (
-        <Button size="sm" onClick={() => setOpen(true)}>
-          <CreditCard className="h-3.5 w-3.5 mr-1.5" />
-          Record Payment
-        </Button>
-      )}
+      <div className="flex items-center gap-2">
+        {isDraft && (
+          <Button size="sm" onClick={handlePost} disabled={posting}>
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+            {posting ? "Posting…" : "Post Bill"}
+          </Button>
+        )}
+        {canPay && (
+          <Button size="sm" onClick={() => setOpen(true)}>
+            <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+            Record Payment
+          </Button>
+        )}
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
@@ -121,7 +143,7 @@ export function BillActions({ bill, openBills }: Props) {
             {bill.isWhtEligible && (
               <div className="space-y-1.5">
                 <Label>WHT Amount (deducted from payment)</Label>
-                <Input type="number" min="0" step="0.01" value={whtAmount}
+                <Input type="number" min="0" max={amount} step="0.01" value={whtAmount}
                   onChange={(e) => setWhtAmount(parseFloat(e.target.value) || 0)} />
                 {whtAmount > 0 && (
                   <p className="text-xs text-slate-500">Net payment to vendor: {formatCurrency(amount - whtAmount)}</p>
