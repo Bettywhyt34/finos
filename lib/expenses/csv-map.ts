@@ -13,8 +13,12 @@
  *   Tax Amount            → taxAmount
  *   Expense Amount        → amount (net before tax)
  *   Total                 → totalAmount (gross)
- *   Is Reimbursable       → REIMBURSED if TRUE, APPROVED otherwise
+ *   Status / Expense Status / Reimbursement Status → workflow status when explicit
  *   Claimant Email        → submitterEmail (for future employee matching)
+ *
+ * IMPORTANT: `Is Reimbursable` describes the nature of the claim, not whether
+ * the claim has been approved or paid. FINOS must never use that flag to infer
+ * an accounting settlement status.
  */
 
 export type ZohoExpenseStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "REIMBURSED"
@@ -58,8 +62,22 @@ function parseDate(v: string): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function mapStatus(isReimbursable: string): ZohoExpenseStatus {
-  return isReimbursable.trim().toUpperCase() === "TRUE" ? "REIMBURSED" : "APPROVED"
+function mapStatus(row: Record<string, string>): ZohoExpenseStatus {
+  const raw = (
+    cell(row, "expense_status") ||
+    cell(row, "status") ||
+    cell(row, "reimbursement_status")
+  ).toLowerCase().replace(/[\s-]+/g, "_")
+
+  if (!raw) return "PENDING"
+  if (["draft", "unsubmitted"].includes(raw)) return "DRAFT"
+  if (["pending", "submitted", "pending_approval", "awaiting_approval"].includes(raw)) return "PENDING"
+  if (["approved", "accepted"].includes(raw)) return "APPROVED"
+  if (["rejected", "declined"].includes(raw)) return "REJECTED"
+  if (["reimbursed", "paid", "settled"].includes(raw)) return "REIMBURSED"
+
+  // Unknown external statuses are deliberately non-posting until reviewed.
+  return "PENDING"
 }
 
 function splitLine(line: string, delimiter: string): string[] {
@@ -137,7 +155,7 @@ export function parseZohoExpenseCsv(csvText: string): {
       taxAmount,
       amount,
       totalAmount:       total,
-      status:            mapStatus(cell(row, "is_reimbursable")),
+      status:            mapStatus(row),
       submitterEmail:    cell(row, "claimant_email") || null,
       referenceNumber:   cell(row, "reference") || null,
     })
