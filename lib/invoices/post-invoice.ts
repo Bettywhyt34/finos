@@ -1,12 +1,16 @@
 /**
  * Shared invoice posting service.
  *
- * Marks a DRAFT invoice as SENT and posts the matching AR / Revenue / VAT
- * journal atomically. JournalEntry + JournalEntryLine is the authoritative GL.
+ * Marks a DRAFT invoice as SENT and posts the matching billing journal atomically.
+ * Billing and revenue recognition are separate accounting events:
+ * - recogniseRevenueOnInvoiceDate=true  -> Dr AR / Cr Revenue (+ VAT)
+ * - recogniseRevenueOnInvoiceDate=false -> Dr AR / Cr Unearned Income (+ VAT)
+ *
+ * JournalEntry + JournalEntryLine is the authoritative GL.
  */
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { toNGN } from "@/lib/utils";
+import { getRecognitionPeriod, toNGN } from "@/lib/utils";
 import { sendInvoiceEmail } from "@/lib/email-notifications/senders/invoice-sent";
 import { COA_AR_CODE, COA_OUTPUT_VAT_CODE } from "@/lib/constants";
 import { getSystemAccount } from "@/lib/accounting/system-accounts";
@@ -28,7 +32,7 @@ export interface PostInvoiceOptions {
 type ReportingTags = Record<string, string> | null;
 
 type RevenueGroup = {
-  accountId: string;
+  incomeAccountId: string;
   projectId: string | null;
   reportingTags: ReportingTags;
   amount: number;
@@ -76,8 +80,6 @@ export async function postInvoiceAndMarkSent(
   }
   const sentAt = opts.sentAt;
 
-  // Fetch the source dimensions together with the invoice lines. These dimensions
-  // must survive into JournalEntryLine so Project and Reporting Tag reporting works.
   const invoice = await prisma.invoice.findFirst({
     where: { id: invoiceId, tenantId },
     include: {
@@ -135,6 +137,43 @@ export async function postInvoiceAndMarkSent(
     };
   }
 
+  const projectIds = Array.from(
+    new Set(invoice.lines.map((line) => line.projectId).filter((id): id is string => Boolean(id))),
+  );
+  const projects = projectIds.length
+    ? await prisma.project.findMany({
+        where: { tenantId, id: { in: projectIds } },
+        select: { id: true, unearnedIncomeAccountId: true },
+      })
+    : [];
+  if (projects.length !== projectIds.length) {
+    return { error: "One or more Projects on this invoice are no longer available to this organisation." };
+  }
+  const projectMap = new Map(projects.map((project) => [project.id, project]));
+
+  const projectUnearnedIds = Array.from(
+    new Set(projects.map((project) => project.unearnedIncomeAccountId).filter((id): id is string => Boolean(id))),
+  );
+  if (projectUnearnedIds.length) {
+    const validUnearned = await prisma.chartOfAccounts.findMany({
+      where: {
+        tenantId,
+        id: { in: projectUnearnedIds },
+        type: "LIABILITY",
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    const validIds = new Set(validUnearned.map((account) => account.id));
+    if (projectUnearnedIds.some((id) => !validIds.has(id))) {
+      return {
+        error:
+          "A Project on this invoice has an invalid or inactive Unearned Income account. " +
+          "Correct the Project accounting defaults before posting the invoice.",
+      };
+    }
+  }
+
   const rate = parseFloat(String(invoice.exchangeRate));
   const totalAmountNGN = toNGN(parseFloat(String(invoice.totalAmount)), rate);
   const taxAmountNGN = toNGN(parseFloat(String(invoice.taxAmount)), rate);
@@ -151,6 +190,27 @@ export async function postInvoiceAndMarkSent(
     return { error: error instanceof Error ? error.message : "Accounts Receivable is not configured." };
   }
 
+  let defaultUnearnedAccountId: string | null = null;
+  if (!invoice.recogniseRevenueOnInvoiceDate) {
+    try {
+      const unearned = await getSystemAccount(tenantId, "UNEARNED_REVENUE");
+      defaultUnearnedAccountId = unearned.id;
+    } catch (error: unknown) {
+      const everyProjectHasOverride = projectIds.length > 0 && projectIds.every(
+        (projectId) => Boolean(projectMap.get(projectId)?.unearnedIncomeAccountId),
+      );
+      const hasUnassignedProjectLine = invoice.lines.some((line) => !line.projectId);
+      if (!everyProjectHasOverride || hasUnassignedProjectLine) {
+        return {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unearned Revenue is not configured for deferred invoice revenue.",
+        };
+      }
+    }
+  }
+
   let vatAccountId: string | null = null;
   if (taxAmountNGN > 0.001) {
     try {
@@ -165,8 +225,6 @@ export async function postInvoiceAndMarkSent(
     }
   }
 
-  // A DRAFT invoice with an existing invoice journal indicates inconsistent state.
-  // Do not silently mark it SENT simply because the journal helper is idempotent.
   const existingJournal = await prisma.journalEntry.findFirst({
     where: { tenantId, source: "invoice", sourceId: invoiceId },
     select: { id: true },
@@ -179,15 +237,16 @@ export async function postInvoiceAndMarkSent(
     };
   }
 
-  // Preserve accounting dimensions by aggregating only lines with the same
-  // revenue account + Project + Reporting Tags. Two projects sharing one revenue
-  // account therefore remain distinct in the GL.
+  // Preserve source economics and dimensions by aggregating only lines with the
+  // same intended income account + Project + Reporting Tags. When revenue is
+  // deferred, the intended income account is retained in the invoice source lines
+  // for the later recognition event while the posting account is Unearned Income.
   const revenueGroups = new Map<string, RevenueGroup>();
   for (const line of invoice.lines) {
-    const accountId = line.incomeAccountId!;
+    const incomeAccountId = line.incomeAccountId!;
     const projectId = line.projectId ?? null;
     const reportingTags = normaliseReportingTags(line.reportingTags);
-    const key = dimensionKey(accountId, projectId, reportingTags);
+    const key = dimensionKey(incomeAccountId, projectId, reportingTags);
     const gross = parseFloat(String(line.amount));
     const lineDiscount = parseFloat(String(line.discountAmount));
     const amount = toNGN(gross - lineDiscount, rate);
@@ -197,7 +256,7 @@ export async function postInvoiceAndMarkSent(
       current.amount = Math.round((current.amount + amount) * 100) / 100;
     } else {
       revenueGroups.set(key, {
-        accountId,
+        incomeAccountId,
         projectId,
         reportingTags,
         amount: Math.round(amount * 100) / 100,
@@ -219,10 +278,10 @@ export async function postInvoiceAndMarkSent(
     }
   }
 
-  const revenueTotal = Array.from(revenueGroups.values())
+  const netSalesTotal = Array.from(revenueGroups.values())
     .reduce((sum, group) => sum + group.amount, 0);
-  const expectedRevenue = Math.round((totalAmountNGN - taxAmountNGN) * 100) / 100;
-  const roundingDifference = Math.round((expectedRevenue - revenueTotal) * 100) / 100;
+  const expectedNetSales = Math.round((totalAmountNGN - taxAmountNGN) * 100) / 100;
+  const roundingDifference = Math.round((expectedNetSales - netSalesTotal) * 100) / 100;
 
   if (Math.abs(roundingDifference) > 1) {
     return {
@@ -254,9 +313,22 @@ export async function postInvoiceAndMarkSent(
 
   for (const group of revenueGroups.values()) {
     if (group.amount <= 0) continue;
+    const projectUnearnedId = group.projectId
+      ? projectMap.get(group.projectId)?.unearnedIncomeAccountId ?? null
+      : null;
+    const postingAccountId = invoice.recogniseRevenueOnInvoiceDate
+      ? group.incomeAccountId
+      : projectUnearnedId ?? defaultUnearnedAccountId;
+
+    if (!postingAccountId) {
+      return { error: "Unearned Revenue is not configured for one or more deferred invoice lines." };
+    }
+
     journalLines.push({
-      accountId: group.accountId,
-      description: `Revenue - ${invoice.invoiceNumber}${fxNote}`,
+      accountId: postingAccountId,
+      description: invoice.recogniseRevenueOnInvoiceDate
+        ? `Revenue - ${invoice.invoiceNumber}${fxNote}`
+        : `Unearned Income - ${invoice.invoiceNumber}${fxNote}`,
       debit: 0,
       credit: group.amount,
       projectId: group.projectId,
@@ -264,8 +336,6 @@ export async function postInvoiceAndMarkSent(
     });
   }
 
-  // AR and VAT remain invoice-level lines. Project/tag dimensions are carried on
-  // the revenue lines where the source invoice line provides an unambiguous basis.
   if (taxAmountNGN > 0.001 && vatAccountId) {
     journalLines.push({
       accountId: vatAccountId,
@@ -296,13 +366,17 @@ export async function postInvoiceAndMarkSent(
         throw new Error("A journal entry already exists for this invoice. Concurrent duplicate prevented.");
       }
 
+      // Billing happens when the invoice is issued. A future revenue-recognition
+      // event must never delay AR, VAT or Unearned Income to another period.
       await postJournalEntryInTransaction(tx, {
         tenantId,
         createdBy: userId,
         entryDate: invoice.issueDate,
         reference: invoice.invoiceNumber,
-        description: `Invoice ${invoice.invoiceNumber}${fxNote}`,
-        recognitionPeriod: invoice.recognitionPeriod,
+        description: invoice.recogniseRevenueOnInvoiceDate
+          ? `Invoice ${invoice.invoiceNumber}${fxNote}`
+          : `Invoice ${invoice.invoiceNumber} — revenue deferred${fxNote}`,
+        recognitionPeriod: getRecognitionPeriod(invoice.issueDate),
         source: "invoice",
         sourceId: invoiceId,
         lines: journalLines,
