@@ -37,9 +37,6 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
     return { error: "This invoice has payments recorded. Reverse or refund the payment before voiding it." };
   }
 
-  // Only a later earning event that consumed Unearned Income makes the billing
-  // relationship non-voidable. A Contract Asset clearance may be voided because
-  // the invoice reversal itself restores that Contract Asset balance.
   const recognisedFromThisInvoice = await prisma.$queryRaw<Array<{ amount: unknown }>>`
     SELECT COALESCE(SUM(rria."amount"), 0) AS "amount"
     FROM "invoice_line_revenue_allocations" ila
@@ -104,6 +101,10 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
 
     try {
       await prisma.$transaction(async (tx) => {
+        // Customer receipts, receipt reversals and invoice voids share this lock.
+        // That prevents a receipt and a void from both passing stale balance/status checks.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${id}`}))`;
+
         const live = await tx.invoice.findFirst({
           where: { id, tenantId },
           select: { status: true, amountPaid: true },
@@ -115,9 +116,6 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
           throw new Error("A payment was applied before voiding could complete. Reverse it first.");
         }
 
-        // Share the same Project revenue locks used by invoice posting and revenue
-        // recognition. This makes the check below race-safe. Deterministic ordering
-        // keeps multi-Project invoices from deadlocking with one another.
         const projectRows = await tx.$queryRaw<Array<{ projectId: string }>>`
           SELECT DISTINCT "project_id" AS "projectId"
           FROM "invoice_line_revenue_allocations"
