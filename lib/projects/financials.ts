@@ -75,7 +75,7 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
           COALESCE(SUM(CASE WHEN coa."type" = 'INCOME' THEN jel."credit" - jel."debit" ELSE 0 END), 0) AS "revenueEarned",
           COALESCE(SUM(CASE WHEN coa."type" = 'EXPENSE' THEN jel."debit" - jel."credit" ELSE 0 END), 0) AS "costsIncurred"
         FROM "journal_entry_lines" jel
-        INNER JOIN "journal_entries" je ON je."id" = jel."journal_entry_id"
+        INNER JOIN "journal_entries" je ON je."id" = jel."entry_id"
         INNER JOIN "chart_of_accounts" coa ON coa."id" = jel."account_id"
         WHERE je."tenant_id" = ${tenantId}::uuid
           AND jel."project_id" = ${projectId}
@@ -134,7 +134,7 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
         COALESCE(SUM(jel."debit" - jel."credit"), 0) AS "amount",
         COUNT(DISTINCT je."id") AS "entryCount"
       FROM "journal_entry_lines" jel
-      INNER JOIN "journal_entries" je ON je."id" = jel."journal_entry_id"
+      INNER JOIN "journal_entries" je ON je."id" = jel."entry_id"
       INNER JOIN "chart_of_accounts" coa ON coa."id" = jel."account_id"
       WHERE je."tenant_id" = ${tenantId}::uuid
         AND jel."project_id" = ${projectId}
