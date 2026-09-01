@@ -72,11 +72,30 @@ function assertPostingShape(opts: PostJournalOptions) {
   }
 }
 
-async function validatePeriod(tx: Prisma.TransactionClient, tenantId: string, recognitionPeriod: string) {
-  const period = await tx.accountingPeriod.findUnique({
+/**
+ * Serialise every operation that changes or relies on one accounting period's
+ * open/closed state. Posting, close and reopen actions must all take this same
+ * advisory lock before reading the period status.
+ */
+export async function lockAccountingPeriodInTransaction(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  recognitionPeriod: string,
+) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:period:${tenantId}:${recognitionPeriod}`}))`;
+  return tx.accountingPeriod.findUnique({
     where: { tenantId_period: { tenantId, period: recognitionPeriod } },
     select: { isClosed: true },
   });
+}
+
+/** Throws if the period is closed, while holding the shared period lock. */
+export async function assertPeriodOpenInTransaction(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  recognitionPeriod: string,
+) {
+  const period = await lockAccountingPeriodInTransaction(tx, tenantId, recognitionPeriod);
   if (period?.isClosed) {
     throw new Error(`Period ${recognitionPeriod} is closed. Reopen it before posting.`);
   }
@@ -177,7 +196,7 @@ export async function postJournalEntryInTransaction(
   });
   if (existing) return existing.id;
 
-  await validatePeriod(tx, opts.tenantId, opts.recognitionPeriod);
+  await assertPeriodOpenInTransaction(tx, opts.tenantId, opts.recognitionPeriod);
   const lines = await resolveAndValidateLines(tx, opts.tenantId, opts.lines);
   const entryNumber = await nextEntryNumber(tx, opts.tenantId);
 
