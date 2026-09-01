@@ -23,9 +23,7 @@ export interface PostInvoiceOptions {
   tenantId: string;
   invoiceId: string;
   userId: string;
-  /** Operational sent date. Must be today or earlier. */
   sentAt: Date;
-  /** Defaults to true. Bulk posting may set false. */
   sendEmail?: boolean;
 }
 
@@ -60,12 +58,10 @@ type ContractClearance = {
 
 function normaliseReportingTags(value: Prisma.JsonValue | null): ReportingTags {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
-
   const pairs = Object.entries(value)
     .filter(([, optionId]) => typeof optionId === "string" && optionId.length > 0)
     .map(([tagId, optionId]) => [tagId, optionId as string] as const)
     .sort(([a], [b]) => a.localeCompare(b));
-
   return pairs.length ? Object.fromEntries(pairs) : null;
 }
 
@@ -75,15 +71,7 @@ export async function postInvoiceAndMarkSent(
   const { tenantId, invoiceId, userId, sendEmail = true } = opts;
 
   const now = new Date();
-  const todayEnd = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    59,
-    999,
-  );
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   if (!(opts.sentAt instanceof Date) || Number.isNaN(opts.sentAt.getTime())) {
     return { error: "A valid sent date is required." };
   }
@@ -113,17 +101,11 @@ export async function postInvoiceAndMarkSent(
   if (invoice.status !== "DRAFT") {
     return { error: `Invoice is already ${invoice.status}. Only DRAFT invoices can be marked as sent.` };
   }
-  if (invoice.lines.length === 0) {
-    return { error: "Invoice has no line items. Add at least one line before marking as sent." };
-  }
+  if (invoice.lines.length === 0) return { error: "Invoice has no line items. Add at least one line before marking as sent." };
 
   const missingIncomeLine = invoice.lines.find((line) => !line.incomeAccountId);
   if (missingIncomeLine) {
-    return {
-      error:
-        "One or more invoice lines are missing an income account. " +
-        "Edit the invoice and assign an income account to every line.",
-    };
+    return { error: "One or more invoice lines are missing an income account. Edit the invoice and assign an income account to every line." };
   }
 
   const incomeAccountIds = Array.from(new Set(invoice.lines.map((line) => line.incomeAccountId!).filter(Boolean)));
@@ -133,11 +115,7 @@ export async function postInvoiceAndMarkSent(
   });
   const validIncomeIds = new Set(validIncomeAccounts.map((account) => account.id));
   if (incomeAccountIds.some((id) => !validIncomeIds.has(id))) {
-    return {
-      error:
-        "One or more income accounts on this invoice are inactive or do not belong to this organisation. " +
-        "Edit the invoice to reselect valid income accounts.",
-    };
+    return { error: "One or more income accounts on this invoice are inactive or do not belong to this organisation. Edit the invoice to reselect valid income accounts." };
   }
 
   const projectIds = Array.from(
@@ -176,11 +154,7 @@ export async function postInvoiceAndMarkSent(
     select: { id: true },
   });
   if (existingJournal) {
-    return {
-      error:
-        "A journal entry already exists for this invoice. Duplicate posting prevented. " +
-        "Review the invoice status before retrying.",
-    };
+    return { error: "A journal entry already exists for this invoice. Duplicate posting prevented. Review the invoice status before retrying." };
   }
 
   const sourceLineAllocations: SourceLineAllocation[] = invoice.lines.map((line) => ({
@@ -205,9 +179,7 @@ export async function postInvoiceAndMarkSent(
   const sourceLineTotal = sourceLineAllocations.reduce((sum, line) => sum + line.amount, 0);
   const sourceLineRounding = Math.round((expectedNetSales - sourceLineTotal) * 100) / 100;
   if (Math.abs(sourceLineRounding) > 1) {
-    return {
-      error: `Invoice line allocation imbalance exceeds tolerance (${sourceLineRounding} NGN). Please review the invoice totals.`,
-    };
+    return { error: `Invoice line allocation imbalance exceeds tolerance (${sourceLineRounding} NGN). Please review the invoice totals.` };
   }
   if (sourceLineRounding !== 0 && sourceLineAllocations.length) {
     let largest = sourceLineAllocations[0];
@@ -219,22 +191,15 @@ export async function postInvoiceAndMarkSent(
 
   try {
     await prisma.$transaction(async (tx) => {
-      const liveInvoice = await tx.invoice.findFirst({
-        where: { id: invoiceId, tenantId },
-        select: { status: true },
-      });
+      const liveInvoice = await tx.invoice.findFirst({ where: { id: invoiceId, tenantId }, select: { status: true } });
       if (!liveInvoice) throw new Error("Invoice not found.");
-      if (liveInvoice.status !== "DRAFT") {
-        throw new Error(`Invoice is already ${liveInvoice.status}. Another request may have posted it concurrently.`);
-      }
+      if (liveInvoice.status !== "DRAFT") throw new Error(`Invoice is already ${liveInvoice.status}. Another request may have posted it concurrently.`);
 
       const duplicateJournal = await tx.journalEntry.findFirst({
         where: { tenantId, source: "invoice", sourceId: invoiceId },
         select: { id: true },
       });
-      if (duplicateJournal) {
-        throw new Error("A journal entry already exists for this invoice. Concurrent duplicate prevented.");
-      }
+      if (duplicateJournal) throw new Error("A journal entry already exists for this invoice. Concurrent duplicate prevented.");
 
       for (const projectId of projectIds) {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:project-revenue:${tenantId}:${projectId}`}))`;
@@ -246,9 +211,7 @@ export async function postInvoiceAndMarkSent(
             select: { id: true, unearnedIncomeAccountId: true, contractAssetAccountId: true },
           })
         : [];
-      if (liveProjects.length !== projectIds.length) {
-        throw new Error("One or more Projects changed before invoice posting could complete.");
-      }
+      if (liveProjects.length !== projectIds.length) throw new Error("One or more Projects changed before invoice posting could complete.");
       const projectMap = new Map<string, ProjectAccountingRow>(liveProjects.map((project) => [project.id, project]));
 
       const contractByProject = new Map<string, Array<ContractAssetRecognitionRow & { remainingAmount: number }>>();
@@ -259,7 +222,10 @@ export async function postInvoiceAndMarkSent(
             prr."project_id" AS "projectId",
             prr."contract_asset_account_id" AS "accountId",
             (prr."contract_asset_created" - COALESCE(SUM(
-              CASE WHEN ila."contract_asset_cleared" > 0 AND i."status" <> 'VOIDED' THEN rria."amount" ELSE 0 END
+              CASE
+                WHEN rria."allocation_type" = 'CONTRACT_ASSET_CLEARANCE' AND i."status" <> 'VOIDED' THEN rria."amount"
+                ELSE 0
+              END
             ), 0)) AS "remaining"
           FROM "project_revenue_recognitions" prr
           LEFT JOIN "revenue_recognition_invoice_allocations" rria ON rria."recognition_id" = prr."id"
@@ -272,7 +238,10 @@ export async function postInvoiceAndMarkSent(
           GROUP BY prr."id", prr."project_id", prr."contract_asset_account_id", prr."contract_asset_created",
             prr."recognition_date", prr."created_at"
           HAVING (prr."contract_asset_created" - COALESCE(SUM(
-            CASE WHEN ila."contract_asset_cleared" > 0 AND i."status" <> 'VOIDED' THEN rria."amount" ELSE 0 END
+            CASE
+              WHEN rria."allocation_type" = 'CONTRACT_ASSET_CLEARANCE' AND i."status" <> 'VOIDED' THEN rria."amount"
+              ELSE 0
+            END
           ), 0)) > 0.005
           ORDER BY prr."recognition_date" ASC, prr."created_at" ASC, prr."id" ASC
         `;
@@ -282,16 +251,12 @@ export async function postInvoiceAndMarkSent(
           remainingAmount: Math.round(Number(recognition.remaining ?? 0) * 100) / 100,
         }));
         for (const recognition of queue) {
-          if (!recognition.accountId) {
-            throw new Error("An outstanding Project Contract Asset recognition is missing its ledger account. Review the recognition history before billing.");
-          }
+          if (!recognition.accountId) throw new Error("An outstanding Project Contract Asset recognition is missing its ledger account. Review the recognition history before billing.");
           const account = await tx.chartOfAccounts.findFirst({
             where: { id: recognition.accountId, tenantId, type: "ASSET", isActive: true },
             select: { id: true },
           });
-          if (!account) {
-            throw new Error("An outstanding Project Contract Asset account is inactive or invalid. Correct the accounting configuration before billing.");
-          }
+          if (!account) throw new Error("An outstanding Project Contract Asset account is inactive or invalid. Correct the accounting configuration before billing.");
         }
         contractByProject.set(projectId, queue);
       }
@@ -389,14 +354,7 @@ export async function postInvoiceAndMarkSent(
           }
         }
 
-        evidence.push({
-          source,
-          contractAssetCleared,
-          immediateRevenue,
-          unearnedCreated,
-          unearnedIncomeAccountId,
-          clearances,
-        });
+        evidence.push({ source, contractAssetCleared, immediateRevenue, unearnedCreated, unearnedIncomeAccountId, clearances });
       }
 
       if (taxAmountNGN > 0.001 && vatAccountId) {
@@ -446,9 +404,10 @@ export async function postInvoiceAndMarkSent(
         for (const clearance of item.clearances) {
           await tx.$executeRaw`
             INSERT INTO "revenue_recognition_invoice_allocations" (
-              "tenant_id", "recognition_id", "invoice_line_allocation_id", "amount"
+              "tenant_id", "recognition_id", "invoice_line_allocation_id", "amount", "allocation_type"
             ) VALUES (
-              ${tenantId}::uuid, ${clearance.recognitionId}::uuid, ${invoiceLineAllocationId}::uuid, ${clearance.amount}
+              ${tenantId}::uuid, ${clearance.recognitionId}::uuid, ${invoiceLineAllocationId}::uuid,
+              ${clearance.amount}, 'CONTRACT_ASSET_CLEARANCE'
             )
           `;
         }
@@ -458,14 +417,10 @@ export async function postInvoiceAndMarkSent(
         where: { id: invoiceId, tenantId, status: "DRAFT" },
         data: { status: "SENT", sentAt },
       });
-      if (updated.count !== 1) {
-        throw new Error("Invoice status changed before the update could complete. Transaction rolled back.");
-      }
+      if (updated.count !== 1) throw new Error("Invoice status changed before the update could complete. Transaction rolled back.");
     });
   } catch (error: unknown) {
-    return {
-      error: error instanceof Error ? error.message : "Failed to post invoice. Invoice status was not changed.",
-    };
+    return { error: error instanceof Error ? error.message : "Failed to post invoice. Invoice status was not changed." };
   }
 
   if (sendEmail) {
