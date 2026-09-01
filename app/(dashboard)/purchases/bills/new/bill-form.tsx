@@ -15,12 +15,34 @@ import { SUPPORTED_CURRENCIES } from "@/lib/fx";
 interface Vendor { id: string; companyName: string; vendorCode: string; paymentTerms: number; }
 interface Item { id: string; itemCode: string; name: string; costPrice: number | null; }
 interface Account { id: string; code: string; name: string; type: string; }
-interface LineItem { id: string; itemId: string; description: string; quantity: number; rate: number; accountId: string; }
+interface TaxRate { id: string; name: string; rate: number; }
+interface LineItem {
+  id: string;
+  itemId: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  accountId: string;
+  taxRateId: string;
+}
 
 function today() { return new Date().toISOString().split("T")[0]; }
 function addDays(d: string, n: number) { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
+function emptyLine(): LineItem {
+  return { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, accountId: "", taxRateId: "" };
+}
 
-export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; items: Item[]; accounts: Account[]; }) {
+export function BillForm({
+  vendors,
+  items,
+  accounts,
+  taxRates,
+}: {
+  vendors: Vendor[];
+  items: Item[];
+  accounts: Account[];
+  taxRates: TaxRate[];
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +53,7 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
   const [exchangeRate, setExchangeRate] = useState(1);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateFetched, setRateFetched] = useState(false);
-  const [lines, setLines] = useState<LineItem[]>([
-    { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, accountId: "" },
-  ]);
+  const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
 
   const isNGN = currency === "NGN";
 
@@ -73,12 +93,24 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
     setLines((prev) => prev.map((l) => l.id === lineId ? { ...l, [field]: value } : l));
   }
 
+  function lineTax(line: LineItem) {
+    const tax = taxRates.find((rate) => rate.id === line.taxRateId);
+    const base = line.quantity * line.rate;
+    return tax ? base * tax.rate / 100 : 0;
+  }
+
   const subtotal = lines.reduce((s, l) => s + l.quantity * l.rate, 0);
+  const taxTotal = lines.reduce((s, l) => s + lineTax(l), 0);
+  const total = subtotal + taxTotal;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!vendorId) { setError("Please select a vendor"); return; }
-    if (lines.some((l) => !l.accountId)) { setError("Each line must have an expense account"); return; }
+    if (lines.some((l) => !l.accountId)) { setError("Each line must have an expense or asset account"); return; }
+    if (lines.some((l) => !l.description.trim() || l.quantity <= 0 || l.rate < 0)) {
+      setError("Each line needs a description, positive quantity and valid rate");
+      return;
+    }
     if (!isNGN && exchangeRate <= 0) { setError("Please enter a valid exchange rate"); return; }
     setLoading(true);
     setError(null);
@@ -97,6 +129,7 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
         quantity: l.quantity,
         rate: l.rate,
         accountId: l.accountId,
+        taxRateId: l.taxRateId || undefined,
       })),
     });
     setLoading(false);
@@ -144,7 +177,6 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
         </div>
       </div>
 
-      {/* FX Rate */}
       {!isNGN && (
         <div className="border border-amber-200 bg-amber-50 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between">
@@ -165,27 +197,24 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
               Refresh
             </Button>
           </div>
-          {exchangeRate > 0 && subtotal > 0 && (
+          {exchangeRate > 0 && total > 0 && (
             <div className="bg-white rounded-lg px-4 py-3 text-xs border border-amber-100">
               <div className="flex justify-between font-semibold text-slate-900">
-                <span>Total (NGN equivalent)</span>
-                <span className="font-mono">{formatCurrency(subtotal * exchangeRate)}</span>
+                <span>Gross total (NGN equivalent)</span>
+                <span className="font-mono">{formatCurrency(total * exchangeRate)}</span>
               </div>
-              <p className="text-slate-400 mt-1">Journals will post at this NGN equivalent.</p>
+              <p className="text-slate-400 mt-1">The bill and journal will use this exchange rate.</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Line items */}
       <div className="border border-slate-200 rounded-xl overflow-hidden">
         <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
           <span className="font-medium text-sm text-slate-700">
             Line Items <span className="text-slate-400 font-normal">(amounts in {currency})</span>
           </span>
-          <Button type="button" variant="ghost" size="sm" onClick={() =>
-            setLines((p) => [...p, { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, accountId: "" }])
-          }>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setLines((p) => [...p, emptyLine()])}>
             <Plus className="h-3.5 w-3.5 mr-1" />Add line
           </Button>
         </div>
@@ -202,14 +231,14 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
                   </SelectContent>
                 </Select>
               </div>
-              <div className="col-span-3">
+              <div className="col-span-2">
                 {idx === 0 && <Label className="block mb-1.5 text-xs">Description</Label>}
                 <Input className="h-8 text-xs" value={line.description}
                   onChange={(e) => updateLine(line.id, "description", e.target.value)} />
               </div>
               <div className="col-span-1">
                 {idx === 0 && <Label className="block mb-1.5 text-xs">Qty</Label>}
-                <Input className="h-8 text-xs" type="number" min="0" step="0.01" value={line.quantity}
+                <Input className="h-8 text-xs" type="number" min="0.01" step="0.01" value={line.quantity}
                   onChange={(e) => updateLine(line.id, "quantity", parseFloat(e.target.value) || 0)} />
               </div>
               <div className="col-span-2">
@@ -217,8 +246,20 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
                 <Input className="h-8 text-xs font-mono" type="number" min="0" step="0.01" value={line.rate}
                   onChange={(e) => updateLine(line.id, "rate", parseFloat(e.target.value) || 0)} />
               </div>
-              <div className="col-span-3">
-                {idx === 0 && <Label className="block mb-1.5 text-xs">Expense Account</Label>}
+              <div className="col-span-2">
+                {idx === 0 && <Label className="block mb-1.5 text-xs">VAT</Label>}
+                <Select value={line.taxRateId || "NONE"} onValueChange={(v) => updateLine(line.id, "taxRateId", v === "NONE" ? "" : (v ?? ""))}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="No VAT" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">No VAT</SelectItem>
+                    {taxRates.map((tax) => (
+                      <SelectItem key={tax.id} value={tax.id}>{tax.name} ({tax.rate}%)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                {idx === 0 && <Label className="block mb-1.5 text-xs">Expense / Asset</Label>}
                 <Select value={line.accountId} onValueChange={(v) => updateLine(line.id, "accountId", v ?? "")}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Account" /></SelectTrigger>
                   <SelectContent>
@@ -237,15 +278,23 @@ export function BillForm({ vendors, items, accounts }: { vendors: Vendor[]; item
           ))}
         </div>
         <div className="border-t border-slate-200 p-4 bg-slate-50">
-          <div className="flex flex-col items-end gap-1.5 text-sm">
-            <div className="flex gap-8 font-semibold">
+          <div className="ml-auto max-w-sm space-y-1.5 text-sm">
+            <div className="flex justify-between text-slate-600">
+              <span>Subtotal</span>
+              <span className="font-mono">{formatCurrency(subtotal, currency)}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>VAT</span>
+              <span className="font-mono">{formatCurrency(taxTotal, currency)}</span>
+            </div>
+            <div className="flex justify-between font-semibold border-t border-slate-200 pt-1.5">
               <span>Total</span>
-              <span className="font-mono w-32 text-right">{formatCurrency(subtotal, currency)}</span>
+              <span className="font-mono">{formatCurrency(total, currency)}</span>
             </div>
             {!isNGN && exchangeRate > 0 && (
-              <div className="flex gap-8 text-xs text-slate-400">
-                <span>≈ NGN equivalent</span>
-                <span className="font-mono w-32 text-right">{formatCurrency(subtotal * exchangeRate)}</span>
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>≈ NGN gross total</span>
+                <span className="font-mono">{formatCurrency(total * exchangeRate)}</span>
               </div>
             )}
           </div>
