@@ -72,14 +72,15 @@ export async function createManualJournalEntry(data: {
       await assertPeriodOpenInTransaction(tx, orgId, data.recognitionPeriod);
       const entryNumber = await getNextManualEntryNumber(tx, orgId);
 
+      const uniqueAccountIds = Array.from(new Set(lines.map((line) => line.accountId)));
       const accounts = await tx.chartOfAccounts.count({
         where: {
           tenantId: orgId,
           isActive: true,
-          id: { in: Array.from(new Set(lines.map((line) => line.accountId))) },
+          id: { in: uniqueAccountIds },
         },
       });
-      if (accounts !== new Set(lines.map((line) => line.accountId)).size) {
+      if (accounts !== uniqueAccountIds.length) {
         throw new Error("One or more journal accounts do not belong to this entity or are inactive.");
       }
 
