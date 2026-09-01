@@ -23,6 +23,7 @@ const ROLES: Array<{
   { role: "INPUT_VAT", label: "Input VAT Recoverable", description: "Recoverable VAT paid on eligible purchases.", types: ["ASSET"] },
   { role: "OUTPUT_VAT", label: "Output VAT Payable", description: "VAT collected from customers and payable to the tax authority.", types: ["LIABILITY"] },
   { role: "WHT_PAYABLE", label: "Withholding Tax Payable", description: "WHT deducted from vendor payments and awaiting remittance.", types: ["LIABILITY"] },
+  { role: "WHT_RECEIVABLE", label: "Withholding Tax Receivable", description: "WHT deducted by customers and recoverable as a tax credit.", types: ["ASSET"] },
   { role: "RETAINED_EARNINGS", label: "Retained Earnings", description: "Equity account used for year-end profit or loss transfer.", types: ["EQUITY"] },
   { role: "FX_GAIN", label: "Unrealised FX Gain", description: "Income account used by foreign-currency revaluation.", types: ["INCOME"] },
   { role: "FX_LOSS", label: "Unrealised FX Loss", description: "Expense account used by foreign-currency revaluation.", types: ["EXPENSE"] },
