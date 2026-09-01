@@ -61,22 +61,42 @@ export async function createProject(
   }
 
   const customer = await prisma.customer.findFirst({
-    where: { id: data.customerId, tenantId },
+    where: { id: data.customerId, tenantId, isActive: true },
     select: { id: true },
   });
-  if (!customer) return { error: "Select a customer that belongs to the active entity." };
+  if (!customer) return { error: "Select an active customer that belongs to the current entity." };
 
-  const accountIds = [
-    data.defaultIncomeAccountId,
-    data.contractAssetAccountId,
-    data.unearnedIncomeAccountId,
-  ].filter((value): value is string => Boolean(value));
-  if (accountIds.length > 0) {
-    const accountCount = await prisma.chartOfAccounts.count({
-      where: { tenantId, id: { in: [...new Set(accountIds)] }, isActive: true },
+  if (data.code) {
+    const duplicateCode = await prisma.project.findFirst({
+      where: { tenantId, code: data.code },
+      select: { id: true },
     });
-    if (accountCount !== new Set(accountIds).size) {
-      return { error: "One or more selected accounts are not available to the active entity." };
+    if (duplicateCode) return { error: "That project code is already in use." };
+  }
+
+  const requestedAccounts = [
+    data.defaultIncomeAccountId
+      ? { id: data.defaultIncomeAccountId, type: "INCOME" as const, label: "Default income account" }
+      : null,
+    data.contractAssetAccountId
+      ? { id: data.contractAssetAccountId, type: "ASSET" as const, label: "Contract Asset account" }
+      : null,
+    data.unearnedIncomeAccountId
+      ? { id: data.unearnedIncomeAccountId, type: "LIABILITY" as const, label: "Unearned Income account" }
+      : null,
+  ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+
+  if (requestedAccounts.length > 0) {
+    const ids = [...new Set(requestedAccounts.map((account) => account.id))];
+    const accounts = await prisma.chartOfAccounts.findMany({
+      where: { tenantId, id: { in: ids }, isActive: true },
+      select: { id: true, type: true },
+    });
+    const accountMap = new Map(accounts.map((account) => [account.id, account.type]));
+    for (const account of requestedAccounts) {
+      if (accountMap.get(account.id) !== account.type) {
+        return { error: `${account.label} must be an active ${account.type.toLowerCase()} account in this entity.` };
+      }
     }
   }
 
@@ -123,9 +143,9 @@ export async function createProject(
     });
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "P2010") {
-      return { error: "The project could not be saved. Check that the local Projects migration has been applied." };
+      return { error: "The project could not be saved. Check that the Projects migration has been applied and try again." };
     }
-    return { error: "The project could not be saved. Please check the code and try again." };
+    return { error: "The project could not be saved. Please check the project details and try again." };
   }
 
   revalidatePath("/projects");
