@@ -15,13 +15,19 @@ export interface AccountBalance {
   balance: number;
 }
 
+export interface AccountBalanceOptions {
+  /** Journal sources to omit from this statement view, e.g. year-end-close for P&L. */
+  excludeSources?: string[];
+}
+
 const DEBIT_NORMAL = new Set(["ASSET", "EXPENSE"]);
 
 /** Get all account balances up to (and including) the given period. */
 export async function getAccountBalances(
   orgId: string,
   periodTo: string,
-  periodFrom?: string
+  periodFrom?: string,
+  options?: AccountBalanceOptions,
 ): Promise<AccountBalance[]> {
   const accounts = await prisma.chartOfAccounts.findMany({
     where: { tenantId: orgId, isActive: true },
@@ -29,12 +35,14 @@ export async function getAccountBalances(
     orderBy: { code: "asc" },
   });
 
+  const excludeSources = options?.excludeSources?.filter(Boolean) ?? [];
   const lines = await prisma.journalEntryLine.groupBy({
     by: ["accountId"],
     where: {
       entry: {
         tenantId: orgId,
         isLocked: true,
+        ...(excludeSources.length ? { source: { notIn: excludeSources } } : {}),
         recognitionPeriod: {
           lte: periodTo,
           ...(periodFrom ? { gte: periodFrom } : {}),
