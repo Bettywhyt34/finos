@@ -6,7 +6,7 @@ export default async function NewBillPage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [vendors, items, accounts] = await Promise.all([
+  const [vendors, items, accounts, taxRates] = await Promise.all([
     prisma.vendor.findMany({
       where: { tenantId, isActive: true },
       select: { id: true, companyName: true, vendorCode: true, paymentTerms: true },
@@ -22,15 +22,21 @@ export default async function NewBillPage() {
       select: { id: true, code: true, name: true, type: true },
       orderBy: { code: "asc" },
     }),
+    prisma.taxRate.findMany({
+      where: { tenantId, isActive: true, type: "VAT" },
+      select: { id: true, name: true, rate: true },
+      orderBy: [{ rate: "asc" }, { name: "asc" }],
+    }),
   ]);
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-5xl">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-6">New Bill</h1>
       <BillForm
         vendors={vendors}
         items={items.map((i) => ({ ...i, costPrice: i.costPrice ? parseFloat(String(i.costPrice)) : null }))}
         accounts={accounts}
+        taxRates={taxRates.map((tax) => ({ ...tax, rate: Number(tax.rate) }))}
       />
     </div>
   );
