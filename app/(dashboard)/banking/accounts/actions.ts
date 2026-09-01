@@ -1,5 +1,6 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
@@ -28,6 +29,44 @@ function extractBankName(accountName: string): string {
   return accountName.trim().split(/\s+/).slice(0, 2).join(" ")
 }
 
+async function validateLedgerAccount(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  ledgerAccountId: string,
+  bankAccountId?: string,
+) {
+  const ledgerAccount = await tx.chartOfAccounts.findFirst({
+    where: {
+      id: ledgerAccountId,
+      tenantId,
+      isActive: true,
+      type: "ASSET",
+      OR: [
+        { subtype: { contains: "bank", mode: "insensitive" } },
+        { subtype: { contains: "cash", mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, code: true, name: true },
+  });
+  if (!ledgerAccount) {
+    throw new Error("Select an active Bank/Cash account from the Chart of Accounts.");
+  }
+
+  const conflict = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "bank_accounts"
+    WHERE "tenant_id" = ${tenantId}::uuid
+      AND "ledger_account_id" = ${ledgerAccountId}
+      AND (${bankAccountId ?? ""} = '' OR "id" <> ${bankAccountId ?? ""})
+    LIMIT 1
+  `;
+  if (conflict.length) {
+    throw new Error("That ledger account is already linked to another bank account.");
+  }
+
+  return ledgerAccount;
+}
+
 export async function syncBankAccountsFromCoa(): Promise<{
   created: number
   skipped: number
@@ -38,32 +77,59 @@ export async function syncBankAccountsFromCoa(): Promise<{
   const coaAccounts = await prisma.chartOfAccounts.findMany({
     where: {
       tenantId,
+      isActive: true,
       type: "ASSET",
       OR: [
-        { subtype: { equals: "Bank", mode: "insensitive" } },
-        { subtype: { equals: "Cash", mode: "insensitive" } },
+        { subtype: { contains: "bank", mode: "insensitive" } },
+        { subtype: { contains: "cash", mode: "insensitive" } },
       ],
     },
-    select: { name: true },
+    select: { id: true, name: true },
   })
 
   if (!coaAccounts.length) return { created: 0, skipped: 0, names: [] }
 
   const existing = await prisma.bankAccount.findMany({
     where: { tenantId },
-    select: { accountName: true },
+    select: { id: true, accountName: true },
   })
-  const existingNames = new Set(existing.map((a) => a.accountName.toLowerCase().trim()))
+  const byName = new Map(existing.map((a) => [a.accountName.toLowerCase().trim(), a]))
+  const mappings = await prisma.$queryRaw<Array<{ bankAccountId: string; ledgerAccountId: string | null }>>`
+    SELECT "id" AS "bankAccountId", "ledger_account_id" AS "ledgerAccountId"
+    FROM "bank_accounts"
+    WHERE "tenant_id" = ${tenantId}::uuid
+  `
+  const mappingByBank = new Map(mappings.map((row) => [row.bankAccountId, row.ledgerAccountId]))
+  const mappedLedgerIds = new Set(mappings.map((row) => row.ledgerAccountId).filter(Boolean))
 
   let created = 0
   let skipped = 0
   const names: string[] = []
 
   for (const coa of coaAccounts) {
-    const key = coa.name.toLowerCase().trim()
-    if (existingNames.has(key)) { skipped++; continue }
+    const existingByName = byName.get(coa.name.toLowerCase().trim())
+    if (mappedLedgerIds.has(coa.id)) {
+      skipped++
+      continue
+    }
 
-    await prisma.bankAccount.create({
+    if (existingByName) {
+      const currentMapping = mappingByBank.get(existingByName.id)
+      if (!currentMapping) {
+        await prisma.$executeRaw`
+          UPDATE "bank_accounts"
+          SET "ledger_account_id" = ${coa.id}
+          WHERE "id" = ${existingByName.id}
+            AND "tenant_id" = ${tenantId}::uuid
+            AND "ledger_account_id" IS NULL
+        `
+        mappedLedgerIds.add(coa.id)
+      }
+      skipped++
+      continue
+    }
+
+    const bank = await prisma.bankAccount.create({
       data: {
         tenantId,
         accountName: coa.name,
@@ -73,69 +139,104 @@ export async function syncBankAccountsFromCoa(): Promise<{
         openingBalance: 0,
         currentBalance: 0,
       },
+      select: { id: true },
     })
-    existingNames.add(key)
+    await prisma.$executeRaw`
+      UPDATE "bank_accounts"
+      SET "ledger_account_id" = ${coa.id}
+      WHERE "id" = ${bank.id} AND "tenant_id" = ${tenantId}::uuid
+    `
+    byName.set(coa.name.toLowerCase().trim(), { id: bank.id, accountName: coa.name })
+    mappedLedgerIds.add(coa.id)
     names.push(coa.name)
     created++
   }
 
   revalidatePath("/banking/accounts")
+  revalidatePath("/banking/reconciliation")
   return { created, skipped, names }
 }
 
 export async function updateBankAccount(id: string, formData: FormData) {
   try {
     const tenantId = await getOrgId();
-    const accountName = (formData.get("accountName") as string).trim();
-    const accountNumber = (formData.get("accountNumber") as string).trim();
-    const bankName = (formData.get("bankName") as string).trim();
-    const currency = (formData.get("currency") as string) || "NGN";
-    const openingBalance = parseFloat(formData.get("openingBalance") as string) || 0;
+    const accountName = String(formData.get("accountName") ?? "").trim();
+    const accountNumber = String(formData.get("accountNumber") ?? "").trim();
+    const bankName = String(formData.get("bankName") ?? "").trim();
+    const currency = String(formData.get("currency") ?? "NGN") || "NGN";
+    const openingBalance = parseFloat(String(formData.get("openingBalance") ?? "0")) || 0;
+    const ledgerAccountId = String(formData.get("ledgerAccountId") ?? "").trim();
 
-    if (!accountName || !accountNumber || !bankName) {
-      return { error: "Account name, number, and bank name are required" };
+    if (!accountName || !accountNumber || !bankName || !ledgerAccountId) {
+      return { error: "Account name, number, bank name, and ledger account are required" };
     }
 
-    await prisma.bankAccount.updateMany({
-      where: { id, tenantId },
-      data: { accountName, accountNumber, bankName, currency, openingBalance },
+    await prisma.$transaction(async (tx) => {
+      const bankAccount = await tx.bankAccount.findFirst({
+        where: { id, tenantId },
+        select: { id: true },
+      });
+      if (!bankAccount) throw new Error("Bank account not found");
+
+      await validateLedgerAccount(tx, tenantId, ledgerAccountId, id);
+      await tx.bankAccount.update({
+        where: { id },
+        data: { accountName, accountNumber, bankName, currency, openingBalance },
+      });
+      await tx.$executeRaw`
+        UPDATE "bank_accounts"
+        SET "ledger_account_id" = ${ledgerAccountId}
+        WHERE "id" = ${id} AND "tenant_id" = ${tenantId}::uuid
+      `;
     });
 
     revalidatePath("/banking/accounts");
+    revalidatePath("/banking/reconciliation");
     return { success: true };
-  } catch {
-    return { error: "Failed to update bank account" };
+  } catch (error: unknown) {
+    return { error: error instanceof Error ? error.message : "Failed to update bank account" };
   }
 }
 
 export async function createBankAccount(formData: FormData) {
   try {
     const tenantId = await getOrgId();
-    const accountName = (formData.get("accountName") as string).trim();
-    const accountNumber = (formData.get("accountNumber") as string).trim();
-    const bankName = (formData.get("bankName") as string).trim();
-    const currency = (formData.get("currency") as string) || "NGN";
-    const openingBalance = parseFloat(formData.get("openingBalance") as string) || 0;
+    const accountName = String(formData.get("accountName") ?? "").trim();
+    const accountNumber = String(formData.get("accountNumber") ?? "").trim();
+    const bankName = String(formData.get("bankName") ?? "").trim();
+    const currency = String(formData.get("currency") ?? "NGN") || "NGN";
+    const openingBalance = parseFloat(String(formData.get("openingBalance") ?? "0")) || 0;
+    const ledgerAccountId = String(formData.get("ledgerAccountId") ?? "").trim();
 
-    if (!accountName || !accountNumber || !bankName) {
-      return { error: "Account name, number, and bank name are required" };
+    if (!accountName || !accountNumber || !bankName || !ledgerAccountId) {
+      return { error: "Account name, number, bank name, and ledger account are required" };
     }
 
-    await prisma.bankAccount.create({
-      data: {
-        tenantId,
-        accountName,
-        accountNumber,
-        bankName,
-        currency,
-        openingBalance,
-        currentBalance: openingBalance,
-      },
+    await prisma.$transaction(async (tx) => {
+      await validateLedgerAccount(tx, tenantId, ledgerAccountId);
+      const bankAccount = await tx.bankAccount.create({
+        data: {
+          tenantId,
+          accountName,
+          accountNumber,
+          bankName,
+          currency,
+          openingBalance,
+          currentBalance: openingBalance,
+        },
+        select: { id: true },
+      });
+      await tx.$executeRaw`
+        UPDATE "bank_accounts"
+        SET "ledger_account_id" = ${ledgerAccountId}
+        WHERE "id" = ${bankAccount.id} AND "tenant_id" = ${tenantId}::uuid
+      `;
     });
 
     revalidatePath("/banking/accounts");
+    revalidatePath("/banking/reconciliation");
     return { success: true };
-  } catch {
-    return { error: "Failed to create bank account" };
+  } catch (error: unknown) {
+    return { error: error instanceof Error ? error.message : "Failed to create bank account" };
   }
 }
