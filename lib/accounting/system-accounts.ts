@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 export type SystemAccountRole =
   | "ACCOUNTS_RECEIVABLE"
   | "ACCOUNTS_PAYABLE"
+  | "EXPENSE_REIMBURSEMENT_PAYABLE"
   | "DEFAULT_BANK"
   | "OUTPUT_VAT"
   | "WHT_PAYABLE"
@@ -16,6 +17,7 @@ export type SystemAccountRole =
 const EXPECTED_TYPES: Partial<Record<SystemAccountRole, AccountType[]>> = {
   ACCOUNTS_RECEIVABLE: ["ASSET"],
   ACCOUNTS_PAYABLE: ["LIABILITY"],
+  EXPENSE_REIMBURSEMENT_PAYABLE: ["LIABILITY"],
   DEFAULT_BANK: ["ASSET"],
   OUTPUT_VAT: ["LIABILITY"],
   WHT_PAYABLE: ["LIABILITY"],
