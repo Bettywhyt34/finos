@@ -64,22 +64,18 @@ export async function recogniseDeferredProjectRevenue(input: {
 
       const project = await tx.project.findFirst({
         where: { id: input.projectId, tenantId },
-        select: { id: true, name: true, status: true, unearnedIncomeAccountId: true },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          defaultIncomeAccountId: true,
+          unearnedIncomeAccountId: true,
+          contractAssetAccountId: true,
+        },
       });
       if (!project) throw new Error("Project not found.");
       if (project.status === "DRAFT" || project.status === "CANCELLED") {
         throw new Error("Revenue can only be recognised for an active, on-hold or completed Project.");
-      }
-
-      let unearnedAccountId = project.unearnedIncomeAccountId;
-      if (unearnedAccountId) {
-        const account = await tx.chartOfAccounts.findFirst({
-          where: { id: unearnedAccountId, tenantId, type: "LIABILITY", isActive: true },
-          select: { id: true },
-        });
-        if (!account) throw new Error("The Project Unearned Income account is inactive or invalid.");
-      } else {
-        unearnedAccountId = (await resolveSystemAccount(tx, tenantId, "UNEARNED_REVENUE")).id;
       }
 
       const allocations = await tx.$queryRaw<DeferredAllocationRow[]>`
@@ -104,12 +100,54 @@ export async function recogniseDeferredProjectRevenue(input: {
         ORDER BY ila."posted_at" ASC, ila."id" ASC
       `;
 
-      const available = Math.round(allocations.reduce((sum, allocation) => sum + Number(allocation.remaining ?? 0), 0) * 100) / 100;
-      if (available + 0.005 < amount) {
-        throw new Error(`Only ${available.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} NGN remains in Unearned Income for this Project.`);
+      const availableUnearned = Math.round(
+        allocations.reduce((sum, allocation) => sum + Number(allocation.remaining ?? 0), 0) * 100,
+      ) / 100;
+      const unearnedUsed = Math.min(amount, availableUnearned);
+      const contractAssetCreated = Math.round((amount - unearnedUsed) * 100) / 100;
+
+      let unearnedAccountId: string | null = null;
+      if (unearnedUsed > 0.005) {
+        unearnedAccountId = project.unearnedIncomeAccountId;
+        if (unearnedAccountId) {
+          const account = await tx.chartOfAccounts.findFirst({
+            where: { id: unearnedAccountId, tenantId, type: "LIABILITY", isActive: true },
+            select: { id: true },
+          });
+          if (!account) throw new Error("The Project Unearned Income account is inactive or invalid.");
+        } else {
+          unearnedAccountId = (await resolveSystemAccount(tx, tenantId, "UNEARNED_REVENUE")).id;
+        }
       }
 
-      let amountLeft = amount;
+      let defaultIncomeAccountId: string | null = null;
+      let contractAssetAccountId: string | null = null;
+      if (contractAssetCreated > 0.005) {
+        defaultIncomeAccountId = project.defaultIncomeAccountId;
+        if (!defaultIncomeAccountId) {
+          throw new Error(
+            "This earning event exceeds billed-but-unearned revenue. Set a default Income account on the Project before recognising unbilled revenue.",
+          );
+        }
+        const income = await tx.chartOfAccounts.findFirst({
+          where: { id: defaultIncomeAccountId, tenantId, type: "INCOME", isActive: true },
+          select: { id: true },
+        });
+        if (!income) throw new Error("The Project default Income account is inactive or invalid.");
+
+        contractAssetAccountId = project.contractAssetAccountId;
+        if (contractAssetAccountId) {
+          const asset = await tx.chartOfAccounts.findFirst({
+            where: { id: contractAssetAccountId, tenantId, type: "ASSET", isActive: true },
+            select: { id: true },
+          });
+          if (!asset) throw new Error("The Project Contract Asset account is inactive or invalid.");
+        } else {
+          contractAssetAccountId = (await resolveSystemAccount(tx, tenantId, "CONTRACT_ASSET")).id;
+        }
+      }
+
+      let amountLeft = unearnedUsed;
       const chosen: Array<{ allocationId: string; amount: number; incomeAccountId: string; reportingTags: ReportingTags }> = [];
       for (const allocation of allocations) {
         if (amountLeft <= 0.005) break;
@@ -124,7 +162,7 @@ export async function recogniseDeferredProjectRevenue(input: {
         });
         amountLeft = Math.round((amountLeft - used) * 100) / 100;
       }
-      if (Math.abs(amountLeft) > 0.005) throw new Error("Could not fully allocate the revenue recognition amount.");
+      if (Math.abs(amountLeft) > 0.005) throw new Error("Could not fully allocate the Unearned Income release.");
 
       const creditGroups = new Map<string, { accountId: string; reportingTags: ReportingTags; amount: number }>();
       for (const allocation of chosen) {
@@ -133,14 +171,32 @@ export async function recogniseDeferredProjectRevenue(input: {
         if (current) current.amount = Math.round((current.amount + allocation.amount) * 100) / 100;
         else creditGroups.set(key, { accountId: allocation.incomeAccountId, reportingTags: allocation.reportingTags, amount: allocation.amount });
       }
+      if (contractAssetCreated > 0.005 && defaultIncomeAccountId) {
+        const key = groupKey(defaultIncomeAccountId, null);
+        const current = creditGroups.get(key);
+        if (current) current.amount = Math.round((current.amount + contractAssetCreated) * 100) / 100;
+        else creditGroups.set(key, { accountId: defaultIncomeAccountId, reportingTags: null, amount: contractAssetCreated });
+      }
 
-      const lines: JournalPostingLine[] = [{
-        accountId: unearnedAccountId,
-        description: `Unearned Income released — ${project.name}`,
-        debit: amount,
-        credit: 0,
-        projectId: project.id,
-      }];
+      const lines: JournalPostingLine[] = [];
+      if (unearnedUsed > 0.005 && unearnedAccountId) {
+        lines.push({
+          accountId: unearnedAccountId,
+          description: `Unearned Income released — ${project.name}`,
+          debit: unearnedUsed,
+          credit: 0,
+          projectId: project.id,
+        });
+      }
+      if (contractAssetCreated > 0.005 && contractAssetAccountId) {
+        lines.push({
+          accountId: contractAssetAccountId,
+          description: `Contract Asset created — ${project.name}`,
+          debit: contractAssetCreated,
+          credit: 0,
+          projectId: project.id,
+        });
+      }
       for (const group of creditGroups.values()) {
         lines.push({
           accountId: group.accountId,
@@ -164,7 +220,7 @@ export async function recogniseDeferredProjectRevenue(input: {
         lines,
       });
 
-      const primaryIncomeAccountId = chosen[0]?.incomeAccountId;
+      const primaryIncomeAccountId = defaultIncomeAccountId ?? chosen[0]?.incomeAccountId;
       if (!primaryIncomeAccountId) throw new Error("Revenue income account could not be resolved.");
 
       await tx.$executeRaw`
@@ -173,8 +229,9 @@ export async function recogniseDeferredProjectRevenue(input: {
           "contract_asset_created", "currency", "income_account_id", "unearned_income_account_id",
           "contract_asset_account_id", "journal_entry_id", "note", "created_by", "status"
         ) VALUES (
-          ${recognitionId}::uuid, ${tenantId}::uuid, ${project.id}, ${recognitionDate}, ${amount}, ${amount},
-          0, 'NGN', ${primaryIncomeAccountId}, ${unearnedAccountId}, null, ${journalEntryId}, ${note}, ${userId}, 'POSTED'
+          ${recognitionId}::uuid, ${tenantId}::uuid, ${project.id}, ${recognitionDate}, ${amount}, ${unearnedUsed},
+          ${contractAssetCreated}, 'NGN', ${primaryIncomeAccountId}, ${unearnedAccountId}, ${contractAssetAccountId},
+          ${journalEntryId}, ${note}, ${userId}, 'POSTED'
         )
       `;
 
@@ -186,14 +243,17 @@ export async function recogniseDeferredProjectRevenue(input: {
         `;
       }
 
+      const activityDescription = contractAssetCreated > 0.005
+        ? `Recognised ${amount.toFixed(2)} NGN of Project revenue: ${unearnedUsed.toFixed(2)} from Unearned Income and ${contractAssetCreated.toFixed(2)} as Contract Asset.`
+        : `Recognised ${amount.toFixed(2)} NGN from previously billed Unearned Income.`;
+
       await tx.$executeRaw`
         INSERT INTO "project_activities" (
           "tenant_id", "project_id", "event_type", "title", "description", "actor_id", "actor_name", "metadata"
         ) VALUES (
           ${tenantId}::uuid, ${project.id}, 'REVENUE_RECOGNISED', 'Revenue recognised',
-          ${`Recognised ${amount.toFixed(2)} NGN from previously billed Unearned Income.`},
-          ${userId}, ${session.user.email ?? null},
-          CAST(${JSON.stringify({ recognitionId, amount, currency: "NGN", journalEntryId })} AS jsonb)
+          ${activityDescription}, ${userId}, ${session.user.email ?? null},
+          CAST(${JSON.stringify({ recognitionId, amount, unearnedUsed, contractAssetCreated, currency: "NGN", journalEntryId })} AS jsonb)
         )
       `;
     });
@@ -230,8 +290,10 @@ export async function reverseProjectRevenueRecognition(input: {
         projectId: string;
         status: string;
         journalEntryId: string;
+        contractAssetCreated: unknown;
       }>>`
-        SELECT "id"::text AS "id", "project_id" AS "projectId", "status", "journal_entry_id" AS "journalEntryId"
+        SELECT "id"::text AS "id", "project_id" AS "projectId", "status",
+          "journal_entry_id" AS "journalEntryId", "contract_asset_created" AS "contractAssetCreated"
         FROM "project_revenue_recognitions"
         WHERE "id" = ${input.recognitionId}::uuid AND "tenant_id" = ${tenantId}::uuid
         LIMIT 1
@@ -242,6 +304,25 @@ export async function reverseProjectRevenueRecognition(input: {
       projectId = row.projectId;
 
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:project-revenue:${tenantId}:${projectId}`}))`;
+
+      if (Number(row.contractAssetCreated ?? 0) > 0.005) {
+        const cleared = await tx.$queryRaw<Array<{ amount: unknown }>>`
+          SELECT COALESCE(SUM(rria."amount"), 0) AS "amount"
+          FROM "revenue_recognition_invoice_allocations" rria
+          INNER JOIN "invoice_line_revenue_allocations" ila
+            ON ila."id" = rria."invoice_line_allocation_id"
+          INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
+          WHERE rria."tenant_id" = ${tenantId}::uuid
+            AND rria."recognition_id" = ${row.id}::uuid
+            AND ila."contract_asset_cleared" > 0
+            AND i."status" <> 'VOIDED'
+        `;
+        if (Number(cleared[0]?.amount ?? 0) > 0.005) {
+          throw new Error(
+            "This revenue recognition has already been cleared against a later invoice. Void or reverse that billing relationship before reversing the earning event.",
+          );
+        }
+      }
 
       const journal = await tx.journalEntry.findFirst({
         where: { id: row.journalEntryId, tenantId },
