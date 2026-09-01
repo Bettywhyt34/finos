@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { toNGN } from "@/lib/utils";
 import { sendInvoiceEmail } from "@/lib/email-notifications/senders/invoice-sent";
 import { COA_AR_CODE, COA_OUTPUT_VAT_CODE } from "@/lib/constants";
+import { getSystemAccount } from "@/lib/accounting/system-accounts";
 import {
   postJournalEntryInTransaction,
   type JournalPostingLine,
@@ -113,7 +114,6 @@ export async function postInvoiceAndMarkSent(
     };
   }
 
-  // Validate every explicitly selected revenue account in this tenant before any write.
   const incomeAccountIds = Array.from(
     new Set(invoice.lines.map((line) => line.incomeAccountId!).filter(Boolean)),
   );
@@ -140,34 +140,29 @@ export async function postInvoiceAndMarkSent(
   const taxAmountNGN = toNGN(parseFloat(String(invoice.taxAmount)), rate);
   const invoiceDiscountNGN = toNGN(parseFloat(String(invoice.discountAmount)), rate);
 
-  // Temporary compatibility: resolve FINOS system accounts using the existing codes.
-  // Step 2 system-account role mapping will replace these code dependencies.
-  const arAccount = await prisma.chartOfAccounts.findFirst({
-    where: { tenantId, code: COA_AR_CODE, isActive: true },
-    select: { id: true },
-  });
-  if (!arAccount) {
-    return {
-      error:
-        `Accounts Receivable account (${COA_AR_CODE}) not found or inactive. ` +
-        "Configure the system Accounts Receivable account before posting.",
-    };
+  let arAccount;
+  try {
+    arAccount = await getSystemAccount(
+      tenantId,
+      "ACCOUNTS_RECEIVABLE",
+      COA_AR_CODE,
+    );
+  } catch (error: unknown) {
+    return { error: error instanceof Error ? error.message : "Accounts Receivable is not configured." };
   }
 
   let vatAccountId: string | null = null;
   if (taxAmountNGN > 0.001) {
-    const vatAccount = await prisma.chartOfAccounts.findFirst({
-      where: { tenantId, code: COA_OUTPUT_VAT_CODE, isActive: true },
-      select: { id: true },
-    });
-    if (!vatAccount) {
-      return {
-        error:
-          `Output VAT account (${COA_OUTPUT_VAT_CODE}) not found or inactive. ` +
-          "Configure the system Output VAT account before posting.",
-      };
+    try {
+      const vatAccount = await getSystemAccount(
+        tenantId,
+        "OUTPUT_VAT",
+        COA_OUTPUT_VAT_CODE,
+      );
+      vatAccountId = vatAccount.id;
+    } catch (error: unknown) {
+      return { error: error instanceof Error ? error.message : "Output VAT is not configured." };
     }
-    vatAccountId = vatAccount.id;
   }
 
   // A DRAFT invoice with an existing invoice journal indicates inconsistent state.
@@ -210,7 +205,6 @@ export async function postInvoiceAndMarkSent(
     }
   }
 
-  // Allocate invoice-level discount proportionally across dimensional revenue groups.
   if (invoiceDiscountNGN > 0.001) {
     const totalBeforeInvoiceDiscount = Array.from(revenueGroups.values())
       .reduce((sum, group) => sum + group.amount, 0);
@@ -225,7 +219,6 @@ export async function postInvoiceAndMarkSent(
     }
   }
 
-  // Correct only harmless rounding noise, and only on the largest revenue group.
   const revenueTotal = Array.from(revenueGroups.values())
     .reduce((sum, group) => sum + group.amount, 0);
   const expectedRevenue = Math.round((totalAmountNGN - taxAmountNGN) * 100) / 100;
@@ -303,9 +296,6 @@ export async function postInvoiceAndMarkSent(
         throw new Error("A journal entry already exists for this invoice. Concurrent duplicate prevented.");
       }
 
-      // The source document and journal now share one database transaction.
-      // Period checking, account/dimension validation, double-entry validation,
-      // idempotency and JE numbering are centralised in the authoritative engine.
       await postJournalEntryInTransaction(tx, {
         tenantId,
         createdBy: userId,
