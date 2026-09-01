@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { sendInvoice, recordPayment, voidInvoice, updateInvoice } from "../actions";
+import { sendInvoice, voidInvoice, updateInvoice } from "../actions";
+import { recordCustomerPayment } from "../payment-actions";
 import { formatCurrency } from "@/lib/utils";
 
 interface OpenInvoice { id: string; invoiceNumber: string; balanceDue: number; dueDate: Date; }
@@ -131,7 +132,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     }
     setLoading(true);
     const fd = new FormData(e.currentTarget);
-    const result = await recordPayment({
+    const result = await recordCustomerPayment({
       customerId: invoice.customerId,
       paymentDate,
       amount,
@@ -152,12 +153,11 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
   // Record Payment is only available for sent/open invoices — not drafts
   const canPay        = invoice.balanceDue > 0 && !["DRAFT", "VOIDED", "PAID"].includes(invoice.status);
   const canVoid       = !["VOIDED", "PAID"].includes(invoice.status);
-  const canFullEdit   = isDraft;                               // full edit page
-  const canLimitedEdit = !isDraft && invoice.status !== "VOIDED"; // limited modal
+  const canFullEdit   = isDraft;
+  const canLimitedEdit = !isDraft && invoice.status !== "VOIDED";
 
   return (
     <div className="flex items-center gap-2">
-      {/* Print / Save as PDF — always available */}
       <Button
         variant="outline"
         size="sm"
@@ -166,14 +166,12 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
         <Printer className="h-3.5 w-3.5 mr-1.5" />
         Print / Save as PDF
       </Button>
-      {/* Full edit — DRAFT only — navigates to edit page */}
       {canFullEdit && (
         <Button variant="outline" size="sm" onClick={() => router.push(`/sales/invoices/${invoice.id}/edit`)}>
           <Pencil className="h-3.5 w-3.5 mr-1.5" />
           Edit Draft
         </Button>
       )}
-      {/* Limited edit — sent/open invoices — opens modal */}
       {canLimitedEdit && (
         <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
           <Pencil className="h-3.5 w-3.5 mr-1.5" />
@@ -199,7 +197,6 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
         </Button>
       )}
 
-      {/* Mark as Sent modal */}
       <Dialog open={sentOpen} onOpenChange={setSentOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Mark as Sent</DialogTitle></DialogHeader>
@@ -217,7 +214,6 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Edit modal */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Edit Invoice</DialogTitle></DialogHeader>
@@ -242,7 +238,6 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Void modal */}
       <Dialog open={voidOpen} onOpenChange={setVoidOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Void Invoice</DialogTitle></DialogHeader>
@@ -278,7 +273,6 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Record Payment modal */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Record Payment</DialogTitle></DialogHeader>
