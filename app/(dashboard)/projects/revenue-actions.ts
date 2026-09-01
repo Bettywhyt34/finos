@@ -90,6 +90,7 @@ export async function recogniseDeferredProjectRevenue(input: {
           (ila."unearned_created" - COALESCE(SUM(CASE WHEN prr."status" = 'POSTED' THEN rria."amount" ELSE 0 END), 0)) AS "remaining"
         FROM "invoice_line_revenue_allocations" ila
         INNER JOIN "invoice_lines" il ON il."id" = ila."invoice_line_id"
+        INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
         LEFT JOIN "revenue_recognition_invoice_allocations" rria
           ON rria."invoice_line_allocation_id" = ila."id"
         LEFT JOIN "project_revenue_recognitions" prr
@@ -97,6 +98,7 @@ export async function recogniseDeferredProjectRevenue(input: {
         WHERE ila."tenant_id" = ${tenantId}::uuid
           AND ila."project_id" = ${project.id}
           AND ila."unearned_created" > 0
+          AND i."status" <> 'VOIDED'
         GROUP BY ila."id", ila."income_account_id", il."reporting_tags", ila."unearned_created", ila."posted_at"
         HAVING (ila."unearned_created" - COALESCE(SUM(CASE WHEN prr."status" = 'POSTED' THEN rria."amount" ELSE 0 END), 0)) > 0.005
         ORDER BY ila."posted_at" ASC, ila."id" ASC
