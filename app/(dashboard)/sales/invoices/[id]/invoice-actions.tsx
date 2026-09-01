@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { sendInvoice, voidInvoice, updateInvoice } from "../actions";
+import { sendInvoice, updateInvoice } from "../actions";
 import { recordCustomerPayment } from "../payment-actions";
+import { voidInvoiceSafely } from "../void-actions";
 import { formatCurrency } from "@/lib/utils";
 
 interface OpenInvoice { id: string; invoiceNumber: string; balanceDue: number; dueDate: Date; }
@@ -36,16 +37,13 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
-  // Mark as Sent modal
   const [sentOpen, setSentOpen] = useState(false);
   const [sentDate, setSentDate] = useState(new Date().toISOString().split("T")[0]);
 
-  // Void modal
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [convertToDraft, setConvertToDraft] = useState(false);
 
-  // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editNotes, setEditNotes] = useState(invoice.notes ?? "");
   const [editReference, setEditReference] = useState(invoice.reference ?? "");
@@ -55,7 +53,6 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
       : String(invoice.dueDate).split("T")[0]
   );
 
-  // Payment modal
   const [payOpen, setPayOpen] = useState(false);
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
@@ -97,7 +94,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     e.preventDefault();
     if (!voidReason.trim()) { toast.error("Please provide a void reason"); return; }
     setLoading(true);
-    const result = await voidInvoice(invoice.id, voidReason, convertToDraft);
+    const result = await voidInvoiceSafely(invoice.id, voidReason, convertToDraft);
     setLoading(false);
     if (result?.error) { toast.error(result.error); return; }
     toast.success(convertToDraft ? "Invoice voided and draft created" : "Invoice voided");
@@ -150,7 +147,6 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
 
   const isDraft       = invoice.status === "DRAFT";
   const canSend       = ["DRAFT", "PARTIAL", "OVERDUE"].includes(invoice.status);
-  // Record Payment is only available for sent/open invoices — not drafts
   const canPay        = invoice.balanceDue > 0 && !["DRAFT", "VOIDED", "PAID"].includes(invoice.status);
   const canVoid       = !["VOIDED", "PAID"].includes(invoice.status);
   const canFullEdit   = isDraft;
