@@ -52,17 +52,21 @@ export function ProjectRevenuePanel({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [amount, setAmount] = useState(metrics.unearnedIncome > 0 ? String(metrics.unearnedIncome) : "");
+  const [amount, setAmount] = useState("");
   const [recognitionDate, setRecognitionDate] = useState(today());
   const [note, setNote] = useState("");
   const [reversingId, setReversingId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
 
+  const amountNumber = Math.max(0, Number(amount) || 0);
+  const projectedUnearnedRelease = Math.min(amountNumber, Math.max(0, metrics.unearnedIncome));
+  const projectedContractAsset = Math.max(0, amountNumber - projectedUnearnedRelease);
+
   function submitRecognition() {
     startTransition(async () => {
       const result = await recogniseDeferredProjectRevenue({
         projectId,
-        amount: Number(amount),
+        amount: amountNumber,
         recognitionDate,
         note,
       });
@@ -124,7 +128,13 @@ export function ProjectRevenuePanel({
                           {row.status.toLowerCase()}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-[var(--text-secondary)]">{new Date(`${row.recognitionDate}T00:00:00`).toLocaleDateString("en-NG", { dateStyle: "medium" })} · Dr Unearned Income / Cr Revenue</p>
+                      <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                        {new Date(`${row.recognitionDate}T00:00:00`).toLocaleDateString("en-NG", { dateStyle: "medium" })}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
+                        {row.unearnedUsed > 0.005 ? <span>Unearned released: {formatCurrency(row.unearnedUsed)}</span> : null}
+                        {row.contractAssetCreated > 0.005 ? <span>Contract Asset created: {formatCurrency(row.contractAssetCreated)}</span> : null}
+                      </div>
                       {row.note ? <p className="mt-2 text-sm text-[var(--text-secondary)]">{row.note}</p> : null}
                       {row.status === "REVERSED" && row.reversalReason ? <p className="mt-2 text-xs text-[var(--critical)]">Reversed: {row.reversalReason}</p> : null}
                     </div>
@@ -157,39 +167,52 @@ export function ProjectRevenuePanel({
 
         <section className="rounded-xl border border-[var(--app-border)] bg-white">
           <div className="border-b border-[var(--app-border)] px-6 py-5">
-            <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Recognise billed revenue</h2>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">Release revenue that is currently sitting in Unearned Income.</p>
+            <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Recognise Revenue</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Record what has actually been earned, independently of when the customer is billed.</p>
           </div>
           <div className="space-y-4 p-6">
-            <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3">
-              <p className="text-xs text-[var(--text-secondary)]">Available to recognise</p>
-              <p className="font-financial mt-1 text-xl font-medium text-[var(--text-primary)]">{formatCurrency(metrics.unearnedIncome)}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3">
+                <p className="text-xs text-[var(--text-secondary)]">Unearned balance</p>
+                <p className="font-financial mt-1 text-lg font-medium text-[var(--text-primary)]">{formatCurrency(metrics.unearnedIncome)}</p>
+              </div>
+              <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3">
+                <p className="text-xs text-[var(--text-secondary)]">Contract Asset</p>
+                <p className="font-financial mt-1 text-lg font-medium text-[var(--text-primary)]">{formatCurrency(metrics.contractAsset)}</p>
+              </div>
             </div>
-            {metrics.unearnedIncome > 0.005 ? (
-              canManage ? (
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="recognitionAmount">Amount (NGN)</Label>
-                    <Input id="recognitionAmount" type="number" min="0.01" step="0.01" max={metrics.unearnedIncome} value={amount} onChange={(event) => setAmount(event.target.value)} />
+
+            {canManage ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="recognitionAmount">Amount earned (NGN)</Label>
+                  <Input id="recognitionAmount" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" />
+                </div>
+                {amountNumber > 0 ? (
+                  <div className="rounded-lg border border-[var(--app-border)] px-4 py-3 text-sm">
+                    <p className="font-medium text-[var(--text-primary)]">Accounting split</p>
+                    <div className="mt-2 flex justify-between gap-4 text-[var(--text-secondary)]"><span>Release Unearned Income</span><span className="font-financial">{formatCurrency(projectedUnearnedRelease)}</span></div>
+                    <div className="mt-1 flex justify-between gap-4 text-[var(--text-secondary)]"><span>Create Contract Asset</span><span className="font-financial">{formatCurrency(projectedContractAsset)}</span></div>
+                    <div className="mt-2 flex justify-between gap-4 border-t border-[var(--app-border)] pt-2 font-medium text-[var(--text-primary)]"><span>Revenue earned</span><span className="font-financial">{formatCurrency(amountNumber)}</span></div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="recognitionDate">Recognition date</Label>
-                    <Input id="recognitionDate" type="date" max={today()} value={recognitionDate} onChange={(event) => setRecognitionDate(event.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="recognitionNote">Evidence / note</Label>
-                    <Input id="recognitionNote" value={note} onChange={(event) => setNote(event.target.value)} placeholder="e.g. Service milestone accepted" />
-                  </div>
-                  <Button type="button" className="w-full" disabled={pending || !amount || Number(amount) <= 0 || Number(amount) > metrics.unearnedIncome + 0.005} onClick={submitRecognition}>
-                    {pending ? "Posting…" : "Recognise Revenue"}
-                  </Button>
-                  <p className="text-xs leading-5 text-[var(--text-secondary)]">FINOS posts Dr Unearned Income / Cr Revenue and prevents recognition above the remaining deferred balance.</p>
-                </>
-              ) : (
-                <p className="text-sm text-[var(--text-secondary)]">You can view revenue but your role cannot post recognition entries.</p>
-              )
+                ) : null}
+                <div className="space-y-1.5">
+                  <Label htmlFor="recognitionDate">Recognition date</Label>
+                  <Input id="recognitionDate" type="date" max={today()} value={recognitionDate} onChange={(event) => setRecognitionDate(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="recognitionNote">Evidence / note</Label>
+                  <Input id="recognitionNote" value={note} onChange={(event) => setNote(event.target.value)} placeholder="e.g. Work completed and accepted" />
+                </div>
+                <Button type="button" className="w-full" disabled={pending || amountNumber <= 0} onClick={submitRecognition}>
+                  {pending ? "Posting…" : "Recognise Revenue"}
+                </Button>
+                <p className="text-xs leading-5 text-[var(--text-secondary)]">
+                  FINOS releases existing Unearned Income first. Any additional earned amount is recorded as Contract Asset until it is billed later.
+                </p>
+              </>
             ) : (
-              <p className="text-sm leading-6 text-[var(--text-secondary)]">There is no billed-but-unearned revenue available to release.</p>
+              <p className="text-sm text-[var(--text-secondary)]">You can view revenue but your role cannot post recognition entries.</p>
             )}
           </div>
         </section>
