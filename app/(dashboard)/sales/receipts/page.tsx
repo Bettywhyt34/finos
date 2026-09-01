@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { CreditCard, Landmark, ReceiptText, ShieldCheck } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { ReverseReceiptButton } from "./reverse-receipt-button";
 
 interface PaymentEvidenceRow {
   id: string;
@@ -20,6 +21,7 @@ interface PaymentEvidenceRow {
 export default async function ReceiptsPage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
+  const canManage = ["OWNER", "ADMIN", "ACCOUNTANT"].includes(session?.user?.role ?? "");
 
   const [payments, evidenceRows] = await Promise.all([
     prisma.customerPayment.findMany({
@@ -95,7 +97,7 @@ export default async function ReceiptsPage() {
             <h2 className="font-serif text-xl font-medium text-[var(--text-primary)]">Receipt register</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1250px] text-sm">
+            <table className="w-full min-w-[1380px] text-sm">
               <thead className="bg-[var(--surface-muted)] text-left text-xs text-[var(--text-secondary)]">
                 <tr>
                   <th className="px-5 py-3 font-medium">Receipt</th>
@@ -108,6 +110,7 @@ export default async function ReceiptsPage() {
                   <th className="px-5 py-3 text-right font-medium">WHT</th>
                   <th className="px-5 py-3 text-right font-medium">AR settled</th>
                   <th className="px-5 py-3 text-right font-medium">NGN settlement</th>
+                  {canManage ? <th className="px-5 py-3 text-right font-medium">Action</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--app-border)]">
@@ -119,8 +122,9 @@ export default async function ReceiptsPage() {
                   const wht = Number(evidence?.whtAmount ?? 0);
                   const settled = cash + wht;
                   const status = evidence?.status ?? "POSTED";
+                  const reversed = status === "REVERSED";
                   return (
-                    <tr key={payment.id} className="hover:bg-[var(--app-bg)]">
+                    <tr key={payment.id} className={reversed ? "bg-[var(--surface-muted)] opacity-70" : "hover:bg-[var(--app-bg)]"}>
                       <td className="px-5 py-4">
                         <p className="font-code text-xs font-semibold text-[var(--finos-accent)]">{payment.paymentNumber}</p>
                         <p className="mt-1 text-[11px] uppercase tracking-wide text-[var(--text-secondary)]">{status.toLowerCase()}</p>
@@ -141,6 +145,11 @@ export default async function ReceiptsPage() {
                         <p className="font-financial tabular-nums font-medium text-[var(--text-primary)]">{formatCurrency(Number(evidence?.baseSettlementAmount ?? settled * rate))}</p>
                         {currency !== "NGN" ? <p className="mt-1 font-code text-[11px] text-[var(--text-secondary)]">1 {currency} = ₦{rate.toLocaleString("en-NG", { maximumFractionDigits: 6 })}</p> : null}
                       </td>
+                      {canManage ? (
+                        <td className="px-5 py-4 text-right">
+                          {!reversed ? <ReverseReceiptButton paymentId={payment.id} paymentNumber={payment.paymentNumber} /> : <span className="text-xs text-[var(--text-secondary)]">Reversed</span>}
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
