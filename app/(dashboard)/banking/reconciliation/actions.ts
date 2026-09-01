@@ -31,6 +31,8 @@ type BankMappingRow = {
   currency: string;
 };
 
+type ResolvedBankMapping = Omit<BankMappingRow, "ledgerAccountId"> & { ledgerAccountId: string };
+
 type LedgerLineRow = {
   id: string;
   entryId: string;
@@ -44,7 +46,7 @@ type LedgerLineRow = {
   matchedBankTransactionId: string | null;
 };
 
-async function getBankMapping(tenantId: string, bankAccountId: string) {
+async function getBankMapping(tenantId: string, bankAccountId: string): Promise<ResolvedBankMapping> {
   const rows = await prisma.$queryRaw<BankMappingRow[]>`
     SELECT
       ba."id" AS "bankAccountId",
@@ -61,7 +63,7 @@ async function getBankMapping(tenantId: string, bankAccountId: string) {
   if (!account.ledgerAccountId) {
     throw new Error("Map this bank account to its Chart of Accounts Bank/Cash ledger before reconciliation.");
   }
-  return account;
+  return { ...account, ledgerAccountId: account.ledgerAccountId };
 }
 
 async function getLedgerClosingBalance(tenantId: string, ledgerAccountId: string, to: string) {
