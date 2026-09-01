@@ -11,12 +11,6 @@ interface MappingRow {
   type: string;
 }
 
-interface BalanceRow {
-  accountId: string;
-  debit: unknown;
-  credit: unknown;
-}
-
 export interface TaxControlBalance {
   role: SystemAccountRole;
   label: string;
@@ -77,9 +71,8 @@ export async function getTaxControlSnapshot(tenantId: string, asOfDate: Date) {
   `;
   const mappedByRole = new Map(mappings.map((row) => [row.role, row]));
 
-  // During the transition period, keep the same safe legacy fallback used by
-  // the posting engine for Output VAT and supplier WHT only. New asset roles
-  // (Input VAT and customer WHT Receivable) require explicit mappings.
+  // Preserve only the two legacy liability fallbacks already used by posting.
+  // New asset roles must be explicitly configured.
   for (const def of CONTROL_DEFS) {
     if (mappedByRole.has(def.role) || !def.legacyCode) continue;
     const account = await prisma.chartOfAccounts.findFirst({
@@ -102,25 +95,24 @@ export async function getTaxControlSnapshot(tenantId: string, asOfDate: Date) {
   );
 
   const balanceRows = accountIds.length
-    ? await prisma.$queryRaw<BalanceRow[]>`
-        SELECT
-          jel."account_id" AS "accountId",
-          COALESCE(SUM(jel."debit"), 0) AS "debit",
-          COALESCE(SUM(jel."credit"), 0) AS "credit"
-        FROM "journal_entry_lines" jel
-        INNER JOIN "journal_entries" je ON je."id" = jel."entry_id"
-        WHERE je."tenant_id" = ${tenantId}::uuid
-          AND je."is_locked" = true
-          AND je."entry_date" <= ${asOfDate}
-          AND jel."account_id" IN (${PrismaJoin(accountIds)})
-        GROUP BY jel."account_id"
-      `
+    ? await prisma.journalEntryLine.groupBy({
+        by: ["accountId"],
+        where: {
+          accountId: { in: accountIds },
+          entry: {
+            tenantId,
+            isLocked: true,
+            entryDate: { lte: asOfDate },
+          },
+        },
+        _sum: { debit: true, credit: true },
+      })
     : [];
 
   const balanceByAccount = new Map(
     balanceRows.map((row) => [
       row.accountId,
-      { debit: Number(row.debit ?? 0), credit: Number(row.credit ?? 0) },
+      { debit: Number(row._sum.debit ?? 0), credit: Number(row._sum.credit ?? 0) },
     ]),
   );
 
@@ -169,16 +161,6 @@ export async function getTaxControlSnapshot(tenantId: string, asOfDate: Date) {
     supplierWhtPayable: Math.max(0, byRole.get("WHT_PAYABLE")?.balance ?? 0),
     customerWhtReceivable: Math.max(0, byRole.get("WHT_RECEIVABLE")?.balance ?? 0),
   };
-}
-
-// Prisma's SQL-template tag does not expose a portable IN-list helper through
-// the generated client type here, so build the small trusted account-id list as
-// an OR query instead of interpolating arbitrary SQL text.
-function PrismaJoin(values: string[]) {
-  // This helper is intentionally unreachable as raw text; it exists only to make
-  // accidental use fail loudly during build. getTaxControlSnapshot replaces this
-  // path below with a Prisma groupBy when account ids are present.
-  throw new Error(`Unexpected raw IN helper invocation for ${values.length} values`);
 }
 
 export async function getTaxSettlementHistory(
