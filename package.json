@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build"
+    "check": "npm run typecheck && npm run build",
+    "audit:accounting": "node scripts/accounting-integrity.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
