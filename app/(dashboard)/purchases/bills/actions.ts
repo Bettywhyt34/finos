@@ -9,19 +9,24 @@ import { resolveSystemAccount } from "@/lib/accounting/system-accounts";
 import { getRecognitionPeriod, toNGN } from "@/lib/utils";
 import { sendToBettywhyt } from "@/lib/integrations/bettywhyt/webhook-sender";
 
-async function getNextBillNumber(orgId: string): Promise<string> {
-  const count = await prisma.bill.count({ where: { tenantId: orgId } });
-  return `BILL-${String(count + 1).padStart(5, "0")}`;
-}
-
 export interface BillLineItem {
   itemId?: string;
   description: string;
   quantity: number;
   rate: number;
   accountId: string;
+  taxRateId?: string;
   projectId?: string;
   reportingTags?: Record<string, string>;
+}
+
+interface BillTaxSnapshotRow {
+  id: string;
+  tax_amount: Prisma.Decimal;
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function normaliseTags(value: Prisma.JsonValue | null | undefined): Record<string, string> | null {
@@ -57,6 +62,9 @@ export async function createBill(data: {
   if (data.lines.length === 0) return { error: "At least one line item is required" };
   if (data.lines.some((line) => !line.accountId)) {
     return { error: "Each line must have an expense or asset account" };
+  }
+  if (data.lines.some((line) => !Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.rate) || line.rate < 0)) {
+    return { error: "Bill quantities must be greater than zero and rates cannot be negative" };
   }
 
   const vendor = await prisma.vendor.findFirst({
@@ -106,45 +114,91 @@ export async function createBill(data: {
     }
   }
 
+  const requestedTaxRateIds = Array.from(new Set(data.lines.map((line) => line.taxRateId?.trim() || "").filter(Boolean)));
+  const taxRates = requestedTaxRateIds.length
+    ? await prisma.taxRate.findMany({
+        where: { tenantId: orgId, id: { in: requestedTaxRateIds }, isActive: true, type: "VAT" },
+        select: { id: true, name: true, rate: true },
+      })
+    : [];
+  const taxRateMap = new Map(taxRates.map((tax) => [tax.id, tax]));
+  if (requestedTaxRateIds.some((id) => !taxRateMap.has(id))) {
+    return { error: "One or more selected bill tax rates are invalid. Only active VAT rates can be used on bills." };
+  }
+
   const rate = data.exchangeRate || 1;
-  const subtotal = data.lines.reduce((sum, line) => sum + line.quantity * line.rate, 0);
-  const billNumber = await getNextBillNumber(orgId);
+  if (!Number.isFinite(rate) || rate <= 0) return { error: "Exchange rate must be greater than zero" };
+
+  const preparedLines = data.lines.map((line) => {
+    const amount = roundMoney(line.quantity * line.rate);
+    const tax = line.taxRateId ? taxRateMap.get(line.taxRateId) : undefined;
+    const taxRate = tax ? Number(tax.rate) : 0;
+    const taxAmount = roundMoney(amount * taxRate / 100);
+    return { ...line, amount, tax, taxRate, taxAmount };
+  });
+  const subtotal = roundMoney(preparedLines.reduce((sum, line) => sum + line.amount, 0));
+  const taxAmount = roundMoney(preparedLines.reduce((sum, line) => sum + line.taxAmount, 0));
+  const totalAmount = roundMoney(subtotal + taxAmount);
 
   try {
-    const bill = await prisma.bill.create({
-      data: {
-        tenantId: orgId,
-        vendorId: data.vendorId,
-        billNumber,
-        vendorRef: data.vendorRef || null,
-        billDate: new Date(data.billDate),
-        dueDate: new Date(data.dueDate),
-        status: "DRAFT",
-        currency: data.currency,
-        exchangeRate: rate,
-        subtotal,
-        taxAmount: 0,
-        totalAmount: subtotal,
-        amountPaid: 0,
-        notes: data.notes || null,
-        lines: {
-          create: data.lines.map((line) => ({
+    const billId = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:bill:${orgId}`}))`;
+      const count = await tx.bill.count({ where: { tenantId: orgId } });
+      const billNumber = `BILL-${String(count + 1).padStart(5, "0")}`;
+
+      const bill = await tx.bill.create({
+        data: {
+          tenantId: orgId,
+          vendorId: data.vendorId,
+          billNumber,
+          vendorRef: data.vendorRef || null,
+          billDate: new Date(data.billDate),
+          dueDate: new Date(data.dueDate),
+          status: "DRAFT",
+          currency: data.currency,
+          exchangeRate: rate,
+          subtotal,
+          taxAmount,
+          totalAmount,
+          amountPaid: 0,
+          notes: data.notes || null,
+        },
+        select: { id: true },
+      });
+
+      for (const line of preparedLines) {
+        const created = await tx.billLine.create({
+          data: {
+            billId: bill.id,
             itemId: line.itemId || null,
             description: line.description,
             quantity: line.quantity,
             rate: line.rate,
-            amount: line.quantity * line.rate,
+            amount: line.amount,
             accountId: line.accountId,
             projectId: line.projectId?.trim() || null,
             reportingTags: line.reportingTags ?? undefined,
-          })),
-        },
-      },
+          },
+          select: { id: true },
+        });
+
+        await tx.$executeRaw`
+          UPDATE "bill_lines"
+          SET
+            "tax_rate_id" = ${line.tax?.id ?? null}::uuid,
+            "tax_name" = ${line.tax?.name ?? null},
+            "tax_rate" = ${line.taxRate},
+            "tax_amount" = ${line.taxAmount}
+          WHERE "id" = ${created.id}::uuid
+        `;
+      }
+
+      return bill.id;
     });
 
     // DRAFT is an editable operational document and must not affect the GL.
     revalidatePath("/purchases/bills");
-    return { success: true, id: bill.id };
+    return { success: true, id: billId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
@@ -179,7 +233,21 @@ export async function postBill(id: string) {
         throw new Error("Bill status changed before posting could complete.");
       }
 
+      const taxRows = await tx.$queryRaw<BillTaxSnapshotRow[]>`
+        SELECT "id", "tax_amount"
+        FROM "bill_lines"
+        WHERE "bill_id" = ${id}::uuid
+      `;
+      const taxByLineId = new Map(taxRows.map((row) => [row.id, Number(row.tax_amount)]));
+      const sourceTaxTotal = roundMoney(taxRows.reduce((sum, row) => sum + Number(row.tax_amount), 0));
+      if (Math.abs(sourceTaxTotal - Number(bill.taxAmount)) > 0.01) {
+        throw new Error("Bill VAT snapshot no longer agrees with the bill header. Review the bill before posting.");
+      }
+
       const apAccount = await resolveSystemAccount(tx, orgId, "ACCOUNTS_PAYABLE", "CL-001");
+      const inputVatAccount = sourceTaxTotal > 0.005
+        ? await resolveSystemAccount(tx, orgId, "INPUT_VAT")
+        : null;
 
       const groups = new Map<string, {
         accountId: string;
@@ -194,12 +262,14 @@ export async function postBill(id: string) {
         const key = lineKey(line.accountId, projectId, reportingTags);
         const amount = toNGN(Number(line.amount), rate);
         const current = groups.get(key);
-        if (current) current.amount = Math.round((current.amount + amount) * 100) / 100;
+        if (current) current.amount = roundMoney(current.amount + amount);
         else groups.set(key, { accountId: line.accountId, projectId, reportingTags, amount });
       }
 
-      const debitTotal = Array.from(groups.values()).reduce((sum, group) => sum + group.amount, 0);
-      const roundingDifference = Math.round((totalNGN - debitTotal) * 100) / 100;
+      const inputVatNGN = inputVatAccount ? toNGN(sourceTaxTotal, rate) : 0;
+      const costDebitTotal = Array.from(groups.values()).reduce((sum, group) => sum + group.amount, 0);
+      const debitTotal = roundMoney(costDebitTotal + inputVatNGN);
+      const roundingDifference = roundMoney(totalNGN - debitTotal);
       if (Math.abs(roundingDifference) > 1) {
         throw new Error(`Bill journal differs from the bill total by ${roundingDifference} NGN.`);
       }
@@ -208,7 +278,7 @@ export async function postBill(id: string) {
         for (const group of groups.values()) {
           if (!largest || group.amount > largest.amount) largest = group;
         }
-        if (largest) largest.amount = Math.round((largest.amount + roundingDifference) * 100) / 100;
+        if (largest) largest.amount = roundMoney(largest.amount + roundingDifference);
       }
 
       const journalLines: JournalPostingLine[] = [
@@ -220,13 +290,21 @@ export async function postBill(id: string) {
           projectId: group.projectId,
           reportingTags: group.reportingTags,
         })),
-        {
-          accountId: apAccount.id,
-          description: `AP - ${bill.billNumber}${fxNote}`,
-          debit: 0,
-          credit: totalNGN,
-        },
       ];
+      if (inputVatAccount && inputVatNGN > 0) {
+        journalLines.push({
+          accountId: inputVatAccount.id,
+          description: `Recoverable Input VAT - ${bill.billNumber}${fxNote}`,
+          debit: inputVatNGN,
+          credit: 0,
+        });
+      }
+      journalLines.push({
+        accountId: apAccount.id,
+        description: `AP - ${bill.billNumber}${fxNote}`,
+        debit: 0,
+        credit: totalNGN,
+      });
 
       await postJournalEntryInTransaction(tx, {
         tenantId: orgId,
@@ -293,7 +371,7 @@ export async function recordBillPayment(data: {
 
   const paymentDate = new Date(data.paymentDate);
   if (Number.isNaN(paymentDate.getTime())) return { error: "A valid payment date is required" };
-  const netAmount = Math.round((data.amount - data.whtAmount) * 100) / 100;
+  const netAmount = roundMoney(data.amount - data.whtAmount);
 
   try {
     const paymentId = await prisma.$transaction(async (tx) => {
@@ -352,8 +430,8 @@ export async function recordBillPayment(data: {
 
       for (const alloc of data.billAllocations) {
         const bill = billMap.get(alloc.billId)!;
-        const newPaid = Math.round((Number(bill.amountPaid) + alloc.amount) * 100) / 100;
-        const newBalance = Math.round((Number(bill.totalAmount) - newPaid) * 100) / 100;
+        const newPaid = roundMoney(Number(bill.amountPaid) + alloc.amount);
+        const newBalance = roundMoney(Number(bill.totalAmount) - newPaid);
         const newStatus = newBalance <= 0.01 ? "PAID" : "PARTIAL";
         await tx.bill.update({
           where: { id: alloc.billId },
