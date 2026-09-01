@@ -1,9 +1,10 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { postJournalEntryInTransaction } from "@/lib/journal";
+import { postJournalEntryInTransaction, type JournalPostingLine } from "@/lib/journal";
 import { resolveSystemAccount } from "@/lib/accounting/system-accounts";
 import { getRecognitionPeriod } from "@/lib/utils";
 
@@ -13,6 +14,24 @@ function roundMoney(value: number) {
 
 function roundRate(value: number) {
   return Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+}
+
+function normaliseReportingTags(value: Prisma.JsonValue | null): Record<string, string> | null {
+  if (!value || Array.isArray(value) || typeof value !== "object") return null;
+  const pairs = Object.entries(value)
+    .filter(([, optionId]) => typeof optionId === "string" && optionId.length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return pairs.length ? Object.fromEntries(pairs) as Record<string, string> : null;
+}
+
+async function lockInvoices(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  invoiceIds: string[],
+) {
+  for (const invoiceId of [...new Set(invoiceIds)].sort()) {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${invoiceId}`}))`;
+  }
 }
 
 export async function recordCustomerPayment(data: {
@@ -79,6 +98,7 @@ export async function recordCustomerPayment(data: {
 
       const invoiceIds = Array.from(new Set(data.invoiceAllocations.map((allocation) => allocation.invoiceId)));
       if (invoiceIds.length !== data.invoiceAllocations.length) throw new Error("Duplicate invoice allocation detected");
+      await lockInvoices(tx, tenantId, invoiceIds);
 
       const invoices = await tx.invoice.findMany({
         where: { tenantId, customerId: data.customerId, id: { in: invoiceIds } },
@@ -223,7 +243,7 @@ export async function recordCustomerPayment(data: {
         });
       }
 
-      const lines: Array<{ accountId: string; description: string; debit: number; credit: number }> = [];
+      const lines: JournalPostingLine[] = [];
       if (receivingLedgerAccountId && baseCashAmount > 0.005) {
         lines.push({ accountId: receivingLedgerAccountId, description: `Cash receipt - ${paymentNumber}`, debit: baseCashAmount, credit: 0 });
       }
@@ -258,5 +278,148 @@ export async function recordCustomerPayment(data: {
     return { success: true, id: paymentId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function reverseCustomerPayment(data: {
+  paymentId: string;
+  reason: string;
+  reversalDate: string;
+}): Promise<{ success: true } | { error: string }> {
+  const session = await auth();
+  const tenantId = session?.user?.tenantId;
+  const userId = session?.user?.id;
+  const role = session?.user?.role;
+  if (!tenantId || !userId) return { error: "Unauthorized" };
+  if (!role || !["OWNER", "ADMIN", "ACCOUNTANT"].includes(role)) {
+    return { error: "You do not have permission to reverse customer receipts." };
+  }
+
+  const reason = data.reason.trim();
+  if (!reason) return { error: "Enter a reversal reason." };
+  if (reason.length > 2000) return { error: "Reversal reason is too long." };
+  const reversalDate = new Date(`${data.reversalDate}T00:00:00`);
+  if (Number.isNaN(reversalDate.getTime())) return { error: "Enter a valid reversal date." };
+  if (reversalDate > new Date()) return { error: "Reversal date cannot be in the future." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const payments = await tx.$queryRaw<Array<{
+        id: string;
+        status: string;
+        paymentNumber: string;
+      }>>`
+        SELECT "id", "status"::text AS "status", "payment_number" AS "paymentNumber"
+        FROM "customer_payments"
+        WHERE "id" = ${data.paymentId}
+          AND "tenant_id" = ${tenantId}::uuid
+        LIMIT 1
+      `;
+      const payment = payments[0];
+      if (!payment) throw new Error("Customer receipt not found.");
+      if (payment.status === "REVERSED") throw new Error("This customer receipt has already been reversed.");
+
+      const allocations = await tx.$queryRaw<Array<{
+        invoiceId: string;
+        amount: unknown;
+      }>>`
+        SELECT "invoice_id" AS "invoiceId", "amount"
+        FROM "customer_payment_allocations"
+        WHERE "payment_id" = ${payment.id}
+        ORDER BY "invoice_id"
+      `;
+      if (!allocations.length) throw new Error("This receipt has no invoice allocation evidence and cannot be reversed automatically.");
+      const invoiceIds = allocations.map((allocation) => allocation.invoiceId);
+      await lockInvoices(tx, tenantId, invoiceIds);
+
+      const invoices = await tx.invoice.findMany({
+        where: { tenantId, id: { in: invoiceIds } },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          totalAmount: true,
+          amountPaid: true,
+          balanceDue: true,
+        },
+      });
+      if (invoices.length !== invoiceIds.length) throw new Error("One or more allocated invoices could not be found.");
+      const invoiceMap = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+
+      for (const allocation of allocations) {
+        const invoice = invoiceMap.get(allocation.invoiceId)!;
+        if (["DRAFT", "VOIDED", "WRITTEN_OFF"].includes(invoice.status)) {
+          throw new Error(`Receipt cannot be reversed while invoice ${invoice.invoiceNumber} is ${invoice.status}.`);
+        }
+        const amount = roundMoney(Number(allocation.amount));
+        if (Number(invoice.amountPaid) + 0.01 < amount) {
+          throw new Error(`Invoice ${invoice.invoiceNumber} no longer contains enough recorded payment to reverse this receipt safely.`);
+        }
+      }
+
+      const originalJournal = await tx.journalEntry.findFirst({
+        where: { tenantId, source: "customer_payment", sourceId: payment.id, isLocked: true },
+        include: { lines: true },
+      });
+      if (!originalJournal) throw new Error("The original receipt journal could not be found.");
+
+      const duplicateReversal = await tx.journalEntry.findFirst({
+        where: { tenantId, source: "customer_payment_reversal", sourceId: payment.id },
+        select: { id: true },
+      });
+      if (duplicateReversal) throw new Error("A reversal journal already exists for this receipt.");
+
+      const reversalLines: JournalPostingLine[] = originalJournal.lines.map((line) => ({
+        accountId: line.accountId,
+        description: `Reverse - ${line.description ?? payment.paymentNumber}`,
+        debit: Number(line.credit),
+        credit: Number(line.debit),
+        projectId: line.projectId ?? null,
+        reportingTags: normaliseReportingTags(line.reportingTags),
+      }));
+
+      const reversalJournalId = await postJournalEntryInTransaction(tx, {
+        tenantId,
+        createdBy: userId,
+        entryDate: reversalDate,
+        reference: `REV-${payment.paymentNumber}`,
+        description: `Reverse customer receipt ${payment.paymentNumber}: ${reason}`,
+        recognitionPeriod: getRecognitionPeriod(reversalDate),
+        source: "customer_payment_reversal",
+        sourceId: payment.id,
+        lines: reversalLines,
+      });
+
+      for (const allocation of allocations) {
+        const invoice = invoiceMap.get(allocation.invoiceId)!;
+        const amount = roundMoney(Number(allocation.amount));
+        const newPaid = Math.max(0, roundMoney(Number(invoice.amountPaid) - amount));
+        const newBalance = Math.min(Number(invoice.totalAmount), roundMoney(Number(invoice.balanceDue) + amount));
+        const newStatus = newPaid <= 0.01 ? "SENT" : "PARTIAL";
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: { amountPaid: newPaid, balanceDue: newBalance, status: newStatus, paidAt: null },
+        });
+      }
+
+      const updated = await tx.$executeRaw`
+        UPDATE "customer_payments"
+        SET "status" = 'REVERSED'::customer_payment_status,
+            "reversed_at" = ${reversalDate},
+            "reversed_by_user_id" = ${userId},
+            "reversal_reason" = ${reason},
+            "reversal_journal_entry_id" = ${reversalJournalId}
+        WHERE "id" = ${payment.id}
+          AND "tenant_id" = ${tenantId}::uuid
+          AND "status" = 'POSTED'::customer_payment_status
+      `;
+      if (updated !== 1) throw new Error("Receipt status changed before reversal could complete.");
+    });
+
+    revalidatePath("/sales/receipts");
+    revalidatePath("/sales/invoices");
+    return { success: true };
+  } catch (error: unknown) {
+    return { error: error instanceof Error ? error.message : "Customer receipt could not be reversed." };
   }
 }
