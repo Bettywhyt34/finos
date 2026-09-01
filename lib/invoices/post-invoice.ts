@@ -111,9 +111,7 @@ export async function postInvoiceAndMarkSent(
 
   if (!invoice) return { error: "Invoice not found" };
   if (invoice.status !== "DRAFT") {
-    return {
-      error: `Invoice is already ${invoice.status}. Only DRAFT invoices can be marked as sent.`,
-    };
+    return { error: `Invoice is already ${invoice.status}. Only DRAFT invoices can be marked as sent.` };
   }
   if (invoice.lines.length === 0) {
     return { error: "Invoice has no line items. Add at least one line before marking as sent." };
@@ -128,16 +126,9 @@ export async function postInvoiceAndMarkSent(
     };
   }
 
-  const incomeAccountIds = Array.from(
-    new Set(invoice.lines.map((line) => line.incomeAccountId!).filter(Boolean)),
-  );
+  const incomeAccountIds = Array.from(new Set(invoice.lines.map((line) => line.incomeAccountId!).filter(Boolean)));
   const validIncomeAccounts = await prisma.chartOfAccounts.findMany({
-    where: {
-      tenantId,
-      id: { in: incomeAccountIds },
-      type: "INCOME",
-      isActive: true,
-    },
+    where: { tenantId, id: { in: incomeAccountIds }, type: "INCOME", isActive: true },
     select: { id: true },
   });
   const validIncomeIds = new Set(validIncomeAccounts.map((account) => account.id));
@@ -166,11 +157,7 @@ export async function postInvoiceAndMarkSent(
 
   let arAccount;
   try {
-    arAccount = await getSystemAccount(
-      tenantId,
-      "ACCOUNTS_RECEIVABLE",
-      COA_AR_CODE,
-    );
+    arAccount = await getSystemAccount(tenantId, "ACCOUNTS_RECEIVABLE", COA_AR_CODE);
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : "Accounts Receivable is not configured." };
   }
@@ -178,12 +165,7 @@ export async function postInvoiceAndMarkSent(
   let vatAccountId: string | null = null;
   if (taxAmountNGN > 0.001) {
     try {
-      const vatAccount = await getSystemAccount(
-        tenantId,
-        "OUTPUT_VAT",
-        COA_OUTPUT_VAT_CODE,
-      );
-      vatAccountId = vatAccount.id;
+      vatAccountId = (await getSystemAccount(tenantId, "OUTPUT_VAT", COA_OUTPUT_VAT_CODE)).id;
     } catch (error: unknown) {
       return { error: error instanceof Error ? error.message : "Output VAT is not configured." };
     }
@@ -201,26 +183,19 @@ export async function postInvoiceAndMarkSent(
     };
   }
 
-  // Preserve one evidence amount per source line. All values below are base-currency
-  // amounts so the allocation evidence always agrees with the authoritative GL.
   const sourceLineAllocations: SourceLineAllocation[] = invoice.lines.map((line) => ({
     invoiceLineId: line.id,
     incomeAccountId: line.incomeAccountId!,
     projectId: line.projectId ?? null,
     reportingTags: normaliseReportingTags(line.reportingTags),
-    amount: toNGN(
-      parseFloat(String(line.amount)) - parseFloat(String(line.discountAmount)),
-      rate,
-    ),
+    amount: toNGN(parseFloat(String(line.amount)) - parseFloat(String(line.discountAmount)), rate),
   }));
 
   if (invoiceDiscountNGN > 0.001) {
     const beforeInvoiceDiscount = sourceLineAllocations.reduce((sum, line) => sum + line.amount, 0);
     if (beforeInvoiceDiscount > 0) {
       for (const line of sourceLineAllocations) {
-        const reduction = Math.round(
-          invoiceDiscountNGN * (line.amount / beforeInvoiceDiscount) * 100,
-        ) / 100;
+        const reduction = Math.round(invoiceDiscountNGN * (line.amount / beforeInvoiceDiscount) * 100) / 100;
         line.amount = Math.round((line.amount - reduction) * 100) / 100;
       }
     }
@@ -231,16 +206,12 @@ export async function postInvoiceAndMarkSent(
   const sourceLineRounding = Math.round((expectedNetSales - sourceLineTotal) * 100) / 100;
   if (Math.abs(sourceLineRounding) > 1) {
     return {
-      error:
-        `Invoice line allocation imbalance exceeds tolerance (${sourceLineRounding} NGN). ` +
-        "Please review the invoice totals.",
+      error: `Invoice line allocation imbalance exceeds tolerance (${sourceLineRounding} NGN). Please review the invoice totals.`,
     };
   }
   if (sourceLineRounding !== 0 && sourceLineAllocations.length) {
     let largest = sourceLineAllocations[0];
-    for (const line of sourceLineAllocations) {
-      if (line.amount > largest.amount) largest = line;
-    }
+    for (const line of sourceLineAllocations) if (line.amount > largest.amount) largest = line;
     largest.amount = Math.round((largest.amount + sourceLineRounding) * 100) / 100;
   }
 
@@ -254,9 +225,7 @@ export async function postInvoiceAndMarkSent(
       });
       if (!liveInvoice) throw new Error("Invoice not found.");
       if (liveInvoice.status !== "DRAFT") {
-        throw new Error(
-          `Invoice is already ${liveInvoice.status}. Another request may have posted it concurrently.`,
-        );
+        throw new Error(`Invoice is already ${liveInvoice.status}. Another request may have posted it concurrently.`);
       }
 
       const duplicateJournal = await tx.journalEntry.findFirst({
@@ -267,8 +236,6 @@ export async function postInvoiceAndMarkSent(
         throw new Error("A journal entry already exists for this invoice. Concurrent duplicate prevented.");
       }
 
-      // Recognition and billing for the same Project share this lock. Sorting the IDs
-      // gives multi-Project invoices a deterministic lock order and avoids deadlocks.
       for (const projectId of projectIds) {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:project-revenue:${tenantId}:${projectId}`}))`;
       }
@@ -276,11 +243,7 @@ export async function postInvoiceAndMarkSent(
       const liveProjects = projectIds.length
         ? await tx.project.findMany({
             where: { tenantId, id: { in: projectIds } },
-            select: {
-              id: true,
-              unearnedIncomeAccountId: true,
-              contractAssetAccountId: true,
-            },
+            select: { id: true, unearnedIncomeAccountId: true, contractAssetAccountId: true },
           })
         : [];
       if (liveProjects.length !== projectIds.length) {
@@ -288,7 +251,6 @@ export async function postInvoiceAndMarkSent(
       }
       const projectMap = new Map<string, ProjectAccountingRow>(liveProjects.map((project) => [project.id, project]));
 
-      // Read the live, uncleared Contract Asset only after taking the Project locks.
       const contractByProject = new Map<string, Array<ContractAssetRecognitionRow & { remainingAmount: number }>>();
       for (const projectId of projectIds) {
         const recognitions = await tx.$queryRaw<ContractAssetRecognitionRow[]>`
@@ -296,37 +258,22 @@ export async function postInvoiceAndMarkSent(
             prr."id"::text AS "id",
             prr."project_id" AS "projectId",
             prr."contract_asset_account_id" AS "accountId",
-            (
-              prr."contract_asset_created" -
-              COALESCE(SUM(
-                CASE
-                  WHEN ila."contract_asset_cleared" > 0 AND i."status" <> 'VOIDED' THEN rria."amount"
-                  ELSE 0
-                END
-              ), 0)
-            ) AS "remaining"
+            (prr."contract_asset_created" - COALESCE(SUM(
+              CASE WHEN ila."contract_asset_cleared" > 0 AND i."status" <> 'VOIDED' THEN rria."amount" ELSE 0 END
+            ), 0)) AS "remaining"
           FROM "project_revenue_recognitions" prr
-          LEFT JOIN "revenue_recognition_invoice_allocations" rria
-            ON rria."recognition_id" = prr."id"
-          LEFT JOIN "invoice_line_revenue_allocations" ila
-            ON ila."id" = rria."invoice_line_allocation_id"
-          LEFT JOIN "invoices" i
-            ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
+          LEFT JOIN "revenue_recognition_invoice_allocations" rria ON rria."recognition_id" = prr."id"
+          LEFT JOIN "invoice_line_revenue_allocations" ila ON ila."id" = rria."invoice_line_allocation_id"
+          LEFT JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
           WHERE prr."tenant_id" = ${tenantId}::uuid
             AND prr."project_id" = ${projectId}
             AND prr."status" = 'POSTED'
             AND prr."contract_asset_created" > 0
           GROUP BY prr."id", prr."project_id", prr."contract_asset_account_id", prr."contract_asset_created",
             prr."recognition_date", prr."created_at"
-          HAVING (
-            prr."contract_asset_created" -
-            COALESCE(SUM(
-              CASE
-                WHEN ila."contract_asset_cleared" > 0 AND i."status" <> 'VOIDED' THEN rria."amount"
-                ELSE 0
-              END
-            ), 0)
-          ) > 0.005
+          HAVING (prr."contract_asset_created" - COALESCE(SUM(
+            CASE WHEN ila."contract_asset_cleared" > 0 AND i."status" <> 'VOIDED' THEN rria."amount" ELSE 0 END
+          ), 0)) > 0.005
           ORDER BY prr."recognition_date" ASC, prr."created_at" ASC, prr."id" ASC
         `;
 
@@ -355,8 +302,7 @@ export async function postInvoiceAndMarkSent(
         if (projectId) {
           const cached = unearnedByProject.get(projectId);
           if (cached) return cached;
-          const project = projectMap.get(projectId);
-          const override = project?.unearnedIncomeAccountId ?? null;
+          const override = projectMap.get(projectId)?.unearnedIncomeAccountId ?? null;
           if (override) {
             const account = await tx.chartOfAccounts.findFirst({
               where: { id: override, tenantId, type: "LIABILITY", isActive: true },
@@ -385,6 +331,7 @@ export async function postInvoiceAndMarkSent(
         contractAssetCleared: number;
         immediateRevenue: number;
         unearnedCreated: number;
+        unearnedIncomeAccountId: string | null;
         clearances: ContractClearance[];
       }> = [];
 
@@ -399,11 +346,7 @@ export async function postInvoiceAndMarkSent(
             if (recognition.remainingAmount <= 0.005) continue;
             const cleared = Math.round(Math.min(residual, recognition.remainingAmount) * 100) / 100;
             if (cleared <= 0) continue;
-            clearances.push({
-              recognitionId: recognition.id,
-              accountId: recognition.accountId!,
-              amount: cleared,
-            });
+            clearances.push({ recognitionId: recognition.id, accountId: recognition.accountId!, amount: cleared });
             journalLines.push({
               accountId: recognition.accountId!,
               description: `Contract Asset cleared - ${invoice.invoiceNumber}${fxNote}`,
@@ -419,6 +362,7 @@ export async function postInvoiceAndMarkSent(
         const contractAssetCleared = Math.round(clearances.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
         let immediateRevenue = 0;
         let unearnedCreated = 0;
+        let unearnedIncomeAccountId: string | null = null;
 
         if (residual > 0.005) {
           if (invoice.recogniseRevenueOnInvoiceDate) {
@@ -433,9 +377,9 @@ export async function postInvoiceAndMarkSent(
             });
           } else {
             unearnedCreated = residual;
-            const unearnedAccountId = await resolveUnearnedAccount(source.projectId);
+            unearnedIncomeAccountId = await resolveUnearnedAccount(source.projectId);
             journalLines.push({
-              accountId: unearnedAccountId,
+              accountId: unearnedIncomeAccountId,
               description: `Unearned Income - ${invoice.invoiceNumber}${fxNote}`,
               debit: 0,
               credit: residual,
@@ -450,6 +394,7 @@ export async function postInvoiceAndMarkSent(
           contractAssetCleared,
           immediateRevenue,
           unearnedCreated,
+          unearnedIncomeAccountId,
           clearances,
         });
       }
@@ -486,11 +431,12 @@ export async function postInvoiceAndMarkSent(
         const inserted = await tx.$queryRaw<Array<{ id: string }>>`
           INSERT INTO "invoice_line_revenue_allocations" (
             "tenant_id", "project_id", "invoice_id", "invoice_line_id", "income_account_id",
-            "currency", "invoice_amount", "contract_asset_cleared", "immediate_revenue", "unearned_created"
+            "currency", "invoice_amount", "contract_asset_cleared", "immediate_revenue",
+            "unearned_created", "unearned_income_account_id"
           ) VALUES (
             ${tenantId}::uuid, ${item.source.projectId}, ${invoice.id}, ${item.source.invoiceLineId},
             ${item.source.incomeAccountId}, 'NGN', ${item.source.amount}, ${item.contractAssetCleared},
-            ${item.immediateRevenue}, ${item.unearnedCreated}
+            ${item.immediateRevenue}, ${item.unearnedCreated}, ${item.unearnedIncomeAccountId}
           )
           RETURNING "id"::text AS "id"
         `;
@@ -513,26 +459,19 @@ export async function postInvoiceAndMarkSent(
         data: { status: "SENT", sentAt },
       });
       if (updated.count !== 1) {
-        throw new Error(
-          "Invoice status changed before the update could complete. Transaction rolled back.",
-        );
+        throw new Error("Invoice status changed before the update could complete. Transaction rolled back.");
       }
     });
   } catch (error: unknown) {
     return {
-      error:
-        error instanceof Error
-          ? error.message
-          : "Failed to post invoice. Invoice status was not changed.",
+      error: error instanceof Error ? error.message : "Failed to post invoice. Invoice status was not changed.",
     };
   }
 
   if (sendEmail) {
     void sendInvoiceEmail({ tenantId, invoiceId })
       .then((result) => {
-        if (!result.sent) {
-          console.warn(`[INVOICE_SENT] Email not sent for invoice ${invoiceId}: ${result.reason}`);
-        }
+        if (!result.sent) console.warn(`[INVOICE_SENT] Email not sent for invoice ${invoiceId}: ${result.reason}`);
       })
       .catch((error: unknown) => {
         console.error(`[INVOICE_SENT] Unexpected email error for invoice ${invoiceId}:`, error);
