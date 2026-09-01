@@ -27,6 +27,7 @@ import { getValidAccessToken } from "@/lib/integrations/oauth-refresh";
 import { markTokenExpired } from "@/lib/integrations/oauth-refresh";
 import { buildCallbackUri } from "@/lib/integrations/oauth-config";
 import { upsertXpenxflowExpenseWithAccounting } from "./expense-accounting";
+import { upsertXpenxflowBillAccounting } from "./bill-accounting";
 import {
   createXFClient,
   XPENXFLOW_TOKEN_EXPIRED,
@@ -137,7 +138,7 @@ async function syncBills(
   for (const raw of data) {
     c.processed++;
     try {
-      (await upsertBill(orgId, raw, accountMap)) === "created" ? c.created++ : c.updated++;
+      (await upsertXpenxflowBillAccounting(orgId, raw, accountMap)) === "created" ? c.created++ : c.updated++;
       const { lines: _lines, ...billMeta } = raw;
       await upsertCache(orgId, SOURCE, "bills", raw.id, billMeta as unknown as JsonObject);
     } catch (err) {
