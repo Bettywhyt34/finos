@@ -37,6 +37,17 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
     return { error: "This invoice has payments recorded. Reverse or refund the payment before voiding it." };
   }
 
+  const appliedCreditNotes = await prisma.$queryRaw<Array<{ count: unknown }>>`
+    SELECT COUNT(*) AS "count"
+    FROM "credit_notes"
+    WHERE "tenant_id" = ${tenantId}::uuid
+      AND "invoice_id" = ${id}
+      AND "status" = 'APPLIED'::"CreditNoteStatus"
+  `;
+  if (Number(appliedCreditNotes[0]?.count ?? 0) > 0) {
+    return { error: "This invoice has an applied credit note. Reverse the credit note before voiding the invoice." };
+  }
+
   const recognisedFromThisInvoice = await prisma.$queryRaw<Array<{ amount: unknown }>>`
     SELECT COALESCE(SUM(rria."amount"), 0) AS "amount"
     FROM "invoice_line_revenue_allocations" ila
@@ -101,8 +112,6 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
 
     try {
       await prisma.$transaction(async (tx) => {
-        // Customer receipts, receipt reversals and invoice voids share this lock.
-        // That prevents a receipt and a void from both passing stale balance/status checks.
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${id}`}))`;
 
         const live = await tx.invoice.findFirst({
@@ -114,6 +123,17 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
         }
         if (Number(live.amountPaid) > 0) {
           throw new Error("A payment was applied before voiding could complete. Reverse it first.");
+        }
+
+        const liveCreditNotes = await tx.$queryRaw<Array<{ count: unknown }>>`
+          SELECT COUNT(*) AS "count"
+          FROM "credit_notes"
+          WHERE "tenant_id" = ${tenantId}::uuid
+            AND "invoice_id" = ${id}
+            AND "status" = 'APPLIED'::"CreditNoteStatus"
+        `;
+        if (Number(liveCreditNotes[0]?.count ?? 0) > 0) {
+          throw new Error("A credit note was applied before voiding could complete. Reverse it first.");
         }
 
         const projectRows = await tx.$queryRaw<Array<{ projectId: string }>>`
