@@ -3,8 +3,8 @@
  * server-only — uses Prisma, OAuth tokens, and journal posting.
  *
  * Sync order (dependency-safe):
- *   1. Bills      → upsert Vendor (resolved from cache) + Bill + BillLines
- *   2. Expenses   → upsert Expense + accounting lifecycle atomically
+ *   1. Bills      → upsert bill + accounting lifecycle atomically
+ *   2. Expenses   → upsert expense + accounting lifecycle atomically
  *   3. Journals   → cache to unified_transactions_cache (no FINOS GL re-post)
  *   4. Assets     → cache to unified_transactions_cache
  *   5. Budgets    → cache to unified_transactions_cache
@@ -36,7 +36,6 @@ import {
 import {
   parseCursor,
   stringifyCursor,
-  type XFBill,
   type XFJournal,
   type XFAsset,
   type XFBudget,
@@ -103,15 +102,12 @@ export async function processXpenxflow(payload: SyncJobPayload): Promise<
     add(await syncBudgets(xf, tenantId, syncLogId, since));
   } catch (err) {
     if (err instanceof Error && err.message === XPENXFLOW_TOKEN_EXPIRED) {
-      // Mark connection expired so UI prompts reconnect
       await markTokenExpired(connectionId);
       throw new Error("XpenxFlow token expired — please reconnect the integration");
     }
     throw err;
   }
 
-  // Rolling TTL: mirror XpenxFlow's server-side reset so we don't trigger
-  // premature refresh attempts before the next sync.
   await prisma.integrationConnection.update({
     where: { id: connectionId },
     data:  { tokenExpiresAt: new Date(Date.now() + ROLLING_TTL_DAYS * 24 * 60 * 60 * 1000) },
@@ -131,14 +127,15 @@ async function syncBills(
   const c    = zero();
   const data = await xf.getBills(since);
 
-  // Bulk-resolve FINOS account IDs for all line account_codes
   const allCodes   = Array.from(new Set(data.flatMap((b) => b.lines.map((l) => l.account_code))));
   const accountMap = await resolveAccountMappings(orgId, SOURCE, allCodes);
 
   for (const raw of data) {
     c.processed++;
     try {
-      (await upsertXpenxflowBillAccounting(orgId, raw, accountMap)) === "created" ? c.created++ : c.updated++;
+      (await upsertXpenxflowBillAccounting(orgId, raw, accountMap)) === "created"
+        ? c.created++
+        : c.updated++;
       const { lines: _lines, ...billMeta } = raw;
       await upsertCache(orgId, SOURCE, "bills", raw.id, billMeta as unknown as JsonObject);
     } catch (err) {
@@ -152,87 +149,6 @@ async function syncBills(
     }
   }
   return c;
-}
-
-async function upsertBill(
-  orgId:      string,
-  xf:         XFBill,
-  accountMap: Map<string, string>,
-): Promise<"created" | "updated"> {
-  const vendorId = await resolveXFVendorId(orgId, xf.vendor_id);
-  if (!vendorId) {
-    throw new Error(`Vendor "${xf.vendor_id}" not in FINOS. Sync vendors before bills.`);
-  }
-
-  const statusMap: Record<string, "DRAFT" | "RECORDED" | "PARTIAL" | "PAID" | "OVERDUE"> = {
-    draft:     "DRAFT",
-    approved:  "RECORDED",
-    partial:   "PARTIAL",
-    paid:      "PAID",
-    overdue:   "OVERDUE",
-    cancelled: "DRAFT",
-  };
-
-  const billData = {
-    vendorId,
-    billDate:     new Date(xf.bill_date),
-    dueDate:      new Date(xf.due_date),
-    currency:     xf.currency,
-    exchangeRate: xf.exchange_rate,
-    subtotal:     xf.subtotal,
-    taxAmount:    xf.tax_amount,
-    totalAmount:  xf.total_amount,
-    status:       statusMap[xf.status] ?? "DRAFT",
-    notes:        xf.notes              ?? undefined,
-    vendorRef:    xf.purchase_order_number ?? undefined,
-  };
-
-  const existing = await prisma.bill.findFirst({
-    where:  { tenantId: orgId, billNumber: xf.bill_number, vendorId },
-    select: { id: true },
-  });
-
-  if (existing) {
-    await prisma.$transaction([
-      prisma.bill.update({ where: { id: existing.id }, data: billData }),
-      prisma.billLine.deleteMany({ where: { billId: existing.id } }),
-      ...makeBillLineCreates(existing.id, xf, accountMap),
-    ]);
-    return "updated";
-  }
-
-  await prisma.$transaction(async (tx) => {
-    const bill = await tx.bill.create({
-      data: { ...billData, tenantId: orgId, billNumber: xf.bill_number, amountPaid: 0 },
-    });
-    for (const lineData of makeBillLineData(bill.id, xf, accountMap)) {
-      await tx.billLine.create({ data: lineData });
-    }
-  });
-  return "created";
-}
-
-function makeBillLineData(billId: string, xf: XFBill, accountMap: Map<string, string>) {
-  return xf.lines.map((line) => {
-    const accountId = accountMap.get(line.account_code);
-    if (!accountId) {
-      throw new Error(
-        `No account mapping for code "${line.account_code}". Add it in Integration Settings > Account Mapping.`
-      );
-    }
-    return {
-      billId,
-      accountId,
-      description: line.description,
-      quantity:    line.quantity,
-      rate:        line.unit_price,
-      amount:      line.net_amount,
-    };
-  });
-}
-
-function makeBillLineCreates(billId: string, xf: XFBill, accountMap: Map<string, string>) {
-  return makeBillLineData(billId, xf, accountMap).map((data) => prisma.billLine.create({ data }));
 }
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
@@ -366,24 +282,6 @@ async function syncBudgets(
     }
   }
   return c;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Resolves an XpenxFlow vendor UUID → FINOS vendor.id via the unified cache. */
-async function resolveXFVendorId(orgId: string, xfVendorId: string): Promise<string | null> {
-  const cached = await prisma.unifiedTransactionsCache.findFirst({
-    where:  { tenantId: orgId, sourceApp: SOURCE, sourceTable: "vendors", sourceId: xfVendorId },
-    select: { dataJson: true },
-  });
-  if (!cached?.dataJson) return null;
-
-  const vendorCode = (cached.dataJson as unknown as { vendor_code: string }).vendor_code;
-  const vendor     = await prisma.vendor.findUnique({
-    where:  { tenantId_vendorCode: { tenantId: orgId, vendorCode } },
-    select: { id: true },
-  });
-  return vendor?.id ?? null;
 }
 
 function zero(): Counts {
