@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { getAccountBalances, sumByType } from "@/lib/statements";
 import { formatCurrency } from "@/lib/utils";
@@ -28,9 +27,12 @@ export default async function ProfitLossPage(
   const priorFrom = (parseInt(periodFrom.slice(0, 4)) - 1) + periodFrom.slice(4);
   const priorTo = (parseInt(periodTo.slice(0, 4)) - 1) + periodTo.slice(4);
 
+  // Year-end closing journals reset temporary accounts for the balance sheet,
+  // but they are not operating performance and must never zero historical P&L.
+  const statementOptions = { excludeSources: ["year-end-close"] };
   const [currentBalances, priorBalances] = await Promise.all([
-    getAccountBalances(orgId, periodTo, periodFrom),
-    getAccountBalances(orgId, priorTo, priorFrom),
+    getAccountBalances(orgId, periodTo, periodFrom, statementOptions),
+    getAccountBalances(orgId, priorTo, priorFrom, statementOptions),
   ]);
 
   const currentIncome = currentBalances.filter((b) => b.type === "INCOME");
