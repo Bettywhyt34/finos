@@ -37,12 +37,30 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
     return { error: "This invoice has payments recorded. Reverse or refund the payment before voiding it." };
   }
 
+  const recognisedFromThisInvoice = await prisma.$queryRaw<Array<{ amount: unknown }>>`
+    SELECT COALESCE(SUM(rria."amount"), 0) AS "amount"
+    FROM "invoice_line_revenue_allocations" ila
+    INNER JOIN "revenue_recognition_invoice_allocations" rria
+      ON rria."invoice_line_allocation_id" = ila."id"
+    INNER JOIN "project_revenue_recognitions" prr
+      ON prr."id" = rria."recognition_id"
+    WHERE ila."tenant_id" = ${tenantId}::uuid
+      AND ila."invoice_id" = ${id}
+      AND prr."status" = 'POSTED'
+  `;
+  if (Number(recognisedFromThisInvoice[0]?.amount ?? 0) > 0.005) {
+    return {
+      error:
+        "This invoice has Project revenue that was recognised after billing. " +
+        "Reverse those Project revenue recognition entries before voiding the invoice.",
+    };
+  }
+
   const voidedAt = new Date();
   const fxNote = Number(invoice.exchangeRate) !== 1
     ? ` (${invoice.currency} @ ${invoice.exchangeRate})`
     : "";
 
-  // Draft invoices never reached the GL, so voiding them has no journal consequence.
   if (invoice.status === "DRAFT") {
     try {
       await prisma.invoice.updateMany({
@@ -91,6 +109,21 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
         }
         if (Number(live.amountPaid) > 0) {
           throw new Error("A payment was applied before voiding could complete. Reverse it first.");
+        }
+
+        const activeRecognition = await tx.$queryRaw<Array<{ amount: unknown }>>`
+          SELECT COALESCE(SUM(rria."amount"), 0) AS "amount"
+          FROM "invoice_line_revenue_allocations" ila
+          INNER JOIN "revenue_recognition_invoice_allocations" rria
+            ON rria."invoice_line_allocation_id" = ila."id"
+          INNER JOIN "project_revenue_recognitions" prr
+            ON prr."id" = rria."recognition_id"
+          WHERE ila."tenant_id" = ${tenantId}::uuid
+            AND ila."invoice_id" = ${id}
+            AND prr."status" = 'POSTED'
+        `;
+        if (Number(activeRecognition[0]?.amount ?? 0) > 0.005) {
+          throw new Error("Project revenue was recognised from this invoice before voiding could complete. Reverse it first.");
         }
 
         const duplicate = await tx.journalEntry.findFirst({
