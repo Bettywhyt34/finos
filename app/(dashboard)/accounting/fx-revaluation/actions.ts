@@ -207,7 +207,7 @@ export async function postFXRevaluation(data: {
             currency: data.currency,
           },
         },
-        select: { id: true, status: true, updatedAt: true },
+        select: { id: true, status: true, journalEntryId: true },
       });
       if (existing && existing.status !== "REVERSED") {
         throw new Error(`Revaluation for ${data.period} / ${data.currency} already exists`);
@@ -292,10 +292,10 @@ export async function postFXRevaluation(data: {
       }
 
       const ref = `FXR-${data.period}-${data.currency}`;
-      // A reversed revaluation can be corrected and re-posted. The reversed row's
-      // update timestamp gives the correction cycle a deterministic idempotency key.
+      // Re-posting after a reversal is keyed by the journal that was reversed.
+      // Each correction cycle therefore gets a stable, unique source event.
       const sourceId = existing
-        ? `${data.period}-${data.currency}-repost-${existing.updatedAt.getTime()}`
+        ? `${data.period}-${data.currency}-repost-${existing.journalEntryId ?? existing.id}`
         : `${data.period}-${data.currency}`;
 
       const journalEntryId = await postJournalEntryInTransaction(tx, {
