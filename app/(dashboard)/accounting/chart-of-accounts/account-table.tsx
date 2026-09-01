@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { AccountForm } from "./account-form";
 import { toggleAccountStatus } from "./actions";
 import { cn } from "@/lib/utils";
-import type { AccountType } from "@prisma/client";
+import type { AccountType, FinancialCategory } from "@prisma/client";
 
 interface Account {
   id: string;
@@ -32,7 +32,7 @@ interface Account {
   name: string;
   type: AccountType;
   subtype: string | null;
-  financialCategory?: string | null;
+  financialCategory?: FinancialCategory | null;
   parentId: string | null;
   isActive: boolean;
 }
@@ -50,46 +50,14 @@ type SectionKey =
   | "INCOME"
   | "EXPENSES";
 
-const SECTIONS: Array<{
-  key: SectionKey;
-  label: string;
-  description: string;
-}> = [
-  {
-    key: "CURRENT_ASSETS",
-    label: "Current Assets",
-    description: "Assets expected to be converted to cash within one year.",
-  },
-  {
-    key: "FIXED_ASSETS",
-    label: "Fixed Assets",
-    description: "Long-term tangible assets used in operations.",
-  },
-  {
-    key: "CURRENT_LIABILITIES",
-    label: "Current Liabilities",
-    description: "Obligations due within one year.",
-  },
-  {
-    key: "LONG_TERM_LIABILITIES",
-    label: "Long-term Liabilities",
-    description: "Obligations due beyond one year.",
-  },
-  {
-    key: "EQUITY",
-    label: "Equity",
-    description: "Owner’s interest in the business.",
-  },
-  {
-    key: "INCOME",
-    label: "Income",
-    description: "Revenue earned from normal business operations.",
-  },
-  {
-    key: "EXPENSES",
-    label: "Expenses",
-    description: "Costs incurred in generating income.",
-  },
+const SECTIONS: Array<{ key: SectionKey; label: string; description: string }> = [
+  { key: "CURRENT_ASSETS", label: "Current Assets", description: "Assets expected to be converted to cash within one year." },
+  { key: "FIXED_ASSETS", label: "Fixed Assets", description: "Long-term tangible assets used in operations." },
+  { key: "CURRENT_LIABILITIES", label: "Current Liabilities", description: "Obligations due within one year." },
+  { key: "LONG_TERM_LIABILITIES", label: "Long-term Liabilities", description: "Obligations due beyond one year." },
+  { key: "EQUITY", label: "Equity", description: "Owner’s interest in the business." },
+  { key: "INCOME", label: "Income", description: "Revenue earned from normal business operations." },
+  { key: "EXPENSES", label: "Expenses", description: "Costs incurred in generating income." },
 ];
 
 function normalized(value?: string | null) {
@@ -98,34 +66,14 @@ function normalized(value?: string | null) {
 
 function sectionFor(account: Account): SectionKey {
   const descriptor = `${normalized(account.subtype)} ${normalized(account.financialCategory)} ${normalized(account.name)}`;
-
   if (account.type === "ASSET") {
-    if (
-      descriptor.includes("fixed") ||
-      descriptor.includes("property") ||
-      descriptor.includes("plant") ||
-      descriptor.includes("equipment") ||
-      descriptor.includes("ppe") ||
-      descriptor.includes("non current") ||
-      descriptor.includes("accumulated depreciation")
-    ) {
-      return "FIXED_ASSETS";
-    }
+    if (descriptor.includes("fixed") || descriptor.includes("property") || descriptor.includes("plant") || descriptor.includes("equipment") || descriptor.includes("ppe") || descriptor.includes("non current") || descriptor.includes("accumulated depreciation")) return "FIXED_ASSETS";
     return "CURRENT_ASSETS";
   }
-
   if (account.type === "LIABILITY") {
-    if (
-      descriptor.includes("long term") ||
-      descriptor.includes("long-term") ||
-      descriptor.includes("non current") ||
-      descriptor.includes("non-current")
-    ) {
-      return "LONG_TERM_LIABILITIES";
-    }
+    if (descriptor.includes("long term") || descriptor.includes("long-term") || descriptor.includes("non current") || descriptor.includes("non-current")) return "LONG_TERM_LIABILITIES";
     return "CURRENT_LIABILITIES";
   }
-
   if (account.type === "EQUITY") return "EQUITY";
   if (account.type === "INCOME") return "INCOME";
   return "EXPENSES";
@@ -195,9 +143,7 @@ function groupFor(section: SectionKey, account: Account) {
 export function AccountTable({ accounts }: AccountTableProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ACTIVE");
-  const [openSections, setOpenSections] = useState<Set<SectionKey>>(
-    new Set(["CURRENT_ASSETS"])
-  );
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(["CURRENT_ASSETS"]));
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [toggling, setToggling] = useState<string | null>(null);
 
@@ -214,7 +160,6 @@ export function AccountTable({ accounts }: AccountTableProps) {
   const grouped = useMemo(() => {
     const result = new Map<SectionKey, Map<string, Account[]>>();
     for (const section of SECTIONS) result.set(section.key, new Map());
-
     for (const account of visibleAccounts) {
       const section = sectionFor(account);
       const group = groupFor(section, account);
@@ -223,11 +168,8 @@ export function AccountTable({ accounts }: AccountTableProps) {
       list.push(account);
       sectionGroups.set(group, list);
     }
-
     for (const [, groups] of result) {
-      for (const [group, list] of groups) {
-        groups.set(group, [...list].sort((a, b) => a.code.localeCompare(b.code)));
-      }
+      for (const [group, list] of groups) groups.set(group, [...list].sort((a, b) => a.code.localeCompare(b.code)));
     }
     return result;
   }, [visibleAccounts]);
@@ -235,8 +177,7 @@ export function AccountTable({ accounts }: AccountTableProps) {
   function toggleSection(section: SectionKey) {
     setOpenSections((current) => {
       const next = new Set(current);
-      if (next.has(section)) next.delete(section);
-      else next.add(section);
+      if (next.has(section)) next.delete(section); else next.add(section);
       return next;
     });
   }
@@ -244,8 +185,7 @@ export function AccountTable({ accounts }: AccountTableProps) {
   function toggleGroup(key: string) {
     setOpenGroups((current) => {
       const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
@@ -253,11 +193,7 @@ export function AccountTable({ accounts }: AccountTableProps) {
   function expandAll() {
     setOpenSections(new Set(SECTIONS.map((section) => section.key)));
     const keys: string[] = [];
-    for (const section of SECTIONS) {
-      for (const group of grouped.get(section.key)?.keys() ?? []) {
-        keys.push(`${section.key}:${group}`);
-      }
-    }
+    for (const section of SECTIONS) for (const group of grouped.get(section.key)?.keys() ?? []) keys.push(`${section.key}:${group}`);
     setOpenGroups(new Set(keys));
   }
 
@@ -270,8 +206,7 @@ export function AccountTable({ accounts }: AccountTableProps) {
     setToggling(id);
     const result = await toggleAccountStatus(id, !current);
     setToggling(null);
-    if (result?.error) toast.error(result.error);
-    else toast.success(current ? "Account disabled" : "Account enabled");
+    if (result?.error) toast.error(result.error); else toast.success(current ? "Account disabled" : "Account enabled");
   }
 
   return (
@@ -280,17 +215,10 @@ export function AccountTable({ accounts }: AccountTableProps) {
         <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              placeholder="Search accounts..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="h-10 pl-9"
-            />
+            <Input placeholder="Search accounts..." value={search} onChange={(event) => setSearch(event.target.value)} className="h-10 pl-9" />
           </div>
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value ?? "ACTIVE")}>
-            <SelectTrigger className="h-10 w-full sm:w-48">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="h-10 w-full sm:w-48"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ACTIVE">Active Accounts</SelectItem>
               <SelectItem value="ALL">All Accounts</SelectItem>
@@ -310,103 +238,42 @@ export function AccountTable({ accounts }: AccountTableProps) {
           const groups = grouped.get(section.key) ?? new Map<string, Account[]>();
           const count = [...groups.values()].reduce((sum, items) => sum + items.length, 0);
           const isOpen = openSections.has(section.key);
-
           return (
             <div key={section.key} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-              <button
-                type="button"
-                onClick={() => toggleSection(section.key)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
-              >
-                {isOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-emerald-800" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-emerald-800" />
-                )}
-                <span className="font-semibold text-emerald-900">
-                  {sectionIndex + 1}. {section.label}
-                </span>
+              <button type="button" onClick={() => toggleSection(section.key)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50">
+                {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-emerald-800" /> : <ChevronRight className="h-4 w-4 shrink-0 text-emerald-800" />}
+                <span className="font-semibold text-emerald-900">{sectionIndex + 1}. {section.label}</span>
                 <span className="hidden text-sm text-slate-500 md:inline">{section.description}</span>
-                <span className="ml-auto rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900">
-                  {count} {count === 1 ? "account" : "accounts"}
-                </span>
+                <span className="ml-auto rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900">{count} {count === 1 ? "account" : "accounts"}</span>
                 <MoreVertical className="h-4 w-4 text-slate-400" />
               </button>
 
               {isOpen && (
                 <div className="border-t border-slate-200">
                   <div className="grid grid-cols-[minmax(0,1.6fr)_120px_minmax(180px,1fr)_100px_92px] bg-slate-50 px-4 py-2 text-xs font-medium text-slate-500">
-                    <span className="pl-8">Account Name</span>
-                    <span>Code</span>
-                    <span>Account Group / Subgroup</span>
-                    <span>Status</span>
-                    <span />
+                    <span className="pl-8">Account Name</span><span>Code</span><span>Account Group / Subgroup</span><span>Status</span><span />
                   </div>
-
-                  {count === 0 ? (
-                    <div className="px-6 py-8 text-center text-sm text-slate-400">
-                      No accounts in this section.
-                    </div>
-                  ) : (
+                  {count === 0 ? <div className="px-6 py-8 text-center text-sm text-slate-400">No accounts in this section.</div> : (
                     [...groups.entries()].map(([group, items]) => {
                       const groupKey = `${section.key}:${group}`;
                       const groupOpen = openGroups.has(groupKey) || search.trim().length > 0;
                       return (
                         <div key={groupKey} className="border-t border-slate-100 first:border-t-0">
-                          <button
-                            type="button"
-                            onClick={() => toggleGroup(groupKey)}
-                            className="grid w-full grid-cols-[minmax(0,1.6fr)_120px_minmax(180px,1fr)_100px_92px] items-center px-4 py-2.5 text-left hover:bg-slate-50"
-                          >
+                          <button type="button" onClick={() => toggleGroup(groupKey)} className="grid w-full grid-cols-[minmax(0,1.6fr)_120px_minmax(180px,1fr)_100px_92px] items-center px-4 py-2.5 text-left hover:bg-slate-50">
                             <span className="flex items-center gap-2 pl-2 font-medium text-emerald-900">
-                              {groupOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                              <Folder className="h-4 w-4" />
-                              {group}
+                              {groupOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}<Folder className="h-4 w-4" />{group}
                             </span>
-                            <span className="text-sm text-slate-400">—</span>
-                            <span className="text-sm text-slate-500">Subgroup</span>
-                            <span className="text-xs font-medium text-emerald-800">Active</span>
-                            <span className="text-right text-xs text-slate-400">{items.length}</span>
+                            <span className="text-sm text-slate-400">—</span><span className="text-sm text-slate-500">Subgroup</span><span className="text-xs font-medium text-emerald-800">Active</span><span className="text-right text-xs text-slate-400">{items.length}</span>
                           </button>
-
                           {groupOpen && items.map((account) => (
-                            <div
-                              key={account.id}
-                              className={cn(
-                                "grid grid-cols-[minmax(0,1.6fr)_120px_minmax(180px,1fr)_100px_92px] items-center border-t border-slate-100 px-4 py-2.5 text-sm",
-                                !account.isActive && "opacity-50"
-                              )}
-                            >
-                              <div className="pl-10">
-                                <Link
-                                  href={`/reports/general-ledger?accountId=${account.id}`}
-                                  className="font-medium text-emerald-900 underline-offset-2 hover:underline"
-                                >
-                                  {account.name}
-                                </Link>
-                              </div>
-                              <span className="font-mono text-xs text-slate-600">{account.code}</span>
-                              <span className="text-slate-500">Account</span>
-                              <span className={cn(
-                                "w-fit rounded-md px-2 py-0.5 text-xs font-medium",
-                                account.isActive ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-500"
-                              )}>
-                                {account.isActive ? "Active" : "Inactive"}
-                              </span>
+                            <div key={account.id} className={cn("grid grid-cols-[minmax(0,1.6fr)_120px_minmax(180px,1fr)_100px_92px] items-center border-t border-slate-100 px-4 py-2.5 text-sm", !account.isActive && "opacity-50")}>
+                              <div className="pl-10"><Link href={`/reports/general-ledger?accountId=${account.id}`} className="font-medium text-emerald-900 underline-offset-2 hover:underline">{account.name}</Link></div>
+                              <span className="font-mono text-xs text-slate-600">{account.code}</span><span className="text-slate-500">Account</span>
+                              <span className={cn("w-fit rounded-md px-2 py-0.5 text-xs font-medium", account.isActive ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-500")}>{account.isActive ? "Active" : "Inactive"}</span>
                               <div className="flex items-center justify-end gap-1">
                                 <AccountForm accounts={accounts} editAccount={account} />
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  disabled={toggling === account.id}
-                                  onClick={() => handleToggle(account.id, account.isActive)}
-                                  title={account.isActive ? "Disable account" : "Enable account"}
-                                >
-                                  {account.isActive ? (
-                                    <ToggleRight className="h-4 w-4 text-emerald-800" />
-                                  ) : (
-                                    <ToggleLeft className="h-4 w-4 text-slate-400" />
-                                  )}
+                                <Button variant="ghost" size="icon-sm" disabled={toggling === account.id} onClick={() => handleToggle(account.id, account.isActive)} title={account.isActive ? "Disable account" : "Enable account"}>
+                                  {account.isActive ? <ToggleRight className="h-4 w-4 text-emerald-800" /> : <ToggleLeft className="h-4 w-4 text-slate-400" />}
                                 </Button>
                               </div>
                             </div>
