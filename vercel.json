@@ -1,7 +1,15 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npx prisma generate && next build",
-  "installCommand": "npm install",
+  "installCommand": "npm ci",
+  "git": {
+    "deploymentEnabled": {
+      "finos-dev": false,
+      "dev": false,
+      "development": false
+    }
+  },
   "regions": ["lhr1"],
   "functions": {
     "app/api/**": {
