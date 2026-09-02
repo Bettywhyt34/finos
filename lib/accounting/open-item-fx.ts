@@ -11,6 +11,7 @@ interface ArAdjustmentRow {
   posted: unknown;
   receiptConsumed: unknown;
   creditConsumed: unknown;
+  creditNoteConsumed: unknown;
 }
 
 /** Active unrealised AR adjustment still embedded in one invoice's GL carrying value. */
@@ -44,12 +45,20 @@ export async function getActiveArFxAdjustment(
         WHERE cca."invoice_id" = ${invoiceId}
           AND cca."tenant_id" = ${tenantId}::uuid
           AND cca."status" = 'POSTED'
-      ), 0) AS "creditConsumed"
+      ), 0) AS "creditConsumed",
+      COALESCE((
+        SELECT SUM(cn."fx_unrealized_consumed")
+        FROM "credit_notes" cn
+        WHERE cn."invoice_id" = ${invoiceId}
+          AND cn."tenant_id" = ${tenantId}::uuid
+          AND cn."status" = 'APPLIED'::"CreditNoteStatus"
+      ), 0) AS "creditNoteConsumed"
   `;
   return roundMoney(
     Number(rows[0]?.posted ?? 0)
       - Number(rows[0]?.receiptConsumed ?? 0)
-      - Number(rows[0]?.creditConsumed ?? 0),
+      - Number(rows[0]?.creditConsumed ?? 0)
+      - Number(rows[0]?.creditNoteConsumed ?? 0),
   );
 }
 
