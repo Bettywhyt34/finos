@@ -1,62 +1,14 @@
 "use server";
 
-import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { postJournalEntryInTransaction, type JournalPostingLine } from "@/lib/journal";
 import { getRecognitionPeriod } from "@/lib/utils";
+import { ensureStandaloneInvoiceRevenueEvidence } from "@/lib/invoices/revenue-evidence";
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
-function normaliseReportingTags(value: Prisma.JsonValue | null): Record<string, string> | null {
-  if (!value || Array.isArray(value) || typeof value !== "object") return null;
-  const pairs = Object.entries(value)
-    .filter(([, optionId]) => typeof optionId === "string" && optionId.length > 0)
-    .sort(([a], [b]) => a.localeCompare(b));
-  return pairs.length ? Object.fromEntries(pairs) as Record<string, string> : null;
-}
-
-function proportionalReversal(
-  lines: Array<{
-    accountId: string;
-    description: string | null;
-    debit: unknown;
-    credit: unknown;
-    projectId: string | null;
-    reportingTags: Prisma.JsonValue | null;
-  }>,
-  ratio: number,
-  label: string,
-): JournalPostingLine[] {
-  const scaled = lines.map((line) => ({
-    accountId: line.accountId,
-    description: `Credit note ${label} - ${line.description ?? "Invoice adjustment"}`,
-    debit: roundMoney(Number(line.credit) * ratio),
-    credit: roundMoney(Number(line.debit) * ratio),
-    projectId: line.projectId ?? null,
-    reportingTags: normaliseReportingTags(line.reportingTags),
-  }));
-
-  let debit = roundMoney(scaled.reduce((sum, line) => sum + line.debit, 0));
-  let credit = roundMoney(scaled.reduce((sum, line) => sum + line.credit, 0));
-  const difference = roundMoney(debit - credit);
-  if (Math.abs(difference) > 0.001) {
-    const targetSide = difference > 0 ? "credit" : "debit";
-    const candidates = scaled
-      .map((line, index) => ({ index, amount: targetSide === "credit" ? line.credit : line.debit }))
-      .sort((a, b) => b.amount - a.amount);
-    const target = candidates[0];
-    if (!target) throw new Error("Credit note journal could not be balanced.");
-    if (targetSide === "credit") scaled[target.index].credit = roundMoney(scaled[target.index].credit + difference);
-    else scaled[target.index].debit = roundMoney(scaled[target.index].debit + Math.abs(difference));
-    debit = roundMoney(scaled.reduce((sum, line) => sum + line.debit, 0));
-    credit = roundMoney(scaled.reduce((sum, line) => sum + line.credit, 0));
-  }
-  if (Math.abs(debit - credit) > 0.01) throw new Error("Credit note journal is not balanced.");
-  return scaled.filter((line) => line.debit > 0.001 || line.credit > 0.001);
 }
 
 export async function applyInvoiceCreditNote(input: {
@@ -88,6 +40,7 @@ export async function applyInvoiceCreditNote(input: {
 
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${input.invoiceId}`}))`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice-revenue:${tenantId}:${input.invoiceId}`}))`;
 
       const invoice = await tx.invoice.findFirst({
         where: { id: input.invoiceId, tenantId },
@@ -95,10 +48,12 @@ export async function applyInvoiceCreditNote(input: {
           id: true,
           customerId: true,
           invoiceNumber: true,
+          issueDate: true,
           status: true,
           currency: true,
           exchangeRate: true,
           totalAmount: true,
+          taxAmount: true,
           amountPaid: true,
           balanceDue: true,
           lines: { select: { projectId: true } },
@@ -108,20 +63,21 @@ export async function applyInvoiceCreditNote(input: {
       if (["DRAFT", "VOIDED", "WRITTEN_OFF"].includes(invoice.status)) {
         throw new Error(`A credit note cannot be applied while the invoice is ${invoice.status}.`);
       }
+      if (issueDate < invoice.issueDate) throw new Error("Credit note date cannot be before the invoice date.");
       if (invoice.lines.some((line) => Boolean(line.projectId))) {
-        throw new Error(
-          "Project-linked invoice credit notes are temporarily blocked until Project revenue allocation adjustments are enabled. This prevents Unearned Income or Contract Asset from being reopened incorrectly.",
-        );
+        throw new Error("Project-linked invoice credit notes remain blocked until Project revenue-allocation adjustments are enabled.");
       }
+
       const outstanding = roundMoney(Number(invoice.balanceDue));
       if (outstanding <= 0.01) throw new Error("This invoice has no outstanding balance to credit.");
       if (amount - outstanding > 0.01) {
         throw new Error(`Credit amount cannot exceed the current outstanding balance of ${outstanding.toFixed(2)} ${invoice.currency}.`);
       }
       const totalAmount = Number(invoice.totalAmount);
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0) throw new Error("Invoice total is invalid.");
       const exchangeRate = Number(invoice.exchangeRate);
+      if (!Number.isFinite(totalAmount) || totalAmount <= 0) throw new Error("Invoice total is invalid.");
       if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) throw new Error("Invoice exchange rate is invalid.");
+      const ratio = amount / totalAmount;
 
       const originalJournal = await tx.journalEntry.findFirst({
         where: { tenantId, source: "invoice", sourceId: invoice.id, isLocked: true },
@@ -129,15 +85,142 @@ export async function applyInvoiceCreditNote(input: {
       });
       if (!originalJournal) throw new Error("The original invoice journal could not be found.");
 
+      const arLines = originalJournal.lines.filter((line) => Number(line.debit) > 0.005 && Number(line.credit) <= 0.005);
+      if (arLines.length !== 1) throw new Error("The original Accounts Receivable posting cannot be identified safely.");
+      const arLine = arLines[0];
+      const vatLines = originalJournal.lines.filter((line) =>
+        Number(line.credit) > 0.005 && (line.description ?? "").startsWith("Output VAT -"),
+      );
+      if (Number(invoice.taxAmount) > 0.005 && vatLines.length !== 1) {
+        throw new Error("The original Output VAT posting cannot be identified safely.");
+      }
+
+      const baseAmount = roundMoney(amount * exchangeRate);
+      const vatBaseAmount = vatLines.length ? roundMoney(Number(vatLines[0].credit) * ratio) : 0;
+      const serviceBaseAmount = roundMoney(baseAmount - vatBaseAmount);
+      if (serviceBaseAmount < -0.01) throw new Error("Credit note VAT allocation exceeds its base amount.");
+
+      const evidence = await ensureStandaloneInvoiceRevenueEvidence(tx, tenantId, invoice.id);
+      const usageRows = await tx.$queryRaw<Array<{
+        id: string;
+        recognised: unknown;
+        priorUnearnedCredit: unknown;
+        priorRevenueCredit: unknown;
+      }>>`
+        SELECT ila."id"::text AS "id",
+          COALESCE((SELECT SUM(irra."base_amount")
+            FROM "invoice_revenue_recognition_allocations" irra
+            JOIN "invoice_revenue_recognitions" irr ON irr."id" = irra."recognition_id"
+            WHERE irra."invoice_line_allocation_id" = ila."id" AND irr."status" = 'POSTED'), 0) AS "recognised",
+          COALESCE((SELECT SUM(cnsa."unearned_reversed")
+            FROM "credit_note_service_allocations" cnsa
+            JOIN "credit_notes" cn ON cn."id" = cnsa."credit_note_id"
+            WHERE cnsa."invoice_line_allocation_id" = ila."id" AND cn."status" = 'APPLIED'), 0) AS "priorUnearnedCredit",
+          COALESCE((SELECT SUM(cnsa."revenue_reversed")
+            FROM "credit_note_service_allocations" cnsa
+            JOIN "credit_notes" cn ON cn."id" = cnsa."credit_note_id"
+            WHERE cnsa."invoice_line_allocation_id" = ila."id" AND cn."status" = 'APPLIED'), 0) AS "priorRevenueCredit"
+        FROM "invoice_line_revenue_allocations" ila
+        WHERE ila."tenant_id" = ${tenantId}::uuid AND ila."invoice_id" = ${invoice.id}
+      `;
+      const usage = new Map(usageRows.map((row) => [row.id, row]));
+      const state = evidence.map((row) => {
+        const item = usage.get(row.id);
+        const recognised = Number(item?.recognised ?? 0);
+        const priorUnearned = Number(item?.priorUnearnedCredit ?? 0);
+        const priorRevenue = Number(item?.priorRevenueCredit ?? 0);
+        const unearnedRemaining = Math.max(0, roundMoney(row.unearnedCreated - recognised - priorUnearned));
+        const revenueRemaining = Math.max(0, roundMoney(row.immediateRevenue + recognised - priorRevenue));
+        return {
+          ...row,
+          unearnedRemaining,
+          revenueRemaining,
+          serviceRemaining: roundMoney(unearnedRemaining + revenueRemaining),
+          target: 0,
+        };
+      });
+
+      for (const row of state) row.target = Math.min(row.serviceRemaining, roundMoney(row.invoiceAmount * ratio));
+      let allocatedService = roundMoney(state.reduce((sum, row) => sum + row.target, 0));
+      let serviceDifference = roundMoney(serviceBaseAmount - allocatedService);
+      if (serviceDifference > 0.005) {
+        for (const row of state.sort((a, b) => a.invoiceLineId.localeCompare(b.invoiceLineId))) {
+          if (serviceDifference <= 0.005) break;
+          const capacity = roundMoney(row.serviceRemaining - row.target);
+          if (capacity <= 0) continue;
+          const extra = roundMoney(Math.min(capacity, serviceDifference));
+          row.target = roundMoney(row.target + extra);
+          serviceDifference = roundMoney(serviceDifference - extra);
+        }
+      } else if (serviceDifference < -0.005) {
+        for (const row of state.sort((a, b) => b.target - a.target || a.invoiceLineId.localeCompare(b.invoiceLineId))) {
+          if (serviceDifference >= -0.005) break;
+          const reduction = roundMoney(Math.min(row.target, Math.abs(serviceDifference)));
+          row.target = roundMoney(row.target - reduction);
+          serviceDifference = roundMoney(serviceDifference + reduction);
+        }
+      }
+      allocatedService = roundMoney(state.reduce((sum, row) => sum + row.target, 0));
+      if (Math.abs(allocatedService - serviceBaseAmount) > 0.01) {
+        throw new Error("The credit note service reduction exceeds the remaining invoice service value.");
+      }
+
+      const serviceAllocations: Array<{
+        row: typeof state[number];
+        unearnedReversed: number;
+        revenueReversed: number;
+      }> = [];
+      const journalLines: JournalPostingLine[] = [];
+      for (const row of state.filter((item) => item.target > 0.005)) {
+        const unearnedReversed = roundMoney(Math.min(row.target, row.unearnedRemaining));
+        const revenueReversed = roundMoney(row.target - unearnedReversed);
+        if (unearnedReversed > 0.005) {
+          if (!row.unearnedIncomeAccountId) throw new Error("Original Unearned Revenue account evidence is missing.");
+          journalLines.push({
+            accountId: row.unearnedIncomeAccountId,
+            description: `Credit note - unearned service ${invoice.invoiceNumber}`,
+            debit: unearnedReversed,
+            credit: 0,
+            reportingTags: row.reportingTags,
+          });
+        }
+        if (revenueReversed > 0.005) {
+          journalLines.push({
+            accountId: row.incomeAccountId,
+            description: `Credit note - earned service ${invoice.invoiceNumber}`,
+            debit: revenueReversed,
+            credit: 0,
+            reportingTags: row.reportingTags,
+          });
+        }
+        serviceAllocations.push({ row, unearnedReversed, revenueReversed });
+      }
+      if (vatBaseAmount > 0.005) {
+        journalLines.push({
+          accountId: vatLines[0].accountId,
+          description: `Credit note - Output VAT ${invoice.invoiceNumber}`,
+          debit: vatBaseAmount,
+          credit: 0,
+        });
+      }
+      journalLines.push({
+        accountId: arLine.accountId,
+        description: `Credit note - AR ${invoice.invoiceNumber}`,
+        debit: 0,
+        credit: baseAmount,
+      });
+
+      const debitTotal = roundMoney(journalLines.reduce((sum, line) => sum + line.debit, 0));
+      const creditTotal = roundMoney(journalLines.reduce((sum, line) => sum + line.credit, 0));
+      if (Math.abs(debitTotal - creditTotal) > 0.01) {
+        throw new Error(`Credit note journal is not balanced (${debitTotal.toFixed(2)} vs ${creditTotal.toFixed(2)}).`);
+      }
+
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:credit-note:${tenantId}`}))`;
       const countRows = await tx.$queryRaw<Array<{ count: bigint }>>`
         SELECT COUNT(*)::bigint AS "count" FROM "credit_notes" WHERE "tenant_id" = ${tenantId}::uuid
       `;
-      const nextNumber = Number(countRows[0]?.count ?? 0) + 1;
-      const creditNumber = `CN-${String(nextNumber).padStart(5, "0")}`;
-      const ratio = amount / totalAmount;
-      const lines = proportionalReversal(originalJournal.lines, ratio, creditNumber);
-      const baseAmount = roundMoney(amount * exchangeRate);
+      const creditNumber = `CN-${String(Number(countRows[0]?.count ?? 0) + 1).padStart(5, "0")}`;
 
       const journalEntryId = await postJournalEntryInTransaction(tx, {
         tenantId,
@@ -148,20 +231,34 @@ export async function applyInvoiceCreditNote(input: {
         recognitionPeriod: getRecognitionPeriod(issueDate),
         source: "credit_note",
         sourceId: creditNoteId,
-        lines,
+        lines: journalLines,
       });
 
       await tx.$executeRaw`
         INSERT INTO "credit_notes" (
           "id", "tenant_id", "customer_id", "credit_number", "invoice_id", "issue_date",
           "amount", "reason", "status", "currency", "exchange_rate", "base_amount",
+          "ar_applied_amount", "customer_credit_amount", "service_base_amount", "vat_base_amount",
           "journal_entry_id", "applied_at", "created_by"
         ) VALUES (
           ${creditNoteId}, ${tenantId}::uuid, ${invoice.customerId}, ${creditNumber}, ${invoice.id}, ${issueDate},
           ${amount}, ${reason}, 'APPLIED'::"CreditNoteStatus", ${invoice.currency}, ${exchangeRate}, ${baseAmount},
+          ${amount}, 0, ${serviceBaseAmount}, ${vatBaseAmount},
           ${journalEntryId}, now(), ${userId}
         )
       `;
+
+      for (const allocation of serviceAllocations) {
+        await tx.$executeRaw`
+          INSERT INTO "credit_note_service_allocations" (
+            "tenant_id", "credit_note_id", "invoice_line_allocation_id", "service_base_amount",
+            "unearned_reversed", "revenue_reversed"
+          ) VALUES (
+            ${tenantId}::uuid, ${creditNoteId}, ${allocation.row.id}::uuid, ${allocation.row.target},
+            ${allocation.unearnedReversed}, ${allocation.revenueReversed}
+          )
+        `;
+      }
 
       const newBalance = Math.max(0, roundMoney(outstanding - amount));
       await tx.invoice.update({
@@ -177,6 +274,8 @@ export async function applyInvoiceCreditNote(input: {
     revalidatePath("/sales/credit-notes");
     revalidatePath("/sales/invoices");
     revalidatePath(`/sales/invoices/${input.invoiceId}`);
+    revalidatePath("/accounting/profit-loss");
+    revalidatePath("/accounting/balance-sheet");
     return { success: true, creditNoteId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : "Credit note could not be applied." };

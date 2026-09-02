@@ -48,12 +48,17 @@ export async function reverseCreditNote(input: {
         id: string;
         creditNumber: string;
         invoiceId: string;
+        issueDate: Date;
         status: string;
-        amount: unknown;
+        arAppliedAmount: unknown;
+        customerCreditAmount: unknown;
         journalEntryId: string | null;
       }>>`
         SELECT "id", "credit_number" AS "creditNumber", "invoice_id" AS "invoiceId",
-               "status"::text AS "status", "amount", "journal_entry_id" AS "journalEntryId"
+               "issue_date" AS "issueDate", "status"::text AS "status",
+               "ar_applied_amount" AS "arAppliedAmount",
+               "customer_credit_amount" AS "customerCreditAmount",
+               "journal_entry_id" AS "journalEntryId"
         FROM "credit_notes"
         WHERE "id" = ${input.creditNoteId}
           AND "tenant_id" = ${tenantId}::uuid
@@ -64,9 +69,11 @@ export async function reverseCreditNote(input: {
       if (credit.status === "REVERSED") throw new Error("This credit note has already been reversed.");
       if (credit.status !== "APPLIED") throw new Error(`A ${credit.status.toLowerCase()} credit note cannot be reversed.`);
       if (!credit.journalEntryId) throw new Error("The credit note has no authoritative journal evidence.");
+      if (reversalDate < credit.issueDate) throw new Error("Reversal date cannot be before the credit-note date.");
       invoiceId = credit.invoiceId;
 
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${invoiceId}`}))`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice-revenue:${tenantId}:${invoiceId}`}))`;
 
       const invoice = await tx.invoice.findFirst({
         where: { id: invoiceId, tenantId },
@@ -75,6 +82,26 @@ export async function reverseCreditNote(input: {
       if (!invoice) throw new Error("The credited invoice could not be found.");
       if (["DRAFT", "VOIDED", "WRITTEN_OFF"].includes(invoice.status)) {
         throw new Error(`Credit note cannot be reversed while invoice ${invoice.invoiceNumber} is ${invoice.status}.`);
+      }
+
+      const customerCreditAmount = roundMoney(Number(credit.customerCreditAmount ?? 0));
+      if (customerCreditAmount > 0.005) {
+        const customerCredits = await tx.$queryRaw<Array<{
+          id: string;
+          originalAmount: unknown;
+          remainingAmount: unknown;
+          status: string;
+        }>>`
+          SELECT "id", "original_amount" AS "originalAmount", "remaining_amount" AS "remainingAmount", "status"
+          FROM "customer_credits"
+          WHERE "tenant_id" = ${tenantId}::uuid AND "credit_note_id" = ${credit.id}
+          LIMIT 1
+        `;
+        const customerCredit = customerCredits[0];
+        if (!customerCredit) throw new Error("Customer-credit liability evidence is missing for this credit note.");
+        if (customerCredit.status !== "OPEN" || Math.abs(Number(customerCredit.remainingAmount) - Number(customerCredit.originalAmount)) > 0.01) {
+          throw new Error("This credit note cannot be reversed because its customer credit has already been used or refunded.");
+        }
       }
 
       const journal = await tx.journalEntry.findFirst({
@@ -110,11 +137,11 @@ export async function reverseCreditNote(input: {
         lines: reversalLines,
       });
 
-      const creditAmount = roundMoney(Number(credit.amount));
+      const arAppliedAmount = roundMoney(Number(credit.arAppliedAmount ?? 0));
       const currentBalance = roundMoney(Number(invoice.balanceDue));
       const amountPaid = roundMoney(Number(invoice.amountPaid));
       const maximumOpenBalance = Math.max(0, roundMoney(Number(invoice.totalAmount) - amountPaid));
-      const newBalance = Math.min(maximumOpenBalance, roundMoney(currentBalance + creditAmount));
+      const newBalance = Math.min(maximumOpenBalance, roundMoney(currentBalance + arAppliedAmount));
       const newStatus = newBalance > 0.01
         ? (amountPaid > 0.01 ? "PARTIAL" : "SENT")
         : invoice.status;
@@ -123,6 +150,14 @@ export async function reverseCreditNote(input: {
         where: { id: invoice.id },
         data: { balanceDue: newBalance, status: newStatus, paidAt: newBalance > 0.01 ? null : undefined },
       });
+
+      if (customerCreditAmount > 0.005) {
+        await tx.$executeRaw`
+          UPDATE "customer_credits"
+          SET "remaining_amount" = 0, "status" = 'REVERSED', "updated_at" = now()
+          WHERE "tenant_id" = ${tenantId}::uuid AND "credit_note_id" = ${credit.id}
+        `;
+      }
 
       const updated = await tx.$executeRaw`
         UPDATE "credit_notes"
@@ -141,6 +176,8 @@ export async function reverseCreditNote(input: {
     revalidatePath("/sales/credit-notes");
     revalidatePath("/sales/invoices");
     if (invoiceId) revalidatePath(`/sales/invoices/${invoiceId}`);
+    revalidatePath("/accounting/profit-loss");
+    revalidatePath("/accounting/balance-sheet");
     return { success: true };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : "Credit note could not be reversed." };
