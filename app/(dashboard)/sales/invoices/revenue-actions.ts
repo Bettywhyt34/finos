@@ -9,6 +9,73 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export async function getStandaloneInvoiceDeferredState(invoiceId: string): Promise<{
+  eligible: boolean;
+  currency: string;
+  remaining: number;
+  reason?: string;
+}> {
+  const session = await auth();
+  const tenantId = session?.user?.tenantId;
+  if (!tenantId) return { eligible: false, currency: "NGN", remaining: 0, reason: "Your session has expired." };
+
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId, tenantId },
+    select: {
+      status: true,
+      currency: true,
+      exchangeRate: true,
+      totalAmount: true,
+      taxAmount: true,
+      recogniseRevenueOnInvoiceDate: true,
+      lines: { select: { projectId: true } },
+    },
+  });
+  if (!invoice) return { eligible: false, currency: "NGN", remaining: 0, reason: "Invoice not found." };
+  if (["DRAFT", "VOIDED", "WRITTEN_OFF"].includes(invoice.status)) {
+    return { eligible: false, currency: invoice.currency, remaining: 0, reason: `Revenue cannot be recognised while the invoice is ${invoice.status}.` };
+  }
+  if (invoice.lines.some((line) => Boolean(line.projectId))) {
+    return { eligible: false, currency: invoice.currency, remaining: 0, reason: "Use Project revenue recognition for this invoice." };
+  }
+  if (invoice.recogniseRevenueOnInvoiceDate) {
+    return { eligible: false, currency: invoice.currency, remaining: 0, reason: "This invoice was already recognised as revenue when posted." };
+  }
+
+  const rate = Number(invoice.exchangeRate);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return { eligible: false, currency: invoice.currency, remaining: 0, reason: "Invoice exchange rate is invalid." };
+  }
+
+  const rows = await prisma.$queryRaw<Array<{ evidenceCount: bigint; remainingBase: unknown }>>`
+    SELECT COUNT(*)::bigint AS "evidenceCount",
+      COALESCE(SUM(
+        ila."unearned_created"
+        - COALESCE((SELECT SUM(a."base_amount")
+          FROM "invoice_revenue_recognition_allocations" a
+          JOIN "invoice_revenue_recognitions" r ON r."id" = a."recognition_id"
+          WHERE a."invoice_line_allocation_id" = ila."id" AND r."status" = 'POSTED'), 0)
+        - COALESCE((SELECT SUM(a."unearned_reversed")
+          FROM "credit_note_service_allocations" a
+          JOIN "credit_notes" c ON c."id" = a."credit_note_id"
+          WHERE a."invoice_line_allocation_id" = ila."id" AND c."status" = 'APPLIED'), 0)
+      ), 0) AS "remainingBase"
+    FROM "invoice_line_revenue_allocations" ila
+    WHERE ila."tenant_id" = ${tenantId}::uuid AND ila."invoice_id" = ${invoiceId}
+  `;
+  const evidenceCount = Number(rows[0]?.evidenceCount ?? 0);
+  const remainingBase = evidenceCount > 0
+    ? Math.max(0, roundMoney(Number(rows[0]?.remainingBase ?? 0)))
+    : Math.max(0, roundMoney((Number(invoice.totalAmount) - Number(invoice.taxAmount)) * rate));
+  const remaining = roundMoney(remainingBase / rate);
+  return {
+    eligible: remaining > 0.005,
+    currency: invoice.currency,
+    remaining,
+    reason: remaining > 0.005 ? undefined : "There is no deferred service value left to recognise.",
+  };
+}
+
 export async function recogniseStandaloneInvoiceRevenue(input: {
   invoiceId: string;
   amount: number;

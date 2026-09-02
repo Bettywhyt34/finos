@@ -6,6 +6,7 @@ import { ArrowLeft, LockKeyhole, Printer } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { formatCurrency, toNGN, cn, formatDate } from "@/lib/utils";
 import { InvoiceActions } from "./invoice-actions";
+import { RecogniseRevenueButton } from "./recognise-revenue-button";
 import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status";
 import { prepareInvoicePdfData } from "@/lib/pdf/invoice-data";
 import { InvoicePreview } from "@/components/invoices/invoice-preview";
@@ -37,7 +38,14 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     prepareInvoicePdfData(tenantId, id),
     prisma.invoice.findFirst({
       where: { id, tenantId },
-      select: { id: true, customerId: true, voidedReason: true, voidedAt: true },
+      select: {
+        id: true,
+        customerId: true,
+        voidedReason: true,
+        voidedAt: true,
+        recogniseRevenueOnInvoiceDate: true,
+        lines: { select: { projectId: true } },
+      },
     }),
     prisma.$queryRaw<Array<{ quoteNumber: string }>>`
       SELECT "quote_number" AS "quoteNumber"
@@ -88,6 +96,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const totalNGN = toNGN(invoice.totalAmount, rate);
   const balance = invoice.balanceDue;
   const balanceNGN = toNGN(balance, rate);
+  const hasProjectLines = meta.lines.some((line) => Boolean(line.projectId));
+  const canRecogniseRevenue = ["OWNER", "ADMIN", "ACCOUNTANT"].includes(session?.user?.role ?? "")
+    && !meta.recogniseRevenueOnInvoiceDate
+    && !hasProjectLines
+    && !["DRAFT", "VOIDED", "WRITTEN_OFF"].includes(invoice.status);
 
   const displayStatus = getInvoiceDisplayStatus({
     status: invoice.status,
@@ -115,10 +128,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           {!isNGN && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">{invoice.currency}</span>}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <Link href={`/sales/invoices/${id}/print`} target="_blank" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}>
             <Printer className="h-3.5 w-3.5" /> Print / PDF
           </Link>
+          {canRecogniseRevenue ? <RecogniseRevenueButton invoiceId={meta.id} currency={invoice.currency} /> : null}
           <InvoiceActions
             invoice={{
               id: meta.id,
