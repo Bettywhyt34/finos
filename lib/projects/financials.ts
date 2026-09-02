@@ -109,14 +109,52 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
           AND ila."project_id" = ${projectId}
           AND i."status" <> 'VOIDED'
       ),
+      ar_fx AS (
+        SELECT
+          i."id" AS "invoiceId",
+          COALESCE((
+            SELECT SUM(fri."adjustment_base_amount")
+            FROM "fx_revaluation_items" fri
+            INNER JOIN "fx_revaluations" fr ON fr."id" = fri."fx_revaluation_id"
+            WHERE fri."tenant_id" = ${tenantId}::uuid
+              AND fri."item_type" = 'AR'
+              AND fri."invoice_id" = i."id"
+              AND fr."status" = 'POSTED'::fx_revaluation_status
+          ), 0)
+          - COALESCE((
+            SELECT SUM(cpa."fx_unrealized_consumed")
+            FROM "customer_payment_allocations" cpa
+            INNER JOIN "customer_payments" cp ON cp."id" = cpa."payment_id"
+            WHERE cpa."invoice_id" = i."id"
+              AND cp."tenant_id" = ${tenantId}::uuid
+              AND cp."status" = 'POSTED'::customer_payment_status
+          ), 0)
+          - COALESCE((
+            SELECT SUM(cca."fx_unrealized_consumed")
+            FROM "customer_credit_applications" cca
+            WHERE cca."invoice_id" = i."id"
+              AND cca."tenant_id" = ${tenantId}::uuid
+              AND cca."status" = 'POSTED'
+          ), 0)
+          - COALESCE((
+            SELECT SUM(cn."fx_unrealized_consumed")
+            FROM "credit_notes" cn
+            WHERE cn."invoice_id" = i."id"
+              AND cn."tenant_id" = ${tenantId}::uuid
+              AND cn."status" = 'APPLIED'::"CreditNoteStatus"
+          ), 0) AS "activeAdjustment"
+        FROM "invoices" i
+        WHERE i."tenant_id" = ${tenantId}::uuid
+      ),
       project_invoice_share AS (
         SELECT
           ila."invoice_id" AS "invoiceId",
           SUM(ila."invoice_amount") AS "projectServiceBase",
           NULLIF((MAX(i."total_amount") - MAX(i."tax_amount")) * MAX(i."exchange_rate"), 0) AS "invoiceServiceBase",
-          MAX(i."balance_due") * MAX(i."exchange_rate") AS "outstandingHistoricalBase"
+          MAX(i."balance_due") * MAX(i."exchange_rate") + MAX(COALESCE(afx."activeAdjustment", 0)) AS "outstandingCarryingBase"
         FROM "invoice_line_revenue_allocations" ila
         INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
+        LEFT JOIN ar_fx afx ON afx."invoiceId" = i."id"
         WHERE ila."tenant_id" = ${tenantId}::uuid
           AND ila."project_id" = ${projectId}
           AND i."status" NOT IN ('DRAFT','VOIDED','WRITTEN_OFF')
@@ -135,7 +173,7 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
       ),
       receivable AS (
         SELECT COALESCE(SUM(
-          pis."outstandingHistoricalBase" * LEAST(1, pis."projectServiceBase" / pis."invoiceServiceBase")
+          pis."outstandingCarryingBase" * LEAST(1, pis."projectServiceBase" / pis."invoiceServiceBase")
         ),0) AS "outstandingAR"
         FROM project_invoice_share pis
       ),
