@@ -12,189 +12,200 @@ function getRecognitionPeriod(dateStr: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
-function safeDate(dateStr: string, invoiceNumber: string, field: string): Date | string {
-  if (!dateStr || dateStr === "__invalid__") {
-    return `${field} is missing or unparseable — check the date column in your CSV`
-  }
+function safeDate(dateStr: string, field: string): Date | string {
+  if (!dateStr || dateStr === "__invalid__") return `${field} is missing or unparseable — check the date column in your CSV`
   const d = new Date(dateStr)
-  if (isNaN(d.getTime())) {
-    return `${field} "${dateStr}" could not be parsed — use DD/MM/YYYY`
-  }
+  if (Number.isNaN(d.getTime())) return `${field} "${dateStr}" could not be parsed — use DD/MM/YYYY`
   return d
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 export async function POST(req: NextRequest) {
   const session = await auth()
   const tenantId = session?.user?.tenantId
-  if (!tenantId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const role = session?.user?.role
+  if (!tenantId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!role || !["OWNER", "ADMIN", "ACCOUNTANT"].includes(role)) {
+    return NextResponse.json({ error: "You do not have permission to import invoices." }, { status: 403 })
   }
 
   const body = await req.json() as {
-    records: InvoiceImportRecord[]
+    records?: InvoiceImportRecord[]
     customerResolutions?: Record<string, CustomerResolution>
   }
-  const { records, customerResolutions = {} } = body
+  const records = Array.isArray(body.records) ? body.records : []
+  const customerResolutions = body.customerResolutions ?? {}
+  if (!records.length) return NextResponse.json({ error: "No invoice records were supplied." }, { status: 400 })
+  if (records.length > 1000) return NextResponse.json({ error: "Import a maximum of 1,000 invoices at a time." }, { status: 400 })
 
-  // Pre-load customers for name matching (case-insensitive)
   const existingCustomers = await prisma.customer.findMany({
     where: { tenantId },
     select: { id: true, companyName: true },
   })
-  const customerByName = new Map(
-    existingCustomers.map((c) => [c.companyName.toLowerCase().trim(), c.id])
-  )
+  const customerByName = new Map(existingCustomers.map((c) => [c.companyName.toLowerCase().trim(), c.id]))
+  const tenantCustomerIds = new Set(existingCustomers.map((c) => c.id))
 
-  // Apply resolutions: create new customers first, then add to map
   for (const [csvName, resolution] of Object.entries(customerResolutions)) {
     const key = csvName.toLowerCase().trim()
+    if (!key) continue
+
     if (resolution.action === "map") {
-      customerByName.set(key, resolution.customerId)
-    } else if (resolution.action === "create") {
-      // Only create if still not in map (avoid double-create on retry)
-      if (!customerByName.has(key)) {
-        const created = await prisma.customer.create({
-          data: {
-            tenantId,
-            companyName: csvName.trim(),
-            customerCode: `CUST-${Date.now()}`,
-            paymentTerms: 30,
-            currency: "NGN",
-          },
-        })
-        customerByName.set(key, created.id)
+      if (!tenantCustomerIds.has(resolution.customerId)) {
+        return NextResponse.json({ error: `Customer mapping for "${csvName}" is invalid for this entity.` }, { status: 400 })
       }
+      customerByName.set(key, resolution.customerId)
+      continue
+    }
+
+    if (resolution.action === "create" && !customerByName.has(key)) {
+      const created = await prisma.customer.create({
+        data: {
+          tenantId,
+          companyName: csvName.trim(),
+          customerCode: `CUST-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+          paymentTerms: 30,
+          currency: "NGN",
+        },
+        select: { id: true },
+      })
+      customerByName.set(key, created.id)
+      tenantCustomerIds.add(created.id)
     }
   }
-
-  // Pre-load existing invoice numbers to detect duplicates
-  const existingInvoices = await prisma.invoice.findMany({
-    where: { tenantId },
-    select: { invoiceNumber: true, externalTxnId: true },
-  })
-  const existingNumbers = new Set(existingInvoices.map((i) => i.invoiceNumber))
-  const existingTxnIds = new Set(
-    existingInvoices
-      .filter((i) => i.externalTxnId)
-      .map((i) => i.externalTxnId as string)
-  )
 
   let imported = 0
   let skipped = 0
   const errors: Array<{ invoiceNumber: string; error: string }> = []
 
   for (const rec of records) {
-    if (!rec.invoiceNumber) {
+    const invoiceNumber = String(rec.invoiceNumber ?? "").trim()
+    if (!invoiceNumber) {
       errors.push({ invoiceNumber: "(blank)", error: "Invoice number is required" })
       skipped++
       continue
     }
-
-    if (!rec.customerName) {
-      errors.push({ invoiceNumber: rec.invoiceNumber, error: "Customer name is required" })
+    if (invoiceNumber.length > 100) {
+      errors.push({ invoiceNumber, error: "Invoice number is too long" })
       skipped++
       continue
     }
 
-    // Customer lookup
-    const customerId = customerByName.get(rec.customerName.toLowerCase().trim())
-    if (!customerId) {
-      errors.push({
-        invoiceNumber: rec.invoiceNumber,
-        error: `Customer not found: "${rec.customerName}"`,
-      })
+    const customerName = String(rec.customerName ?? "").trim()
+    const customerId = customerByName.get(customerName.toLowerCase())
+    if (!customerName || !customerId) {
+      errors.push({ invoiceNumber, error: customerName ? `Customer not found: "${customerName}"` : "Customer name is required" })
       skipped++
       continue
     }
 
-    // Deduplication
-    if (rec.externalTxnId) {
-      if (existingTxnIds.has(rec.externalTxnId)) {
-        errors.push({
-          invoiceNumber: rec.invoiceNumber,
-          error: `Transaction ID "${rec.externalTxnId}" already imported — skipped`,
-        })
-        skipped++
-        continue
-      }
-    } else {
-      if (existingNumbers.has(rec.invoiceNumber)) {
-        errors.push({
-          invoiceNumber: rec.invoiceNumber,
-          error: "Invoice number already exists — skipped",
-        })
-        skipped++
-        continue
-      }
-    }
-
-    if (!rec.lines.length) {
-      errors.push({ invoiceNumber: rec.invoiceNumber, error: "No line items found" })
-      skipped++
-      continue
-    }
-
-    // Date validation — fail early with a clear message
-    const issueDate = safeDate(rec.invoiceDate, rec.invoiceNumber, "Invoice date")
-    const dueDate = safeDate(rec.dueDate, rec.invoiceNumber, "Due date")
+    const issueDate = safeDate(rec.invoiceDate, "Invoice date")
+    const dueDate = safeDate(rec.dueDate, "Due date")
     if (typeof issueDate === "string") {
-      errors.push({ invoiceNumber: rec.invoiceNumber, error: issueDate })
-      skipped++
-      continue
+      errors.push({ invoiceNumber, error: issueDate }); skipped++; continue
     }
     if (typeof dueDate === "string") {
-      errors.push({ invoiceNumber: rec.invoiceNumber, error: dueDate })
+      errors.push({ invoiceNumber, error: dueDate }); skipped++; continue
+    }
+    if (dueDate < issueDate) {
+      errors.push({ invoiceNumber, error: "Due date cannot be before invoice date" }); skipped++; continue
+    }
+
+    const currency = String(rec.currency || "NGN").trim().toUpperCase()
+    const exchangeRate = Number(rec.exchangeRate ?? 1)
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      errors.push({ invoiceNumber, error: "Currency must be a valid 3-letter code" }); skipped++; continue
+    }
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      errors.push({ invoiceNumber, error: "Exchange rate must be greater than zero" }); skipped++; continue
+    }
+    if (currency === "NGN" && Math.abs(exchangeRate - 1) > 0.000001) {
+      errors.push({ invoiceNumber, error: "NGN invoices must use an exchange rate of 1" }); skipped++; continue
+    }
+
+    if (!Array.isArray(rec.lines) || !rec.lines.length || rec.lines.length > 200) {
+      errors.push({ invoiceNumber, error: rec.lines?.length ? "An invoice cannot contain more than 200 lines" : "No line items found" })
       skipped++
       continue
     }
 
+    let invalidLine: string | null = null
+    const normalisedLines = rec.lines.map((line, index) => {
+      const description = String(line.description ?? "").trim()
+      const quantity = Number(line.quantity)
+      const rate = Number(line.rate)
+      const taxRate = Number(line.taxRate ?? 0)
+      if (!description) invalidLine ??= `Line ${index + 1} needs a description`
+      if (!Number.isFinite(quantity) || quantity <= 0) invalidLine ??= `Line ${index + 1} quantity must be greater than zero`
+      if (!Number.isFinite(rate) || rate < 0) invalidLine ??= `Line ${index + 1} rate cannot be negative`
+      if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) invalidLine ??= `Line ${index + 1} tax rate must be between 0% and 100%`
+      const amount = roundMoney(quantity * rate)
+      const taxAmount = roundMoney(amount * taxRate / 100)
+      return { description, quantity, rate, taxRate, amount, taxAmount }
+    })
+    if (invalidLine) {
+      errors.push({ invoiceNumber, error: invalidLine }); skipped++; continue
+    }
+
+    const subtotal = roundMoney(normalisedLines.reduce((sum, line) => sum + line.amount, 0))
+    const taxAmount = roundMoney(normalisedLines.reduce((sum, line) => sum + line.taxAmount, 0))
+    const discountAmount = roundMoney(Number(rec.discountAmount ?? 0))
+    if (!Number.isFinite(discountAmount) || discountAmount < 0 || discountAmount - subtotal > 0.01) {
+      errors.push({ invoiceNumber, error: "Invoice discount must be between zero and the subtotal" }); skipped++; continue
+    }
+    const totalAmount = roundMoney(subtotal - discountAmount + taxAmount)
+
     try {
-      const rate = rec.exchangeRate || 1
-      const subtotal = rec.lines.reduce((s, l) => s + l.quantity * l.rate, 0)
-      const taxAmount = rec.lines.reduce(
-        (s, l) => s + l.quantity * l.rate * (l.taxRate / 100),
-        0
-      )
-      const totalAmount = subtotal - rec.discountAmount + taxAmount
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice-import:${tenantId}:${invoiceNumber}`}))`
 
-      await prisma.invoice.create({
-        data: {
-          tenantId,
-          customerId,
-          invoiceNumber: rec.invoiceNumber,
-          reference: rec.reference ?? null,
-          issueDate,
-          dueDate,
-          status: "DRAFT",
-          currency: rec.currency,
-          exchangeRate: rate,
-          subtotal,
-          discountAmount: rec.discountAmount,
-          taxAmount,
-          totalAmount,
-          amountPaid: 0,
-          balanceDue: totalAmount,
-          recognitionPeriod: getRecognitionPeriod(rec.invoiceDate),
-          notes: rec.notes ?? null,
-          externalTxnId: rec.externalTxnId ?? null,
-          lines: {
-            create: rec.lines.map((l) => ({
-              description: l.description,
-              quantity: l.quantity,
-              rate: l.rate,
-              amount: l.quantity * l.rate,
-              taxRate: l.taxRate,
-            })),
+        const duplicate = await tx.invoice.findFirst({
+          where: rec.externalTxnId
+            ? { tenantId, OR: [{ externalTxnId: rec.externalTxnId }, { invoiceNumber }] }
+            : { tenantId, invoiceNumber },
+          select: { id: true },
+        })
+        if (duplicate) throw new Error(rec.externalTxnId ? "Invoice number or Transaction ID already exists — skipped" : "Invoice number already exists — skipped")
+
+        await tx.invoice.create({
+          data: {
+            tenantId,
+            customerId,
+            invoiceNumber,
+            reference: rec.reference?.trim() || null,
+            issueDate,
+            dueDate,
+            status: "DRAFT",
+            currency,
+            exchangeRate,
+            subtotal,
+            discountAmount,
+            taxAmount,
+            totalAmount,
+            amountPaid: 0,
+            balanceDue: totalAmount,
+            recognitionPeriod: getRecognitionPeriod(rec.invoiceDate),
+            notes: rec.notes?.trim() || null,
+            externalTxnId: rec.externalTxnId?.trim() || null,
+            lines: {
+              create: normalisedLines.map((line) => ({
+                description: line.description,
+                quantity: line.quantity,
+                rate: line.rate,
+                amount: line.amount,
+                taxRate: line.taxRate,
+                taxAmount: line.taxAmount,
+                lineTotal: roundMoney(line.amount + line.taxAmount),
+              })),
+            },
           },
-        },
+        })
       })
-
-      existingNumbers.add(rec.invoiceNumber)
-      if (rec.externalTxnId) existingTxnIds.add(rec.externalTxnId)
       imported++
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error"
-      errors.push({ invoiceNumber: rec.invoiceNumber, error: message })
+      errors.push({ invoiceNumber, error: err instanceof Error ? err.message : "Unknown error" })
       skipped++
     }
   }
