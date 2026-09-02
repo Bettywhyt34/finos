@@ -29,8 +29,21 @@ export default async function InvoiceEditPage({
   });
 
   if (!invoice) notFound();
-  // Only DRAFT invoices can be fully edited
+  // Only DRAFT invoices can be fully edited.
   if (invoice.status !== "DRAFT") redirect(`/sales/invoices/${id}`);
+
+  // A draft created from an accepted quote is not an ordinary editable draft.
+  // The accepted commercial terms are preserved through conversion and protected
+  // again by database triggers. Keep full commercial edits out of this route.
+  const convertedQuote = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "quotes"
+    WHERE "tenant_id" = ${tenantId}::uuid
+      AND "converted_invoice_id" = ${id}
+      AND "status" = 'CONVERTED'
+    LIMIT 1
+  `;
+  if (convertedQuote.length) redirect(`/sales/invoices/${id}`);
 
   const [customers, items, series, taxRates, incomeAccounts] = await Promise.all([
     prisma.customer.findMany({

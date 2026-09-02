@@ -73,7 +73,59 @@ const checks = [
         and (abs(q.subtotal-i.subtotal)>0.01
           or abs(q.discount_amount-i.discount_amount)>0.01
           or abs(q.tax_amount-i.tax_amount)>0.01
-          or abs(q.total_amount-i.total_amount)>0.01)
+          or abs(q.total_amount-i.total_amount)>0.01
+          or upper(q.currency)<>upper(i.currency)
+          or abs(q.exchange_rate-i.exchange_rate)>0.000001)
+    `,
+  },
+  {
+    name: "Converted quote and invoice commercial lines match",
+    sql: `
+      with quote_lines_ranked as (
+        select q.id as quote_id, q.converted_invoice_id,
+               row_number() over (partition by q.id order by ql.id) as rn,
+               ql.description, ql.quantity, ql.rate, ql.amount,
+               ql.tax_name, ql.tax_rate, ql.tax_amount,
+               ql.discount_type, ql.discount_value, ql.discount_amount, ql.line_total,
+               ql.income_account_id, ql.project_id, ql.reporting_tags
+        from quotes q
+        join quote_lines ql on ql.quote_id=q.id
+        where q.status='CONVERTED'
+      ), invoice_lines_ranked as (
+        select q.id as quote_id, i.id as invoice_id,
+               row_number() over (partition by i.id order by il.id) as rn,
+               il.description, il.quantity, il.rate, il.amount,
+               il.tax_name, il.tax_rate, il.tax_amount,
+               il.discount_type, il.discount_value, il.discount_amount, il.line_total,
+               il.income_account_id, il.project_id, il.reporting_tags
+        from quotes q
+        join invoices i on i.id=q.converted_invoice_id
+        join invoice_lines il on il.invoice_id=i.id
+        where q.status='CONVERTED'
+      ), differences as (
+        select coalesce(ql.quote_id, il.quote_id) as quote_id,
+               coalesce(ql.converted_invoice_id, il.invoice_id) as invoice_id,
+               coalesce(ql.rn, il.rn) as rn
+        from quote_lines_ranked ql
+        full join invoice_lines_ranked il
+          on il.quote_id=ql.quote_id and il.invoice_id=ql.converted_invoice_id and il.rn=ql.rn
+        where ql.quote_id is null or il.invoice_id is null
+           or ql.description is distinct from il.description
+           or abs(ql.quantity-il.quantity)>0.000001
+           or abs(ql.rate-il.rate)>0.01
+           or abs(ql.amount-il.amount)>0.01
+           or ql.tax_name is distinct from il.tax_name
+           or abs(ql.tax_rate-il.tax_rate)>0.000001
+           or abs(ql.tax_amount-il.tax_amount)>0.01
+           or ql.discount_type is distinct from il.discount_type
+           or abs(ql.discount_value-il.discount_value)>0.000001
+           or abs(ql.discount_amount-il.discount_amount)>0.01
+           or abs(ql.line_total-il.line_total)>0.01
+           or ql.income_account_id is distinct from il.income_account_id
+           or ql.project_id is distinct from il.project_id
+           or coalesce(ql.reporting_tags,'{}'::jsonb) is distinct from coalesce(il.reporting_tags,'{}'::jsonb)
+      )
+      select * from differences
     `,
   },
 ];
