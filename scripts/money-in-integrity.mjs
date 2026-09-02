@@ -12,6 +12,53 @@ const client = new Client({ connectionString: process.env.DATABASE_URL });
 
 const checks = [
   {
+    name: "Customer receipt atomicity constraint trigger exists",
+    sql: `
+      select 'missing' as issue
+      where not exists (
+        select 1
+        from pg_trigger t
+        join pg_class c on c.oid=t.tgrelid
+        join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='public'
+          and c.relname='customer_payments'
+          and t.tgname='enforce_customer_payment_atomicity'
+          and t.tgconstraint<>0
+          and not t.tgisinternal
+      )
+    `,
+  },
+  {
+    name: "Customer receipt allocation evidence constraint trigger exists",
+    sql: `
+      select 'missing' as issue
+      where not exists (
+        select 1
+        from pg_trigger t
+        join pg_class c on c.oid=t.tgrelid
+        join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='public'
+          and c.relname='customer_payment_allocations'
+          and t.tgname='enforce_customer_payment_allocation_evidence'
+          and t.tgconstraint<>0
+          and not t.tgisinternal
+      )
+    `,
+  },
+  {
+    name: "One receipt allocation per invoice is enforced",
+    sql: `
+      select 'missing' as issue
+      where not exists (
+        select 1
+        from pg_indexes
+        where schemaname='public'
+          and tablename='customer_payment_allocations'
+          and indexname='customer_payment_allocations_payment_invoice_uidx'
+      )
+    `,
+  },
+  {
     name: "Posted receipt has authoritative journal",
     sql: `
       select cp.id, cp.tenant_id, cp.payment_number

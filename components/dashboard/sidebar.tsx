@@ -29,8 +29,10 @@ const BASE_NAV: NavSection[] = [
   ] },
   { key: "money-in", label: "Money In", icon: CircleDollarSign, children: [
     { label: "Customers", href: "/customers" },
+    { label: "Quotes", href: "/sales/quotes" },
     { label: "Invoices", href: "/sales/invoices" },
     { label: "Receipts", href: "/sales/receipts" },
+    { label: "Credit Notes", href: "/sales/credit-notes" },
   ] },
   { key: "money-out", label: "Money Out", icon: WalletCards, children: [
     { label: "Vendors", href: "/vendors" },

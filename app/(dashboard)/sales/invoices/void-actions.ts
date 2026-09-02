@@ -37,6 +37,23 @@ export async function voidInvoiceSafely(id: string, reason: string, convertToDra
     return { error: "This invoice has payments recorded. Reverse or refund the payment before voiding it." };
   }
 
+  const convertedQuoteRows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"
+    FROM "quotes"
+    WHERE "tenant_id" = ${tenantId}::uuid
+      AND "converted_invoice_id" = ${id}
+      AND "status" = 'CONVERTED'
+    LIMIT 1
+  `;
+  const convertedFromAcceptedQuote = convertedQuoteRows.length > 0;
+  if (convertedFromAcceptedQuote && convertToDraft) {
+    return {
+      error:
+        "This invoice was created from an accepted quote. It may be voided when necessary, " +
+        "but FINOS will not create an unlinked replacement draft. Revise the quote workflow instead.",
+    };
+  }
+
   const appliedCreditNotes = await prisma.$queryRaw<Array<{ count: unknown }>>`
     SELECT COUNT(*) AS "count"
     FROM "credit_notes"
