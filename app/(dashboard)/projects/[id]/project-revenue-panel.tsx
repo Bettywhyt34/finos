@@ -39,9 +39,10 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function ProjectRevenuePanel({ projectId, projectCurrency, metrics, history, canManage }: {
+export function ProjectRevenuePanel({ projectId, projectCurrency, baseCurrency, metrics, history, canManage }: {
   projectId: string;
   projectCurrency: string;
+  baseCurrency: string;
   metrics: ProjectRevenueMetrics;
   history: ProjectRevenueHistoryRow[];
   canManage: boolean;
@@ -53,6 +54,7 @@ export function ProjectRevenuePanel({ projectId, projectCurrency, metrics, histo
   const [note, setNote] = useState("");
   const [reversingId, setReversingId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const base = (value: number) => formatCurrency(value, baseCurrency);
 
   const amountNumber = Math.max(0, Number(amount) || 0);
   const projectedUnearnedRelease = Math.min(amountNumber, Math.max(0, metrics.unearnedIncome));
@@ -82,21 +84,21 @@ export function ProjectRevenuePanel({ projectId, projectCurrency, metrics, histo
 
   return (
     <section className="space-y-5">
-      {projectCurrency !== "NGN" ? (
+      {projectCurrency !== baseCurrency ? (
         <div className="rounded-xl border border-[var(--app-border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--text-secondary)]">
-          Project commercial values may be in {projectCurrency}. Accounting metrics below use the entity&apos;s base ledger values.
+          Project commercial values may be in {projectCurrency}. Accounting metrics below use {baseCurrency}, the entity&apos;s base ledger currency.
         </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={ReceiptText} label="Invoiced" value={formatCurrency(metrics.invoiced)} />
-        <Metric icon={TrendingUp} label="Revenue earned" value={formatCurrency(metrics.revenueEarned)} />
-        <Metric icon={HandCoins} label="Collected" value={formatCurrency(metrics.collected)} />
-        <Metric icon={WalletCards} label="Outstanding AR" value={formatCurrency(metrics.outstandingAR)} />
-        <Metric icon={CircleDollarSign} label="Contract Asset" value={formatCurrency(metrics.contractAsset)} />
-        <Metric icon={Banknote} label="Unearned Income" value={formatCurrency(metrics.unearnedIncome)} />
-        <Metric icon={CircleDollarSign} label="Costs incurred" value={formatCurrency(metrics.costsIncurred)} />
-        <Metric icon={TrendingUp} label="Gross margin" value={formatCurrency(metrics.grossMargin)} />
+        <Metric icon={ReceiptText} label="Invoiced" value={base(metrics.invoiced)} />
+        <Metric icon={TrendingUp} label="Revenue earned" value={base(metrics.revenueEarned)} />
+        <Metric icon={HandCoins} label="Collected" value={base(metrics.collected)} />
+        <Metric icon={WalletCards} label="Outstanding AR" value={base(metrics.outstandingAR)} />
+        <Metric icon={CircleDollarSign} label="Contract Asset" value={base(metrics.contractAsset)} />
+        <Metric icon={Banknote} label="Unearned Income" value={base(metrics.unearnedIncome)} />
+        <Metric icon={CircleDollarSign} label="Costs incurred" value={base(metrics.costsIncurred)} />
+        <Metric icon={TrendingUp} label="Gross margin" value={base(metrics.grossMargin)} />
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]">
@@ -112,13 +114,13 @@ export function ProjectRevenuePanel({ projectId, projectCurrency, metrics, histo
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-financial text-lg font-medium text-[var(--text-primary)]">{formatCurrency(row.amount)}</p>
+                        <p className="font-financial text-lg font-medium text-[var(--text-primary)]">{base(row.amount)}</p>
                         <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${row.status === "POSTED" ? "bg-[#E7F2EC] text-[var(--positive)]" : "bg-[var(--surface-muted)] text-[var(--text-secondary)]"}`}>{row.status.toLowerCase()}</span>
                       </div>
                       <p className="mt-1 text-xs text-[var(--text-secondary)]">{new Date(`${row.recognitionDate}T00:00:00`).toLocaleDateString("en-NG", { dateStyle: "medium" })}</p>
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
-                        {row.unearnedUsed > 0.005 ? <span>Unearned released: {formatCurrency(row.unearnedUsed)}</span> : null}
-                        {row.contractAssetCreated > 0.005 ? <span>Contract Asset created: {formatCurrency(row.contractAssetCreated)}</span> : null}
+                        {row.unearnedUsed > 0.005 ? <span>Unearned released: {base(row.unearnedUsed)}</span> : null}
+                        {row.contractAssetCreated > 0.005 ? <span>Contract Asset created: {base(row.contractAssetCreated)}</span> : null}
                       </div>
                       {row.note ? <p className="mt-2 text-sm text-[var(--text-secondary)]">{row.note}</p> : null}
                       {row.status === "REVERSED" && row.reversalReason ? <p className="mt-2 text-xs text-[var(--critical)]">Reversed: {row.reversalReason}</p> : null}
@@ -153,22 +155,22 @@ export function ProjectRevenuePanel({ projectId, projectCurrency, metrics, histo
           </div>
           <div className="space-y-4 p-6">
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3"><p className="text-xs text-[var(--text-secondary)]">Unearned balance</p><p className="font-financial mt-1 text-lg font-medium text-[var(--text-primary)]">{formatCurrency(metrics.unearnedIncome)}</p></div>
-              <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3"><p className="text-xs text-[var(--text-secondary)]">Contract Asset</p><p className="font-financial mt-1 text-lg font-medium text-[var(--text-primary)]">{formatCurrency(metrics.contractAsset)}</p></div>
+              <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3"><p className="text-xs text-[var(--text-secondary)]">Unearned balance</p><p className="font-financial mt-1 text-lg font-medium text-[var(--text-primary)]">{base(metrics.unearnedIncome)}</p></div>
+              <div className="rounded-lg bg-[var(--surface-muted)] px-4 py-3"><p className="text-xs text-[var(--text-secondary)]">Contract Asset</p><p className="font-financial mt-1 text-lg font-medium text-[var(--text-primary)]">{base(metrics.contractAsset)}</p></div>
             </div>
 
             {canManage ? (
               <>
                 <div className="space-y-1.5">
-                  <Label htmlFor="recognitionAmount">Amount earned (base currency)</Label>
+                  <Label htmlFor="recognitionAmount">Amount earned ({baseCurrency})</Label>
                   <Input id="recognitionAmount" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" />
                 </div>
                 {amountNumber > 0 ? (
                   <div className="rounded-lg border border-[var(--app-border)] px-4 py-3 text-sm">
                     <p className="font-medium text-[var(--text-primary)]">Accounting split</p>
-                    <div className="mt-2 flex justify-between gap-4 text-[var(--text-secondary)]"><span>Release Unearned Income</span><span className="font-financial">{formatCurrency(projectedUnearnedRelease)}</span></div>
-                    <div className="mt-1 flex justify-between gap-4 text-[var(--text-secondary)]"><span>Create Contract Asset</span><span className="font-financial">{formatCurrency(projectedContractAsset)}</span></div>
-                    <div className="mt-2 flex justify-between gap-4 border-t border-[var(--app-border)] pt-2 font-medium text-[var(--text-primary)]"><span>Revenue earned</span><span className="font-financial">{formatCurrency(amountNumber)}</span></div>
+                    <div className="mt-2 flex justify-between gap-4 text-[var(--text-secondary)]"><span>Release Unearned Income</span><span className="font-financial">{base(projectedUnearnedRelease)}</span></div>
+                    <div className="mt-1 flex justify-between gap-4 text-[var(--text-secondary)]"><span>Create Contract Asset</span><span className="font-financial">{base(projectedContractAsset)}</span></div>
+                    <div className="mt-2 flex justify-between gap-4 border-t border-[var(--app-border)] pt-2 font-medium text-[var(--text-primary)]"><span>Revenue earned</span><span className="font-financial">{base(amountNumber)}</span></div>
                   </div>
                 ) : null}
                 <div className="space-y-1.5"><Label htmlFor="recognitionDate">Recognition date</Label><Input id="recognitionDate" type="date" max={today()} value={recognitionDate} onChange={(event) => setRecognitionDate(event.target.value)} /></div>
