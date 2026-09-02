@@ -1,11 +1,16 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { postJournalEntryInTransaction, type JournalPostingLine } from "@/lib/journal";
 import { resolveSystemAccount } from "@/lib/accounting/system-accounts";
-import { consumeFxAdjustment, getActiveArFxAdjustment } from "@/lib/accounting/open-item-fx";
+import {
+  consumeFxAdjustment,
+  getActiveArFxAdjustment,
+  getActiveCustomerCreditFxAdjustment,
+} from "@/lib/accounting/open-item-fx";
 import { getRecognitionPeriod } from "@/lib/utils";
 
 function roundMoney(value: number) {
@@ -28,6 +33,12 @@ async function getActor() {
   return { tenantId, userId };
 }
 
+async function getBaseCurrency(db: Prisma.TransactionClient, tenantId: string) {
+  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } });
+  if (!tenant) throw new Error("Organisation not found.");
+  return tenant.currency.trim().toUpperCase();
+}
+
 export async function applyCustomerCredit(input: {
   customerCreditId: string;
   invoiceId: string;
@@ -46,12 +57,17 @@ export async function applyCustomerCredit(input: {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:customer-credit:${tenantId}:${input.customerCreditId}`}))`;
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${input.invoiceId}`}))`;
 
+      const baseCurrency = await getBaseCurrency(tx, tenantId);
       const credits = await tx.$queryRaw<Array<{
-        id: string; customerId: string; currency: string; exchangeRate: unknown;
-        remainingAmount: unknown; remainingBaseAmount: unknown; status: string;
+        id: string;
+        customerId: string;
+        currency: string;
+        exchangeRate: unknown;
+        remainingAmount: unknown;
+        status: string;
       }>>`
         SELECT "id", "customer_id" AS "customerId", "currency", "exchange_rate" AS "exchangeRate",
-               "remaining_amount" AS "remainingAmount", "remaining_base_amount" AS "remainingBaseAmount", "status"
+               "remaining_amount" AS "remainingAmount", "status"
         FROM "customer_credits"
         WHERE "id"=${input.customerCreditId} AND "tenant_id"=${tenantId}::uuid
         LIMIT 1
@@ -59,27 +75,52 @@ export async function applyCustomerCredit(input: {
       const credit = credits[0];
       if (!credit) throw new Error("Customer credit not found.");
       if (credit.status !== "OPEN") throw new Error("This customer credit is not available for use.");
-      if (amount - Number(credit.remainingAmount) > 0.01) throw new Error("Application exceeds the remaining customer credit.");
+      const preCreditBalance = roundMoney(Number(credit.remainingAmount));
+      if (amount - preCreditBalance > 0.01) throw new Error("Application exceeds the remaining customer credit.");
 
       const invoice = await tx.invoice.findFirst({
         where: { id: input.invoiceId, tenantId },
-        select: { id: true, customerId: true, invoiceNumber: true, currency: true, exchangeRate: true, balanceDue: true, amountPaid: true, status: true },
+        select: {
+          id: true,
+          customerId: true,
+          invoiceNumber: true,
+          currency: true,
+          exchangeRate: true,
+          balanceDue: true,
+          amountPaid: true,
+          status: true,
+        },
       });
       if (!invoice) throw new Error("Invoice not found.");
       if (invoice.customerId !== credit.customerId) throw new Error("Customer credit can only be applied to another invoice for the same customer.");
       if (invoice.currency.toUpperCase() !== credit.currency.toUpperCase()) throw new Error("Customer credit and invoice must use the same transaction currency.");
       if (!["SENT", "PARTIAL", "OVERDUE"].includes(invoice.status)) throw new Error(`Invoice ${invoice.invoiceNumber} is not open for settlement.`);
-      const preBalance = roundMoney(Number(invoice.balanceDue));
-      if (amount - preBalance > 0.01) throw new Error(`Application exceeds invoice ${invoice.invoiceNumber}'s outstanding balance.`);
+      const preArBalance = roundMoney(Number(invoice.balanceDue));
+      if (amount - preArBalance > 0.01) throw new Error(`Application exceeds invoice ${invoice.invoiceNumber}'s outstanding balance.`);
 
+      const creditCurrency = credit.currency.trim().toUpperCase();
       const creditRate = Number(credit.exchangeRate);
       const invoiceRate = Number(invoice.exchangeRate);
-      if (!Number.isFinite(creditRate) || creditRate <= 0 || !Number.isFinite(invoiceRate) || invoiceRate <= 0) throw new Error("Foreign-currency carrying-rate evidence is invalid.");
+      if (!Number.isFinite(creditRate) || creditRate <= 0 || !Number.isFinite(invoiceRate) || invoiceRate <= 0) {
+        throw new Error("Foreign-currency carrying-rate evidence is invalid.");
+      }
+      if (creditCurrency === baseCurrency && Math.abs(creditRate - 1) > 0.000001) {
+        throw new Error(`${baseCurrency} customer credits must carry an exchange rate of 1.`);
+      }
 
-      const activeArAdjustment = await getActiveArFxAdjustment(tx, tenantId, invoice.id);
-      const fxUnrealizedConsumed = consumeFxAdjustment(activeArAdjustment, amount, preBalance);
-      const baseCreditAmount = roundMoney(amount * creditRate);
-      const baseArAmount = roundMoney(amount * invoiceRate + fxUnrealizedConsumed);
+      const activeCreditAdjustment = creditCurrency === baseCurrency
+        ? 0
+        : await getActiveCustomerCreditFxAdjustment(tx, tenantId, credit.id);
+      const creditFxUnrealizedConsumed = consumeFxAdjustment(activeCreditAdjustment, amount, preCreditBalance);
+      const activeArAdjustment = creditCurrency === baseCurrency
+        ? 0
+        : await getActiveArFxAdjustment(tx, tenantId, invoice.id);
+      const arFxUnrealizedConsumed = consumeFxAdjustment(activeArAdjustment, amount, preArBalance);
+
+      const baseHistoricalCreditAmount = roundMoney(amount * creditRate);
+      const baseCreditAmount = roundMoney(baseHistoricalCreditAmount + creditFxUnrealizedConsumed);
+      const baseHistoricalArAmount = roundMoney(amount * invoiceRate);
+      const baseArAmount = roundMoney(baseHistoricalArAmount + arFxUnrealizedConsumed);
       const fxDifference = roundMoney(baseCreditAmount - baseArAmount);
 
       const [creditLiability, arAccount] = await Promise.all([
@@ -113,15 +154,16 @@ export async function applyCustomerCredit(input: {
       await tx.$executeRaw`
         INSERT INTO "customer_credit_applications" (
           "id","tenant_id","customer_credit_id","invoice_id","amount","base_credit_amount","base_ar_amount",
-          "fx_unrealized_consumed","journal_entry_id","status","applied_at","created_by"
+          "fx_unrealized_consumed","credit_fx_unrealized_consumed","journal_entry_id","status","applied_at","created_by"
         ) VALUES (
           ${applicationId},${tenantId}::uuid,${credit.id},${invoice.id},${amount},${baseCreditAmount},${baseArAmount},
-          ${fxUnrealizedConsumed},${journalEntryId},'POSTED',${applicationDate},${userId}
+          ${arFxUnrealizedConsumed},${creditFxUnrealizedConsumed},${journalEntryId},'POSTED',${applicationDate},${userId}
         )
       `;
 
-      const newRemaining = Math.max(0, roundMoney(Number(credit.remainingAmount) - amount));
-      const newRemainingBase = Math.max(0, roundMoney(newRemaining * creditRate));
+      const newRemaining = Math.max(0, roundMoney(preCreditBalance - amount));
+      const remainingAdjustment = roundMoney(activeCreditAdjustment - creditFxUnrealizedConsumed);
+      const newRemainingBase = Math.max(0, roundMoney(newRemaining * creditRate + remainingAdjustment));
       await tx.$executeRaw`
         UPDATE "customer_credits"
         SET "remaining_amount"=${newRemaining}, "remaining_base_amount"=${newRemainingBase},
@@ -129,8 +171,10 @@ export async function applyCustomerCredit(input: {
         WHERE "id"=${credit.id} AND "tenant_id"=${tenantId}::uuid
       `;
 
-      const newBalance = Math.max(0, roundMoney(preBalance - amount));
-      const status = newBalance <= 0.01 ? (Number(invoice.amountPaid) > 0.01 ? "PARTIAL" : "SENT") : (Number(invoice.amountPaid) > 0.01 ? "PARTIAL" : invoice.status);
+      const newBalance = Math.max(0, roundMoney(preArBalance - amount));
+      const status = newBalance <= 0.01
+        ? (Number(invoice.amountPaid) > 0.01 ? "PARTIAL" : "SENT")
+        : (Number(invoice.amountPaid) > 0.01 ? "PARTIAL" : invoice.status);
       await tx.invoice.update({ where: { id: invoice.id }, data: { balanceDue: newBalance, status, paidAt: null } });
     });
 
@@ -138,6 +182,7 @@ export async function applyCustomerCredit(input: {
     revalidatePath("/sales/invoices");
     revalidatePath(`/sales/invoices/${input.invoiceId}`);
     revalidatePath("/accounting/balance-sheet");
+    revalidatePath("/accounting/fx-revaluation");
     return { success: true, applicationId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : "Customer credit could not be applied." };
@@ -150,6 +195,7 @@ export async function refundCustomerCredit(input: {
   amount: number;
   refundDate: string;
   exchangeRate: number;
+  exchangeRateSource?: string;
   reference?: string;
   notes?: string;
 }): Promise<{ success: true; refundId: string } | { error: string }> {
@@ -157,16 +203,23 @@ export async function refundCustomerCredit(input: {
     const { tenantId, userId } = await getActor();
     const amount = roundMoney(Number(input.amount));
     const refundRate = roundRate(Number(input.exchangeRate));
+    const rateSource = String(input.exchangeRateSource || "MANUAL").trim().toUpperCase();
     if (!Number.isFinite(amount) || amount <= 0) throw new Error("Refund amount must be greater than zero.");
     if (!Number.isFinite(refundRate) || refundRate <= 0) throw new Error("Enter a valid refund exchange rate.");
+    if (!["MANUAL", "SYSTEM", "INTEGRATION"].includes(rateSource)) throw new Error("Invalid exchange-rate source.");
     const refundDate = new Date(`${input.refundDate}T00:00:00`);
     if (Number.isNaN(refundDate.getTime()) || refundDate > new Date()) throw new Error("Enter a valid refund date.");
 
     const refundId = crypto.randomUUID();
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:customer-credit:${tenantId}:${input.customerCreditId}`}))`;
+      const baseCurrency = await getBaseCurrency(tx, tenantId);
       const credits = await tx.$queryRaw<Array<{
-        id: string; currency: string; exchangeRate: unknown; remainingAmount: unknown; status: string;
+        id: string;
+        currency: string;
+        exchangeRate: unknown;
+        remainingAmount: unknown;
+        status: string;
       }>>`
         SELECT "id","currency","exchange_rate" AS "exchangeRate","remaining_amount" AS "remainingAmount","status"
         FROM "customer_credits" WHERE "id"=${input.customerCreditId} AND "tenant_id"=${tenantId}::uuid LIMIT 1
@@ -174,23 +227,42 @@ export async function refundCustomerCredit(input: {
       const credit = credits[0];
       if (!credit) throw new Error("Customer credit not found.");
       if (credit.status !== "OPEN") throw new Error("This customer credit is not available for refund.");
-      if (amount - Number(credit.remainingAmount) > 0.01) throw new Error("Refund exceeds the remaining customer credit.");
-      if (credit.currency === "NGN" && Math.abs(refundRate - 1) > 0.000001) throw new Error("NGN refunds must use an exchange rate of 1.");
+      const preCreditBalance = roundMoney(Number(credit.remainingAmount));
+      if (amount - preCreditBalance > 0.01) throw new Error("Refund exceeds the remaining customer credit.");
 
-      const banks = await tx.$queryRaw<Array<{ ledgerAccountId: string | null; currency: string; type: string | null; active: boolean | null }>>`
+      const creditCurrency = credit.currency.trim().toUpperCase();
+      if (creditCurrency === baseCurrency && Math.abs(refundRate - 1) > 0.000001) {
+        throw new Error(`${baseCurrency} refunds must use an exchange rate of 1.`);
+      }
+
+      const banks = await tx.$queryRaw<Array<{
+        ledgerAccountId: string | null;
+        currency: string;
+        type: string | null;
+        active: boolean | null;
+      }>>`
         SELECT ba."ledger_account_id" AS "ledgerAccountId", ba."currency", coa."type"::text AS "type", coa."is_active" AS "active"
         FROM "bank_accounts" ba
         LEFT JOIN "chart_of_accounts" coa ON coa."id"=ba."ledger_account_id" AND coa."tenant_id"=ba."tenant_id"
         WHERE ba."id"=${input.bankAccountId} AND ba."tenant_id"=${tenantId}::uuid AND ba."is_active"=true LIMIT 1
       `;
       const bank = banks[0];
-      if (!bank || !bank.ledgerAccountId || bank.type !== "ASSET" || bank.active !== true) throw new Error("Select an active refund bank account mapped to an Asset ledger account.");
-      if (bank.currency.toUpperCase() !== credit.currency.toUpperCase()) throw new Error("Refund bank account must use the same currency as the customer credit.");
+      if (!bank || !bank.ledgerAccountId || bank.type !== "ASSET" || bank.active !== true) {
+        throw new Error("Select an active refund bank account mapped to an Asset ledger account.");
+      }
+      if (bank.currency.toUpperCase() !== creditCurrency) throw new Error("Refund bank account must use the same currency as the customer credit.");
 
       const creditRate = Number(credit.exchangeRate);
-      const baseCreditAmount = roundMoney(amount * creditRate);
+      if (!Number.isFinite(creditRate) || creditRate <= 0) throw new Error("Customer-credit exchange-rate evidence is invalid.");
+      const activeCreditAdjustment = creditCurrency === baseCurrency
+        ? 0
+        : await getActiveCustomerCreditFxAdjustment(tx, tenantId, credit.id);
+      const creditFxUnrealizedConsumed = consumeFxAdjustment(activeCreditAdjustment, amount, preCreditBalance);
+      const baseHistoricalCreditAmount = roundMoney(amount * creditRate);
+      const baseCreditAmount = roundMoney(baseHistoricalCreditAmount + creditFxUnrealizedConsumed);
       const baseSettlementAmount = roundMoney(amount * refundRate);
       const fxDifference = roundMoney(baseCreditAmount - baseSettlementAmount);
+
       const creditLiability = await resolveSystemAccount(tx, tenantId, "CUSTOMER_CREDIT");
       const lines: JournalPostingLine[] = [
         { accountId: creditLiability.id, description: "Customer credit refund", debit: baseCreditAmount, credit: 0 },
@@ -219,15 +291,18 @@ export async function refundCustomerCredit(input: {
       await tx.$executeRaw`
         INSERT INTO "customer_credit_refunds" (
           "id","tenant_id","customer_credit_id","bank_account_id","amount","currency","exchange_rate",
-          "base_credit_amount","base_settlement_amount","journal_entry_id","status","refunded_at","reference","notes","created_by"
+          "base_credit_amount","base_settlement_amount","credit_fx_unrealized_consumed","journal_entry_id","status",
+          "refunded_at","reference","notes","created_by","exchange_rate_source","exchange_rate_entered_by","exchange_rate_entered_at"
         ) VALUES (
-          ${refundId},${tenantId}::uuid,${credit.id},${input.bankAccountId},${amount},${credit.currency},${refundRate},
-          ${baseCreditAmount},${baseSettlementAmount},${journalEntryId},'POSTED',${refundDate},${input.reference?.trim() || null},${input.notes?.trim() || null},${userId}
+          ${refundId},${tenantId}::uuid,${credit.id},${input.bankAccountId},${amount},${creditCurrency},${refundRate},
+          ${baseCreditAmount},${baseSettlementAmount},${creditFxUnrealizedConsumed},${journalEntryId},'POSTED',
+          ${refundDate},${input.reference?.trim() || null},${input.notes?.trim() || null},${userId},${rateSource},${userId},now()
         )
       `;
 
-      const newRemaining = Math.max(0, roundMoney(Number(credit.remainingAmount) - amount));
-      const newRemainingBase = Math.max(0, roundMoney(newRemaining * creditRate));
+      const newRemaining = Math.max(0, roundMoney(preCreditBalance - amount));
+      const remainingAdjustment = roundMoney(activeCreditAdjustment - creditFxUnrealizedConsumed);
+      const newRemainingBase = Math.max(0, roundMoney(newRemaining * creditRate + remainingAdjustment));
       await tx.$executeRaw`
         UPDATE "customer_credits"
         SET "remaining_amount"=${newRemaining}, "remaining_base_amount"=${newRemainingBase},
@@ -238,6 +313,7 @@ export async function refundCustomerCredit(input: {
 
     revalidatePath("/sales/customer-credits");
     revalidatePath("/accounting/balance-sheet");
+    revalidatePath("/accounting/fx-revaluation");
     return { success: true, refundId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : "Customer credit could not be refunded." };

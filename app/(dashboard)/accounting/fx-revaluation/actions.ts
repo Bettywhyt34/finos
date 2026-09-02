@@ -6,7 +6,11 @@ import { auth } from "@/lib/auth";
 import { assertPeriodOpenInTransaction, postJournalEntryInTransaction, type JournalPostingLine } from "@/lib/journal";
 import { resolveSystemAccount } from "@/lib/accounting/system-accounts";
 import { getRecognitionPeriod } from "@/lib/utils";
-import { getActiveArFxAdjustment, getActiveApFxAdjustment } from "@/lib/accounting/open-item-fx";
+import {
+  getActiveApFxAdjustment,
+  getActiveArFxAdjustment,
+  getActiveCustomerCreditFxAdjustment,
+} from "@/lib/accounting/open-item-fx";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -26,10 +30,8 @@ async function getBaseCurrency(db: DbClient, orgId: string) {
   return tenant.currency.trim().toUpperCase();
 }
 
-export interface ARItem {
+interface MonetaryItemBase {
   id: string;
-  invoiceNumber: string;
-  customerName: string;
   foreignBalance: number;
   originalRate: number;
   historicalNGN: number;
@@ -39,36 +41,49 @@ export interface ARItem {
   adjustment: number;
 }
 
-export interface APItem {
-  id: string;
+export interface ARItem extends MonetaryItemBase {
+  invoiceNumber: string;
+  customerName: string;
+}
+
+export interface APItem extends MonetaryItemBase {
   billNumber: string;
   vendorName: string;
-  foreignBalance: number;
-  originalRate: number;
-  historicalNGN: number;
-  priorAdjustment: number;
-  bookedNGN: number;
-  currentNGN: number;
-  adjustment: number;
+}
+
+export interface CustomerCreditItem extends MonetaryItemBase {
+  creditNumber: string;
+  customerName: string;
 }
 
 export interface FXExposureResult {
+  baseCurrency: string;
   currency: string;
   closingRate: number;
   arExposure: number;
   apExposure: number;
+  customerCreditExposure: number;
   arBookedNGN: number;
   apBookedNGN: number;
+  customerCreditBookedNGN: number;
   arCurrentNGN: number;
   apCurrentNGN: number;
+  customerCreditCurrentNGN: number;
   arGainLoss: number;
   apGainLoss: number;
+  customerCreditGainLoss: number;
   unrealizedGainLoss: number;
   arItems: ARItem[];
   apItems: APItem[];
+  customerCreditItems: CustomerCreditItem[];
 }
 
-async function calculateFXExposureWithDb(db: DbClient, orgId: string, currency: string, closingRate: number): Promise<FXExposureResult> {
+async function calculateFXExposureWithDb(
+  db: DbClient,
+  orgId: string,
+  currency: string,
+  closingRate: number,
+): Promise<FXExposureResult> {
   const normalCurrency = currency.trim().toUpperCase();
   const baseCurrency = await getBaseCurrency(db, orgId);
   if (!/^[A-Z]{3}$/.test(normalCurrency) || normalCurrency === baseCurrency) {
@@ -76,16 +91,36 @@ async function calculateFXExposureWithDb(db: DbClient, orgId: string, currency: 
   }
   if (!Number.isFinite(closingRate) || closingRate <= 0) throw new Error("Closing FX rate must be greater than zero.");
 
-  const invoices = await db.invoice.findMany({
-    where: { tenantId: orgId, currency: normalCurrency, status: { in: ["SENT", "PARTIAL", "OVERDUE"] }, balanceDue: { gt: 0 } },
-    select: { id: true, invoiceNumber: true, balanceDue: true, exchangeRate: true, customer: { select: { companyName: true } } },
-    orderBy: [{ issueDate: "asc" }, { id: "asc" }],
-  });
-  const bills = await db.bill.findMany({
-    where: { tenantId: orgId, currency: normalCurrency, status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] } },
-    select: { id: true, billNumber: true, totalAmount: true, amountPaid: true, exchangeRate: true, vendor: { select: { companyName: true } } },
-    orderBy: [{ billDate: "asc" }, { id: "asc" }],
-  });
+  const [invoices, bills, customerCredits] = await Promise.all([
+    db.invoice.findMany({
+      where: { tenantId: orgId, currency: normalCurrency, status: { in: ["SENT", "PARTIAL", "OVERDUE"] }, balanceDue: { gt: 0 } },
+      select: { id: true, invoiceNumber: true, balanceDue: true, exchangeRate: true, customer: { select: { companyName: true } } },
+      orderBy: [{ issueDate: "asc" }, { id: "asc" }],
+    }),
+    db.bill.findMany({
+      where: { tenantId: orgId, currency: normalCurrency, status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] } },
+      select: { id: true, billNumber: true, totalAmount: true, amountPaid: true, exchangeRate: true, vendor: { select: { companyName: true } } },
+      orderBy: [{ billDate: "asc" }, { id: "asc" }],
+    }),
+    db.$queryRaw<Array<{
+      id: string;
+      creditNumber: string;
+      customerName: string;
+      remainingAmount: unknown;
+      exchangeRate: unknown;
+    }>>`
+      SELECT cc."id", cn."credit_number" AS "creditNumber", c."company_name" AS "customerName",
+             cc."remaining_amount" AS "remainingAmount", cc."exchange_rate" AS "exchangeRate"
+      FROM "customer_credits" cc
+      INNER JOIN "credit_notes" cn ON cn."id"=cc."credit_note_id" AND cn."tenant_id"=cc."tenant_id"
+      INNER JOIN "customers" c ON c."id"=cc."customer_id" AND c."tenant_id"=cc."tenant_id"
+      WHERE cc."tenant_id"=${orgId}::uuid
+        AND upper(cc."currency")=${normalCurrency}
+        AND cc."status"='OPEN'
+        AND cc."remaining_amount">0
+      ORDER BY cc."created_at", cc."id"
+    `,
+  ]);
 
   const arItems: ARItem[] = [];
   for (const invoice of invoices) {
@@ -97,18 +132,9 @@ async function calculateFXExposureWithDb(db: DbClient, orgId: string, currency: 
     const priorAdjustment = await getActiveArFxAdjustment(db, orgId, invoice.id);
     const bookedNGN = roundMoney(historicalNGN + priorAdjustment);
     const currentNGN = roundMoney(foreignBalance * closingRate);
-    arItems.push({
-      id: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      customerName: invoice.customer.companyName,
-      foreignBalance,
-      originalRate,
-      historicalNGN,
-      priorAdjustment,
-      bookedNGN,
-      currentNGN,
-      adjustment: roundMoney(currentNGN - bookedNGN),
-    });
+    arItems.push({ id: invoice.id, invoiceNumber: invoice.invoiceNumber, customerName: invoice.customer.companyName,
+      foreignBalance, originalRate, historicalNGN, priorAdjustment, bookedNGN, currentNGN,
+      adjustment: roundMoney(currentNGN - bookedNGN) });
   }
 
   const apItems: APItem[] = [];
@@ -121,43 +147,59 @@ async function calculateFXExposureWithDb(db: DbClient, orgId: string, currency: 
     const priorAdjustment = await getActiveApFxAdjustment(db, orgId, bill.id);
     const bookedNGN = roundMoney(historicalNGN + priorAdjustment);
     const currentNGN = roundMoney(foreignBalance * closingRate);
-    apItems.push({
-      id: bill.id,
-      billNumber: bill.billNumber,
-      vendorName: bill.vendor.companyName,
-      foreignBalance,
-      originalRate,
-      historicalNGN,
-      priorAdjustment,
-      bookedNGN,
-      currentNGN,
-      adjustment: roundMoney(currentNGN - bookedNGN),
-    });
+    apItems.push({ id: bill.id, billNumber: bill.billNumber, vendorName: bill.vendor.companyName,
+      foreignBalance, originalRate, historicalNGN, priorAdjustment, bookedNGN, currentNGN,
+      adjustment: roundMoney(currentNGN - bookedNGN) });
+  }
+
+  const customerCreditItems: CustomerCreditItem[] = [];
+  for (const credit of customerCredits) {
+    const foreignBalance = roundMoney(Number(credit.remainingAmount));
+    if (foreignBalance <= 0.005) continue;
+    const originalRate = Number(credit.exchangeRate);
+    if (!Number.isFinite(originalRate) || originalRate <= 0) throw new Error(`Customer credit ${credit.creditNumber} has an invalid exchange rate.`);
+    const historicalNGN = roundMoney(foreignBalance * originalRate);
+    const priorAdjustment = await getActiveCustomerCreditFxAdjustment(db, orgId, credit.id);
+    const bookedNGN = roundMoney(historicalNGN + priorAdjustment);
+    const currentNGN = roundMoney(foreignBalance * closingRate);
+    customerCreditItems.push({ id: credit.id, creditNumber: credit.creditNumber, customerName: credit.customerName,
+      foreignBalance, originalRate, historicalNGN, priorAdjustment, bookedNGN, currentNGN,
+      adjustment: roundMoney(currentNGN - bookedNGN) });
   }
 
   const arExposure = roundMoney(arItems.reduce((sum, item) => sum + item.foreignBalance, 0));
   const apExposure = roundMoney(apItems.reduce((sum, item) => sum + item.foreignBalance, 0));
+  const customerCreditExposure = roundMoney(customerCreditItems.reduce((sum, item) => sum + item.foreignBalance, 0));
   const arBookedNGN = roundMoney(arItems.reduce((sum, item) => sum + item.bookedNGN, 0));
   const apBookedNGN = roundMoney(apItems.reduce((sum, item) => sum + item.bookedNGN, 0));
+  const customerCreditBookedNGN = roundMoney(customerCreditItems.reduce((sum, item) => sum + item.bookedNGN, 0));
   const arCurrentNGN = roundMoney(arItems.reduce((sum, item) => sum + item.currentNGN, 0));
   const apCurrentNGN = roundMoney(apItems.reduce((sum, item) => sum + item.currentNGN, 0));
+  const customerCreditCurrentNGN = roundMoney(customerCreditItems.reduce((sum, item) => sum + item.currentNGN, 0));
   const arGainLoss = roundMoney(arItems.reduce((sum, item) => sum + item.adjustment, 0));
   const apGainLoss = roundMoney(apItems.reduce((sum, item) => sum - item.adjustment, 0));
+  const customerCreditGainLoss = roundMoney(customerCreditItems.reduce((sum, item) => sum - item.adjustment, 0));
 
   return {
+    baseCurrency,
     currency: normalCurrency,
     closingRate,
     arExposure,
     apExposure,
+    customerCreditExposure,
     arBookedNGN,
     apBookedNGN,
+    customerCreditBookedNGN,
     arCurrentNGN,
     apCurrentNGN,
+    customerCreditCurrentNGN,
     arGainLoss,
     apGainLoss,
-    unrealizedGainLoss: roundMoney(arGainLoss + apGainLoss),
+    customerCreditGainLoss,
+    unrealizedGainLoss: roundMoney(arGainLoss + apGainLoss + customerCreditGainLoss),
     arItems,
     apItems,
+    customerCreditItems,
   };
 }
 
@@ -208,16 +250,19 @@ export async function postFXRevaluation(data: {
       if (existing) throw new Error(`A revaluation for ${data.period} / ${currency} already exists. Reverse it before creating a corrected period revaluation.`);
 
       const exposure = await calculateFXExposureWithDb(tx, orgId, currency, data.closingRate);
-      if (exposure.arItems.length === 0 && exposure.apItems.length === 0) {
-        throw new Error(`No open ${currency} monetary AR or AP balances require revaluation.`);
-      }
-      if (Math.abs(exposure.arGainLoss) <= 0.005 && Math.abs(exposure.apGainLoss) <= 0.005) {
+      const hasItems = exposure.arItems.length + exposure.apItems.length + exposure.customerCreditItems.length > 0;
+      if (!hasItems) throw new Error(`No open ${currency} monetary AR, AP, or customer-credit balances require revaluation.`);
+      if (Math.abs(exposure.unrealizedGainLoss) <= 0.005
+        && Math.abs(exposure.arGainLoss) <= 0.005
+        && Math.abs(exposure.apGainLoss) <= 0.005
+        && Math.abs(exposure.customerCreditGainLoss) <= 0.005) {
         throw new Error("Open-item carrying values already equal the selected closing rate; no revaluation journal is required.");
       }
 
-      const [arAccount, apAccount, gainAccount, lossAccount] = await Promise.all([
+      const [arAccount, apAccount, customerCreditAccount, gainAccount, lossAccount] = await Promise.all([
         exposure.arItems.length ? resolveSystemAccount(tx, orgId, "ACCOUNTS_RECEIVABLE", "CA-001") : Promise.resolve(null),
         exposure.apItems.length ? resolveSystemAccount(tx, orgId, "ACCOUNTS_PAYABLE", "CL-001") : Promise.resolve(null),
+        exposure.customerCreditItems.length ? resolveSystemAccount(tx, orgId, "CUSTOMER_CREDIT") : Promise.resolve(null),
         resolveSystemAccount(tx, orgId, "FX_GAIN", data.fxGainAccountCode),
         resolveSystemAccount(tx, orgId, "FX_LOSS", data.fxLossAccountCode),
       ]);
@@ -269,6 +314,17 @@ export async function postFXRevaluation(data: {
           )
         `;
       }
+      for (const item of exposure.customerCreditItems) {
+        await tx.$executeRaw`
+          INSERT INTO "fx_revaluation_items" (
+            "tenant_id","fx_revaluation_id","item_type","customer_credit_id","currency","foreign_balance","original_rate","closing_rate",
+            "historical_base_amount","prior_carrying_adjustment","carrying_base_amount","target_base_amount","adjustment_base_amount"
+          ) VALUES (
+            ${orgId}::uuid, ${revaluation.id}, 'CUSTOMER_CREDIT', ${item.id}, ${currency}, ${item.foreignBalance}, ${item.originalRate}, ${data.closingRate},
+            ${item.historicalNGN}, ${item.priorAdjustment}, ${item.bookedNGN}, ${item.currentNGN}, ${item.adjustment}
+          )
+        `;
+      }
 
       const lines: JournalPostingLine[] = [];
       if (arAccount && Math.abs(exposure.arGainLoss) > 0.005) {
@@ -279,9 +335,24 @@ export async function postFXRevaluation(data: {
         if (exposure.apGainLoss > 0) lines.push({ accountId: apAccount.id, description: `FX revaluation AP (${currency})`, debit: exposure.apGainLoss, credit: 0 });
         else lines.push({ accountId: apAccount.id, description: `FX revaluation AP (${currency})`, debit: 0, credit: Math.abs(exposure.apGainLoss) });
       }
+      if (customerCreditAccount && Math.abs(exposure.customerCreditGainLoss) > 0.005) {
+        if (exposure.customerCreditGainLoss > 0) {
+          lines.push({ accountId: customerCreditAccount.id, description: `FX revaluation customer credits (${currency})`, debit: exposure.customerCreditGainLoss, credit: 0 });
+        } else {
+          lines.push({ accountId: customerCreditAccount.id, description: `FX revaluation customer credits (${currency})`, debit: 0, credit: Math.abs(exposure.customerCreditGainLoss) });
+        }
+      }
 
-      const grossGain = roundMoney(Math.max(exposure.arGainLoss, 0) + Math.max(exposure.apGainLoss, 0));
-      const grossLoss = roundMoney(Math.max(-exposure.arGainLoss, 0) + Math.max(-exposure.apGainLoss, 0));
+      const grossGain = roundMoney(
+        Math.max(exposure.arGainLoss, 0)
+        + Math.max(exposure.apGainLoss, 0)
+        + Math.max(exposure.customerCreditGainLoss, 0),
+      );
+      const grossLoss = roundMoney(
+        Math.max(-exposure.arGainLoss, 0)
+        + Math.max(-exposure.apGainLoss, 0)
+        + Math.max(-exposure.customerCreditGainLoss, 0),
+      );
       if (grossLoss > 0.005) lines.push({ accountId: lossAccount.id, description: `Unrealised FX loss (${currency})`, debit: grossLoss, credit: 0 });
       if (grossGain > 0.005) lines.push({ accountId: gainAccount.id, description: `Unrealised FX gain (${currency})`, debit: 0, credit: grossGain });
 
@@ -290,7 +361,7 @@ export async function postFXRevaluation(data: {
         createdBy: userId,
         entryDate: revaluationDate,
         reference: `FXR-${data.period}-${currency}`,
-        description: `FX Revaluation ${currency} ${data.period} — AR/AP monetary balances in ${baseCurrency}`,
+        description: `FX Revaluation ${currency} ${data.period} — AR/AP/customer-credit monetary balances in ${baseCurrency}`,
         recognitionPeriod: data.period,
         source: "fx-revaluation",
         sourceId: revaluation.id,
@@ -330,29 +401,53 @@ export async function reverseFXRevaluation(revalId: string) {
       });
       if (later) throw new Error(`Reverse the later ${later.period} ${revaluation.currency} revaluation first.`);
 
-      const arConsumed = await tx.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*)::bigint AS "count"
-        FROM "fx_revaluation_items" fri
-        JOIN "customer_payment_allocations" cpa ON cpa."invoice_id" = fri."invoice_id"
-        JOIN "customer_payments" cp ON cp."id" = cpa."payment_id"
-        WHERE fri."fx_revaluation_id" = ${revaluation.id}
-          AND fri."item_type" = 'AR'
-          AND cp."tenant_id" = ${orgId}::uuid
-          AND cp."status" = 'POSTED'::customer_payment_status
-          AND ABS(cpa."fx_unrealized_consumed") > 0.005
-      `;
-      const apConsumed = await tx.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*)::bigint AS "count"
-        FROM "fx_revaluation_items" fri
-        JOIN "vendor_payment_allocations" vpa ON vpa."bill_id" = fri."bill_id"
-        JOIN "vendor_payments" vp ON vp."id" = vpa."payment_id"
-        WHERE fri."fx_revaluation_id" = ${revaluation.id}
-          AND fri."item_type" = 'AP'
-          AND vp."tenant_id" = ${orgId}::uuid
-          AND ABS(vpa."fx_unrealized_consumed") > 0.005
-      `;
-      if (Number(arConsumed[0]?.count ?? 0) > 0 || Number(apConsumed[0]?.count ?? 0) > 0) {
-        throw new Error("This revaluation has already been consumed by a posted settlement. Reverse the affected receipt/vendor payment first.");
+      const [arConsumed, apConsumed, customerCreditConsumed] = await Promise.all([
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS "count"
+          FROM "fx_revaluation_items" fri
+          JOIN "customer_payment_allocations" cpa ON cpa."invoice_id" = fri."invoice_id"
+          JOIN "customer_payments" cp ON cp."id" = cpa."payment_id"
+          WHERE fri."fx_revaluation_id" = ${revaluation.id}
+            AND fri."item_type" = 'AR'
+            AND cp."tenant_id" = ${orgId}::uuid
+            AND cp."status" = 'POSTED'::customer_payment_status
+            AND ABS(cpa."fx_unrealized_consumed") > 0.005
+        `,
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS "count"
+          FROM "fx_revaluation_items" fri
+          JOIN "vendor_payment_allocations" vpa ON vpa."bill_id" = fri."bill_id"
+          JOIN "vendor_payments" vp ON vp."id" = vpa."payment_id"
+          WHERE fri."fx_revaluation_id" = ${revaluation.id}
+            AND fri."item_type" = 'AP'
+            AND vp."tenant_id" = ${orgId}::uuid
+            AND ABS(vpa."fx_unrealized_consumed") > 0.005
+        `,
+        tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS "count"
+          FROM "fx_revaluation_items" fri
+          WHERE fri."fx_revaluation_id"=${revaluation.id}
+            AND fri."item_type"='CUSTOMER_CREDIT'
+            AND (
+              EXISTS (
+                SELECT 1 FROM "customer_credit_applications" cca
+                WHERE cca."tenant_id"=${orgId}::uuid
+                  AND cca."customer_credit_id"=fri."customer_credit_id"
+                  AND cca."status"='POSTED'
+                  AND ABS(cca."credit_fx_unrealized_consumed")>0.005
+              )
+              OR EXISTS (
+                SELECT 1 FROM "customer_credit_refunds" ccr
+                WHERE ccr."tenant_id"=${orgId}::uuid
+                  AND ccr."customer_credit_id"=fri."customer_credit_id"
+                  AND ccr."status"='POSTED'
+                  AND ABS(ccr."credit_fx_unrealized_consumed")>0.005
+              )
+            )
+        `,
+      ]);
+      if (Number(arConsumed[0]?.count ?? 0) > 0 || Number(apConsumed[0]?.count ?? 0) > 0 || Number(customerCreditConsumed[0]?.count ?? 0) > 0) {
+        throw new Error("This revaluation has already been consumed by a posted settlement. Reverse the affected receipt, vendor payment, customer-credit application, or customer-credit refund first.");
       }
 
       const reversalPeriod = getRecognitionPeriod(today);

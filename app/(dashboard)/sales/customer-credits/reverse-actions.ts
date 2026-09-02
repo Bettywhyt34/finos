@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { postJournalEntryInTransaction, type JournalPostingLine } from "@/lib/journal";
+import { getActiveCustomerCreditFxAdjustment } from "@/lib/accounting/open-item-fx";
 import { getRecognitionPeriod } from "@/lib/utils";
 
 function roundMoney(value: number) {
@@ -38,14 +39,54 @@ function parseReversal(reasonInput: string, dateInput: string) {
   return { reason, reversalDate };
 }
 
+async function assertNoLaterCreditRevaluation(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  customerCreditId: string,
+  movementDate: Date,
+) {
+  const rows = await tx.$queryRaw<Array<{ period: string }>>`
+    SELECT fr."period"
+    FROM "fx_revaluation_items" fri
+    INNER JOIN "fx_revaluations" fr ON fr."id"=fri."fx_revaluation_id"
+    WHERE fri."tenant_id"=${tenantId}::uuid
+      AND fri."item_type"='CUSTOMER_CREDIT'
+      AND fri."customer_credit_id"=${customerCreditId}
+      AND fr."status"='POSTED'::fx_revaluation_status
+      AND fr."revaluation_date">${movementDate}
+    ORDER BY fr."revaluation_date" DESC
+    LIMIT 1
+  `;
+  if (rows[0]) throw new Error(`A later FX revaluation (${rows[0].period}) depends on this movement. Reverse that revaluation first.`);
+}
+
+async function restoreCreditCarryingValue(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  customerCreditId: string,
+  restoredRemaining: number,
+  creditRate: number,
+) {
+  const activeAdjustment = await getActiveCustomerCreditFxAdjustment(tx, tenantId, customerCreditId);
+  await tx.$executeRaw`
+    UPDATE "customer_credits"
+    SET "remaining_amount"=${restoredRemaining},
+        "remaining_base_amount"=${roundMoney(restoredRemaining * creditRate + activeAdjustment)},
+        "status"='OPEN',
+        "updated_at"=now()
+    WHERE "id"=${customerCreditId} AND "tenant_id"=${tenantId}::uuid
+  `;
+}
+
 export async function reverseCustomerCreditApplication(input: { applicationId: string; reason: string; reversalDate: string }) {
   try {
     const { tenantId, userId } = await actor();
     const { reason, reversalDate } = parseReversal(input.reason, input.reversalDate);
 
     await prisma.$transaction(async (tx) => {
-      const apps = await tx.$queryRaw<Array<{ id:string; customerCreditId:string; invoiceId:string; amount:unknown; status:string; journalEntryId:string }>>`
-        SELECT "id","customer_credit_id" AS "customerCreditId","invoice_id" AS "invoiceId","amount","status","journal_entry_id" AS "journalEntryId"
+      const apps = await tx.$queryRaw<Array<{ id:string; customerCreditId:string; invoiceId:string; amount:unknown; status:string; journalEntryId:string; appliedAt:Date }>>`
+        SELECT "id","customer_credit_id" AS "customerCreditId","invoice_id" AS "invoiceId","amount","status",
+               "journal_entry_id" AS "journalEntryId","applied_at" AS "appliedAt"
         FROM "customer_credit_applications"
         WHERE "id"=${input.applicationId} AND "tenant_id"=${tenantId}::uuid
         LIMIT 1
@@ -56,6 +97,7 @@ export async function reverseCustomerCreditApplication(input: { applicationId: s
 
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:customer-credit:${tenantId}:${application.customerCreditId}`}))`;
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:invoice:${tenantId}:${application.invoiceId}`}))`;
+      await assertNoLaterCreditRevaluation(tx, tenantId, application.customerCreditId, application.appliedAt);
 
       const creditRows = await tx.$queryRaw<Array<{ remainingAmount:unknown; exchangeRate:unknown; originalAmount:unknown }>>`
         SELECT "remaining_amount" AS "remainingAmount","exchange_rate" AS "exchangeRate","original_amount" AS "originalAmount"
@@ -89,20 +131,16 @@ export async function reverseCustomerCreditApplication(input: { applicationId: s
         recognitionPeriod:getRecognitionPeriod(reversalDate),source:"customer_credit_application_reversal",sourceId:application.id,lines:reversalLines,
       });
 
-      await tx.$executeRaw`
+      const updated = await tx.$executeRaw`
         UPDATE "customer_credit_applications"
         SET "status"='REVERSED',"reversal_journal_entry_id"=${reversalJournalId},"reversed_at"=${reversalDate},"reversed_by"=${userId},"reversal_reason"=${reason}
         WHERE "id"=${application.id} AND "tenant_id"=${tenantId}::uuid AND "status"='POSTED'
       `;
+      if (updated !== 1) throw new Error("Customer-credit application status changed before reversal could complete.");
 
       const restoredRemaining=roundMoney(Number(credit.remainingAmount)+Number(application.amount));
       if (restoredRemaining-Number(credit.originalAmount)>0.01) throw new Error("Reversal would overstate the customer-credit balance.");
-      const creditRate=Number(credit.exchangeRate);
-      await tx.$executeRaw`
-        UPDATE "customer_credits"
-        SET "remaining_amount"=${restoredRemaining},"remaining_base_amount"=${roundMoney(restoredRemaining*creditRate)},"status"='OPEN',"updated_at"=now()
-        WHERE "id"=${application.customerCreditId} AND "tenant_id"=${tenantId}::uuid
-      `;
+      await restoreCreditCarryingValue(tx, tenantId, application.customerCreditId, restoredRemaining, Number(credit.exchangeRate));
 
       const settlementRows=await tx.$queryRaw<Array<{ receipts:unknown; creditNotes:unknown; customerCredits:unknown }>>`
         SELECT
@@ -124,6 +162,7 @@ export async function reverseCustomerCreditApplication(input: { applicationId: s
     revalidatePath("/sales/customer-credits");
     revalidatePath("/sales/invoices");
     revalidatePath("/accounting/balance-sheet");
+    revalidatePath("/accounting/fx-revaluation");
     return { success:true as const };
   } catch(error:unknown){ return { error:error instanceof Error?error.message:"Customer-credit application could not be reversed." }; }
 }
@@ -133,16 +172,19 @@ export async function reverseCustomerCreditRefund(input: { refundId:string; reas
     const { tenantId,userId }=await actor();
     const { reason,reversalDate }=parseReversal(input.reason,input.reversalDate);
     await prisma.$transaction(async(tx)=>{
-      const rows=await tx.$queryRaw<Array<{ id:string; customerCreditId:string; amount:unknown; status:string; journalEntryId:string }>>`
-        SELECT "id","customer_credit_id" AS "customerCreditId","amount","status","journal_entry_id" AS "journalEntryId"
+      const rows=await tx.$queryRaw<Array<{ id:string; customerCreditId:string; amount:unknown; status:string; journalEntryId:string; refundedAt:Date }>>`
+        SELECT "id","customer_credit_id" AS "customerCreditId","amount","status","journal_entry_id" AS "journalEntryId","refunded_at" AS "refundedAt"
         FROM "customer_credit_refunds" WHERE "id"=${input.refundId} AND "tenant_id"=${tenantId}::uuid LIMIT 1
       `;
       const refund=rows[0];
       if(!refund) throw new Error("Customer-credit refund not found.");
       if(refund.status!=="POSTED") throw new Error("This customer-credit refund has already been reversed.");
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:customer-credit:${tenantId}:${refund.customerCreditId}`}))`;
-      const creditRows=await tx.$queryRaw<Array<{ remainingAmount:unknown; exchangeRate:unknown; originalAmount:unknown }>>`
-        SELECT "remaining_amount" AS "remainingAmount","exchange_rate" AS "exchangeRate","original_amount" AS "originalAmount" FROM "customer_credits" WHERE "id"=${refund.customerCreditId} AND "tenant_id"=${tenantId}::uuid LIMIT 1
+      await assertNoLaterCreditRevaluation(tx, tenantId, refund.customerCreditId, refund.refundedAt);
+
+      const creditRows = await tx.$queryRaw<Array<{ remainingAmount:unknown; exchangeRate:unknown; originalAmount:unknown }>>`
+        SELECT "remaining_amount" AS "remainingAmount","exchange_rate" AS "exchangeRate","original_amount" AS "originalAmount"
+        FROM "customer_credits" WHERE "id"=${refund.customerCreditId} AND "tenant_id"=${tenantId}::uuid LIMIT 1
       `;
       const credit=creditRows[0];
       if(!credit) throw new Error("Customer-credit liability evidence is missing.");
@@ -155,20 +197,18 @@ export async function reverseCustomerCreditRefund(input: { refundId:string; reas
         description:`Reverse customer-credit refund: ${reason}`,recognitionPeriod:getRecognitionPeriod(reversalDate),source:"customer_credit_refund_reversal",sourceId:refund.id,
         lines:originalJournal.lines.map((line)=>({accountId:line.accountId,description:`Reverse - ${line.description??"customer credit refund"}`,debit:Number(line.credit),credit:Number(line.debit),projectId:line.projectId??null,reportingTags:normaliseReportingTags(line.reportingTags)})),
       });
-      await tx.$executeRaw`
+      const updated=await tx.$executeRaw`
         UPDATE "customer_credit_refunds" SET "status"='REVERSED',"reversal_journal_entry_id"=${reversalJournalId},"reversed_at"=${reversalDate},"reversed_by"=${userId},"reversal_reason"=${reason}
         WHERE "id"=${refund.id} AND "tenant_id"=${tenantId}::uuid AND "status"='POSTED'
       `;
+      if(updated!==1) throw new Error("Customer-credit refund status changed before reversal could complete.");
       const restoredRemaining=roundMoney(Number(credit.remainingAmount)+Number(refund.amount));
       if(restoredRemaining-Number(credit.originalAmount)>0.01) throw new Error("Reversal would overstate the customer-credit balance.");
-      const creditRate=Number(credit.exchangeRate);
-      await tx.$executeRaw`
-        UPDATE "customer_credits" SET "remaining_amount"=${restoredRemaining},"remaining_base_amount"=${roundMoney(restoredRemaining*creditRate)},"status"='OPEN',"updated_at"=now()
-        WHERE "id"=${refund.customerCreditId} AND "tenant_id"=${tenantId}::uuid
-      `;
+      await restoreCreditCarryingValue(tx, tenantId, refund.customerCreditId, restoredRemaining, Number(credit.exchangeRate));
     });
     revalidatePath("/sales/customer-credits");
     revalidatePath("/accounting/balance-sheet");
+    revalidatePath("/accounting/fx-revaluation");
     return {success:true as const};
   } catch(error:unknown){return {error:error instanceof Error?error.message:"Customer-credit refund could not be reversed."};}
 }
