@@ -9,18 +9,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { postBill, recordBillPayment } from "../actions";
+import { postBill } from "../actions";
+import { recordBillPayment } from "../vendor-payment-actions";
 import { formatCurrency } from "@/lib/utils";
 
 interface OpenBill { id: string; billNumber: string; balance: number; }
+interface BankAccountOption { id: string; accountName: string; bankName: string; currency: string; }
 interface Props {
-  bill: { id: string; status: string; vendorId: string; balance: number; isWhtEligible: boolean; };
+  bill: {
+    id: string;
+    status: string;
+    vendorId: string;
+    balance: number;
+    isWhtEligible: boolean;
+    currency: string;
+    exchangeRate: number;
+    baseCurrency: string;
+  };
   openBills: OpenBill[];
+  bankAccounts: BankAccountOption[];
 }
 
 interface Allocation { billId: string; billNumber: string; maxAmount: number; amount: number; }
 
-export function BillActions({ bill, openBills }: Props) {
+export function BillActions({ bill, openBills, bankAccounts }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -29,6 +41,8 @@ export function BillActions({ bill, openBills }: Props) {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState(bill.balance);
   const [whtAmount, setWhtAmount] = useState(0);
+  const [exchangeRate, setExchangeRate] = useState(bill.currency === bill.baseCurrency ? 1 : bill.exchangeRate);
+  const [bankAccountId, setBankAccountId] = useState("");
   const [allocations, setAllocations] = useState<Allocation[]>(() =>
     openBills.map((b) => ({
       billId: b.id,
@@ -39,6 +53,7 @@ export function BillActions({ bill, openBills }: Props) {
   );
 
   const totalAllocated = allocations.reduce((s, a) => s + a.amount, 0);
+  const netCash = Math.max(0, amount - whtAmount);
 
   function autoAllocate(total: number) {
     let remaining = total;
@@ -66,9 +81,18 @@ export function BillActions({ bill, openBills }: Props) {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (Math.abs(totalAllocated - amount) > 0.01) {
-      toast.error(`Allocated ${formatCurrency(totalAllocated)} ≠ payment ${formatCurrency(amount)}`);
+      toast.error(`Allocated ${formatCurrency(totalAllocated, bill.currency)} ≠ amount settled ${formatCurrency(amount, bill.currency)}`);
       return;
     }
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      toast.error("Enter a valid exchange rate");
+      return;
+    }
+    if (netCash > 0.005 && !bankAccountId) {
+      toast.error(`Select a ${bill.currency} account for this payment`);
+      return;
+    }
+
     setLoading(true);
     const fd = new FormData(e.currentTarget);
     const result = await recordBillPayment({
@@ -78,6 +102,10 @@ export function BillActions({ bill, openBills }: Props) {
       method,
       reference: String(fd.get("reference") || ""),
       whtAmount,
+      bankAccountId: bankAccountId || undefined,
+      currency: bill.currency,
+      exchangeRate,
+      exchangeRateSource: "MANUAL",
       billAllocations: allocations.filter((a) => a.amount > 0).map((a) => ({ billId: a.billId, amount: a.amount })),
     });
     setLoading(false);
@@ -89,6 +117,7 @@ export function BillActions({ bill, openBills }: Props) {
 
   const isDraft = bill.status === "DRAFT";
   const canPay = !isDraft && bill.balance > 0 && bill.status !== "PAID";
+  const isBaseCurrency = bill.currency === bill.baseCurrency;
 
   return (
     <>
@@ -117,11 +146,51 @@ export function BillActions({ bill, openBills }: Props) {
                 <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
               </div>
               <div className="space-y-1.5">
-                <Label>Amount</Label>
+                <Label>Amount Settled ({bill.currency})</Label>
                 <Input type="number" min="0.01" step="0.01" value={amount}
                   onChange={(e) => { const v = parseFloat(e.target.value) || 0; setAmount(v); autoAllocate(v); }} required />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Currency</Label>
+                <Input value={bill.currency} disabled />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Exchange Rate (1 {bill.currency} = {bill.baseCurrency})</Label>
+                <Input
+                  type="number"
+                  min="0.000001"
+                  step="0.000001"
+                  value={exchangeRate}
+                  disabled={isBaseCurrency}
+                  onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+                  required
+                />
+                {!isBaseCurrency && <p className="text-xs text-slate-500">Enter the actual rate used for this payment.</p>}
+              </div>
+            </div>
+
+            {netCash > 0.005 && (
+              <div className="space-y-1.5">
+                <Label>Paid From ({bill.currency})</Label>
+                <Select value={bankAccountId} onValueChange={(v) => setBankAccountId(v ?? "")}>
+                  <SelectTrigger><SelectValue placeholder={`Select ${bill.currency} account`} /></SelectTrigger>
+                  <SelectContent>
+                    {bankAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.accountName} · {account.bankName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {bankAccounts.length === 0 && (
+                  <p className="text-xs text-amber-600">No active {bill.currency} bank/cash account is available. Add or map one in Banking first.</p>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Method</Label>
@@ -140,13 +209,14 @@ export function BillActions({ bill, openBills }: Props) {
                 <Input id="reference" name="reference" />
               </div>
             </div>
+
             {bill.isWhtEligible && (
               <div className="space-y-1.5">
-                <Label>WHT Amount (deducted from payment)</Label>
+                <Label>WHT Amount ({bill.currency})</Label>
                 <Input type="number" min="0" max={amount} step="0.01" value={whtAmount}
                   onChange={(e) => setWhtAmount(parseFloat(e.target.value) || 0)} />
                 {whtAmount > 0 && (
-                  <p className="text-xs text-slate-500">Net payment to vendor: {formatCurrency(amount - whtAmount)}</p>
+                  <p className="text-xs text-slate-500">Cash paid to vendor: {formatCurrency(netCash, bill.currency)}. Gross AP settled remains {formatCurrency(amount, bill.currency)}.</p>
                 )}
               </div>
             )}
@@ -154,7 +224,7 @@ export function BillActions({ bill, openBills }: Props) {
             {openBills.length > 1 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Allocate to Bills</Label>
+                  <Label>Allocate to {bill.currency} Bills</Label>
                   <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={() => autoAllocate(amount)}>
                     Auto-allocate
                   </Button>
@@ -163,7 +233,7 @@ export function BillActions({ bill, openBills }: Props) {
                   {allocations.map((alloc) => (
                     <div key={alloc.billId} className="flex items-center gap-3 px-3 py-2">
                       <span className="font-mono text-xs text-slate-600 w-24">{alloc.billNumber}</span>
-                      <span className="text-xs text-slate-400 flex-1">max {formatCurrency(alloc.maxAmount)}</span>
+                      <span className="text-xs text-slate-400 flex-1">max {formatCurrency(alloc.maxAmount, bill.currency)}</span>
                       <Input type="number" min="0" max={alloc.maxAmount} step="0.01" value={alloc.amount}
                         onChange={(e) => setAllocations((prev) =>
                           prev.map((a) => a.billId === alloc.billId ? { ...a, amount: parseFloat(e.target.value) || 0 } : a)
@@ -173,14 +243,14 @@ export function BillActions({ bill, openBills }: Props) {
                   ))}
                 </div>
                 <div className={`text-xs text-right ${Math.abs(totalAllocated - amount) > 0.01 ? "text-red-500" : "text-green-600"}`}>
-                  Allocated: {formatCurrency(totalAllocated)} / {formatCurrency(amount)}
+                  Allocated: {formatCurrency(totalAllocated, bill.currency)} / {formatCurrency(amount, bill.currency)}
                 </div>
               </div>
             )}
 
             <DialogFooter className="pt-2">
               <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-              <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Record Payment"}</Button>
+              <Button type="submit" disabled={loading || (netCash > 0.005 && bankAccounts.length === 0)}>{loading ? "Saving…" : "Record Payment"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

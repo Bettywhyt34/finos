@@ -49,22 +49,33 @@ export async function getActiveArFxAdjustment(
   );
 }
 
-/** Posted AP revaluation adjustment. AP settlement consumption is enabled in Money Out, not Money In. */
+/** Active unrealised AP adjustment still embedded in one bill's GL carrying value. */
 export async function getActiveApFxAdjustment(
   db: DbClient,
   tenantId: string,
   billId: string,
 ): Promise<number> {
-  const rows = await db.$queryRaw<Array<{ posted: unknown }>>`
-    SELECT COALESCE(SUM(fri."adjustment_base_amount"), 0) AS "posted"
-    FROM "fx_revaluation_items" fri
-    INNER JOIN "fx_revaluations" fr ON fr."id" = fri."fx_revaluation_id"
-    WHERE fri."tenant_id" = ${tenantId}::uuid
-      AND fri."item_type" = 'AP'
-      AND fri."bill_id" = ${billId}
-      AND fr."status" = 'POSTED'::fx_revaluation_status
+  const rows = await db.$queryRaw<Array<{ posted: unknown; paymentConsumed: unknown }>>`
+    SELECT
+      COALESCE((
+        SELECT SUM(fri."adjustment_base_amount")
+        FROM "fx_revaluation_items" fri
+        INNER JOIN "fx_revaluations" fr ON fr."id" = fri."fx_revaluation_id"
+        WHERE fri."tenant_id" = ${tenantId}::uuid
+          AND fri."item_type" = 'AP'
+          AND fri."bill_id" = ${billId}
+          AND fr."status" = 'POSTED'::fx_revaluation_status
+      ), 0) AS "posted",
+      COALESCE((
+        SELECT SUM(vpa."fx_unrealized_consumed")
+        FROM "vendor_payment_allocations" vpa
+        INNER JOIN "vendor_payments" vp ON vp."id" = vpa."payment_id"
+        WHERE vpa."bill_id" = ${billId}
+          AND vpa."tenant_id" = ${tenantId}::uuid
+          AND vp."tenant_id" = ${tenantId}::uuid
+      ), 0) AS "paymentConsumed"
   `;
-  return roundMoney(Number(rows[0]?.posted ?? 0));
+  return roundMoney(Number(rows[0]?.posted ?? 0) - Number(rows[0]?.paymentConsumed ?? 0));
 }
 
 export function consumeFxAdjustment(activeAdjustment: number, allocation: number, preAllocationBalance: number) {
