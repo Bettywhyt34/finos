@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createInvoice } from "../actions";
+import { createInvoiceControlled as createInvoice } from "../create-actions";
 import { formatCurrency } from "@/lib/utils";
 import { SUPPORTED_CURRENCIES } from "@/lib/fx";
 import {
@@ -196,6 +196,7 @@ export function InvoiceForm({
       exchangeRate: isBaseCurrency ? 1 : exchangeRate,
       paymentTermsDays,
       recogniseRevenueOnInvoiceDate: recogniseRevenue,
+      customDueDate,
       lines: lines.map((line) => ({
         itemId: line.itemId || undefined,
         description: line.description,
