@@ -41,15 +41,16 @@ export function CreditNoteForm({ invoices }: { invoices: CreditEligibleInvoice[]
   }
 
   function submit() {
-    if (!invoiceId || !selected) return toast.error("Select an invoice");
+    if (!invoiceId || !selected) { toast.error("Select an invoice"); return; }
     if (amount <= 0 || amount - selected.creditableRemaining > 0.01) {
-      return toast.error(`Credit must be between 0.01 and ${formatCurrency(selected.creditableRemaining, selected.currency)}`);
+      toast.error(`Credit must be between 0.01 and ${formatCurrency(selected.creditableRemaining, selected.currency)}`);
+      return;
     }
-    if (!reason.trim()) return toast.error("Enter a reason for the credit note");
+    if (!reason.trim()) { toast.error("Enter a reason for the credit note"); return; }
 
     startTransition(async () => {
       const result = await applyInvoiceCreditNote({ invoiceId, amount, issueDate, reason });
-      if ("error" in result) return toast.error(result.error);
+      if ("error" in result) { toast.error(result.error); return; }
       toast.success(customerCredit > 0 ? "Credit note applied and customer credit created" : "Credit note applied");
       setOpen(false);
       setReason("");
@@ -64,30 +65,9 @@ export function CreditNoteForm({ invoices }: { invoices: CreditEligibleInvoice[]
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>New credit note</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Invoice</Label>
-              <Select value={invoiceId} onValueChange={(value) => value && selectInvoice(value)}>
-                <SelectTrigger><SelectValue placeholder="Select invoice" /></SelectTrigger>
-                <SelectContent>
-                  {invoices.map((invoice) => (
-                    <SelectItem key={invoice.id} value={invoice.id}>
-                      {invoice.invoiceNumber} · {invoice.customerName} · {formatCurrency(invoice.creditableRemaining, invoice.currency)} creditable
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5"><Label>Credit date</Label><Input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} required /></div>
-              <div className="space-y-1.5"><Label>Credit amount {selected ? `(${selected.currency})` : ""}</Label><Input type="number" min="0.01" max={selected?.creditableRemaining} step="0.01" value={amount} onChange={(event) => setAmount(Number(event.target.value) || 0)} required /></div>
-            </div>
-            {selected ? (
-              <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--app-border)] bg-[var(--surface-muted)] p-3 text-xs">
-                <div><p className="text-[var(--text-secondary)]">Reduces Accounts Receivable</p><p className="mt-1 font-financial font-semibold text-[var(--text-primary)]">{formatCurrency(arReduction, selected.currency)}</p></div>
-                <div><p className="text-[var(--text-secondary)]">Creates customer credit</p><p className="mt-1 font-financial font-semibold text-[var(--text-primary)]">{formatCurrency(customerCredit, selected.currency)}</p></div>
-                <div className="col-span-2 text-[var(--text-secondary)]">Outstanding AR is {formatCurrency(selected.balanceDue, selected.currency)}. The invoice still has {formatCurrency(selected.creditableRemaining, selected.currency)} of value not already credited.</div>
-              </div>
-            ) : null}
+            <div className="space-y-1.5"><Label>Invoice</Label><Select value={invoiceId} onValueChange={(value) => value && selectInvoice(value)}><SelectTrigger><SelectValue placeholder="Select invoice" /></SelectTrigger><SelectContent>{invoices.map((invoice) => <SelectItem key={invoice.id} value={invoice.id}>{invoice.invoiceNumber} · {invoice.customerName} · {formatCurrency(invoice.creditableRemaining, invoice.currency)} creditable</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-4"><div className="space-y-1.5"><Label>Credit date</Label><Input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} required /></div><div className="space-y-1.5"><Label>Credit amount {selected ? `(${selected.currency})` : ""}</Label><Input type="number" min="0.01" max={selected?.creditableRemaining} step="0.01" value={amount} onChange={(event) => setAmount(Number(event.target.value) || 0)} required /></div></div>
+            {selected ? <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--app-border)] bg-[var(--surface-muted)] p-3 text-xs"><div><p className="text-[var(--text-secondary)]">Reduces Accounts Receivable</p><p className="mt-1 font-financial font-semibold text-[var(--text-primary)]">{formatCurrency(arReduction, selected.currency)}</p></div><div><p className="text-[var(--text-secondary)]">Creates customer credit</p><p className="mt-1 font-financial font-semibold text-[var(--text-primary)]">{formatCurrency(customerCredit, selected.currency)}</p></div><div className="col-span-2 text-[var(--text-secondary)]">Outstanding AR is {formatCurrency(selected.balanceDue, selected.currency)}. The invoice still has {formatCurrency(selected.creditableRemaining, selected.currency)} of value not already credited.</div></div> : null}
             <div className="space-y-1.5"><Label>Reason *</Label><Input value={reason} onChange={(event) => setReason(event.target.value)} maxLength={2000} placeholder="e.g. Pricing adjustment, service shortfall, billing correction" /></div>
             <p className="text-xs leading-5 text-[var(--text-secondary)]">FINOS reverses the relevant service/revenue and VAT accounting. Any credit above open AR becomes a customer-credit liability; it is not recorded as a payment.</p>
           </div>
