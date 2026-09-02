@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CircleDollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ export function RecogniseRevenueButton({ invoiceId, currency }: { invoiceId: str
   const [loading, setLoading] = useState(false);
   const [remaining, setRemaining] = useState(0);
   const [amount, setAmount] = useState(0);
+  const [recogniseFullBalance, setRecogniseFullBalance] = useState(true);
   const [recognitionDate, setRecognitionDate] = useState(new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
 
@@ -30,19 +32,21 @@ export function RecogniseRevenueButton({ invoiceId, currency }: { invoiceId: str
     }
     setRemaining(state.remaining);
     setAmount(state.remaining);
+    setRecogniseFullBalance(true);
     setOpen(true);
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!Number.isFinite(amount) || amount <= 0 || amount - remaining > 0.01) {
+    const amountToRecognise = recogniseFullBalance ? remaining : amount;
+    if (!Number.isFinite(amountToRecognise) || amountToRecognise <= 0 || amountToRecognise - remaining > 0.01) {
       toast.error(`Enter an amount between 0.01 and ${formatCurrency(remaining, currency)}`);
       return;
     }
     setLoading(true);
     const result = await recogniseStandaloneInvoiceRevenue({
       invoiceId,
-      amount,
+      amount: amountToRecognise,
       recognitionDate,
       note,
     });
@@ -71,10 +75,35 @@ export function RecogniseRevenueButton({ invoiceId, currency }: { invoiceId: str
             <div className="rounded-lg border border-[var(--app-border)] bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">
               Remaining unearned service value: <span className="font-semibold text-[var(--text-primary)]">{formatCurrency(remaining, currency)}</span>. This moves value from Unearned Revenue to Revenue. It does not change the invoice, VAT, Accounts Receivable, or cash.
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--app-border)] p-3">
+              <Checkbox
+                checked={recogniseFullBalance}
+                onCheckedChange={(checked) => {
+                  const full = checked === true;
+                  setRecogniseFullBalance(full);
+                  if (full) setAmount(remaining);
+                }}
+              />
+              <span>
+                <span className="block text-sm font-medium text-[var(--text-primary)]">Recognise full available balance</span>
+                <span className="mt-0.5 block text-xs text-[var(--text-secondary)]">When selected, FINOS recognises the entire remaining deferred amount and locks the amount field.</span>
+              </span>
+            </label>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Revenue earned</Label>
-                <Input type="number" min="0.01" max={remaining} step="0.01" value={amount} onChange={(event) => setAmount(Number(event.target.value) || 0)} required />
+                <Input
+                  type="number"
+                  min="0.01"
+                  max={remaining}
+                  step="0.01"
+                  value={recogniseFullBalance ? remaining : amount}
+                  readOnly={recogniseFullBalance}
+                  onChange={(event) => setAmount(Number(event.target.value) || 0)}
+                  required
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Recognition date</Label>
@@ -87,7 +116,7 @@ export function RecogniseRevenueButton({ invoiceId, currency }: { invoiceId: str
             </div>
             <DialogFooter>
               <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
-              <Button type="submit" disabled={loading || amount <= 0}>{loading ? "Posting…" : "Recognise revenue"}</Button>
+              <Button type="submit" disabled={loading || (recogniseFullBalance ? remaining <= 0 : amount <= 0)}>{loading ? "Posting…" : "Recognise revenue"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
