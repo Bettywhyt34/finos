@@ -55,6 +55,14 @@ CREATE INDEX IF NOT EXISTS vendor_payment_allocations_bill_idx
 CREATE INDEX IF NOT EXISTS vendor_payment_allocations_payment_idx
   ON public.vendor_payment_allocations(payment_id);
 
+-- Public is an exposed Supabase schema, so keep the new evidence table tenant-isolated.
+ALTER TABLE public.vendor_payment_allocations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON public.vendor_payment_allocations;
+CREATE POLICY tenant_isolation ON public.vendor_payment_allocations
+  FOR ALL TO public
+  USING (tenant_id = (current_setting('app.current_tenant'::text, true))::uuid)
+  WITH CHECK (tenant_id = (current_setting('app.current_tenant'::text, true))::uuid);
+
 CREATE OR REPLACE FUNCTION public.validate_vendor_payment_allocation_identity()
 RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
 DECLARE payment_tenant uuid; payment_vendor text; payment_currency text; payment_rate numeric;
