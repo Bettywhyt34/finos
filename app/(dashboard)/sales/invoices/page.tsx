@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FileText, Plus, Upload, Download } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { formatCurrency, toNGN, cn } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import { InvoiceListClient } from "./invoice-list-client";
 import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status";
 
@@ -12,7 +12,7 @@ export default async function InvoicesPage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [invoices, convertedQuotes] = await Promise.all([
+  const [invoices, convertedQuotes, tenant] = await Promise.all([
     prisma.invoice.findMany({
       where: { tenantId },
       include: { customer: { select: { companyName: true } } },
@@ -25,16 +25,18 @@ export default async function InvoicesPage() {
         AND "status" = 'CONVERTED'
         AND "converted_invoice_id" IS NOT NULL
     `,
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } }),
   ]);
   const protectedInvoiceIds = new Set(convertedQuotes.map((row) => row.invoiceId));
+  const baseCurrency = tenant?.currency.trim().toUpperCase() || "NGN";
 
   const totalAR = invoices
-    .filter((i) => ["SENT", "PARTIAL", "OVERDUE"].includes(i.status))
-    .reduce((s, i) => s + toNGN(parseFloat(String(i.balanceDue)), parseFloat(String(i.exchangeRate))), 0);
+    .filter((invoice) => ["SENT", "PARTIAL", "OVERDUE"].includes(invoice.status))
+    .reduce((sum, invoice) => sum + Number(invoice.balanceDue) * Number(invoice.exchangeRate), 0);
 
-  const draftCount = invoices.filter((i) => i.status === "DRAFT").length;
+  const draftCount = invoices.filter((invoice) => invoice.status === "DRAFT").length;
   const overdueCount = invoices.filter(
-    (i) => getInvoiceDisplayStatus({ status: i.status, dueDate: i.dueDate, balanceDue: String(i.balanceDue) }) === "OVERDUE"
+    (invoice) => getInvoiceDisplayStatus({ status: invoice.status, dueDate: invoice.dueDate, balanceDue: String(invoice.balanceDue) }) === "OVERDUE"
   ).length;
 
   return (
@@ -48,7 +50,7 @@ export default async function InvoicesPage() {
               {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
             </span>
             <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
-              AR {formatCurrency(totalAR)}
+              AR {formatCurrency(totalAR, baseCurrency)}
             </span>
             {draftCount > 0 && <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">{draftCount} draft</span>}
             {overdueCount > 0 && <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">{overdueCount} overdue</span>}
@@ -78,14 +80,15 @@ export default async function InvoicesPage() {
         </div>
       ) : (
         <InvoiceListClient
-          invoices={invoices.map((inv) => ({
-            ...inv,
-            exchangeRate: String(inv.exchangeRate),
-            totalAmount: String(inv.totalAmount),
-            balanceDue: String(inv.balanceDue),
-            sentAt: inv.sentAt ?? null,
-            paidAt: inv.paidAt ?? null,
-            convertedFromAcceptedQuote: protectedInvoiceIds.has(inv.id),
+          baseCurrency={baseCurrency}
+          invoices={invoices.map((invoice) => ({
+            ...invoice,
+            exchangeRate: String(invoice.exchangeRate),
+            totalAmount: String(invoice.totalAmount),
+            balanceDue: String(invoice.balanceDue),
+            sentAt: invoice.sentAt ?? null,
+            paidAt: invoice.paidAt ?? null,
+            convertedFromAcceptedQuote: protectedInvoiceIds.has(invoice.id),
           }))}
         />
       )}
