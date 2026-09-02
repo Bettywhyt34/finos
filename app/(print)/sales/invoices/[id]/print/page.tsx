@@ -1,18 +1,9 @@
 /**
  * Invoice Print Page — /sales/invoices/[id]/print
  *
- * Renders the invoice using the tenant's selected default PDF template.
- * Supports browser "Print / Save as PDF".
- *
- * Security:
- *   - Requires authenticated session
- *   - Invoice is fetched with tenantId scope (never trusts URL params)
- *   - Returns 404 if invoice not found or belongs to another tenant
- *
- * Template selection:
- *   1. Tenant's isDefault=true, isActive=true INVOICE template
- *   2. Any active INVOICE template (system templates preferred)
- *   3. "standard" layout if no templates exist
+ * Renders the invoice using the template and branding resolved by the shared
+ * invoice PDF data layer. Issued invoices use their stored presentation snapshot
+ * when available; drafts use current tenant configuration.
  */
 
 import type { Metadata } from "next";
@@ -37,14 +28,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const data = await prepareInvoicePdfData(tenantId, id);
   if (!data) return { title: "Invoice Not Found" };
 
-  return {
-    title: `Invoice ${data.invoice.invoiceNumber} — ${data.tenant.name}`,
-  };
+  return { title: `Invoice ${data.invoice.invoiceNumber} — ${data.tenant.name}` };
 }
 
 export default async function InvoicePrintPage({ params }: Props) {
   const { id } = await params;
-
   const session = await auth();
   const tenantId = session?.user?.tenantId;
   if (!tenantId) notFound();
@@ -56,52 +44,40 @@ export default async function InvoicePrintPage({ params }: Props) {
 
   return (
     <>
-      {/* Print-specific CSS */}
       <style>{`
-        @page {
-          size: A4 portrait;
-          margin: 12mm 10mm;
-        }
+        @page { size: A4 portrait; margin: 12mm 10mm; }
         @media print {
-          body { margin: 0; padding: 0; }
+          body { margin: 0; padding: 0; background: #fff; }
           .print\\:hidden { display: none !important; }
         }
-        body {
-          background: #f3f4f6;
-        }
-        @media print {
-          body { background: #fff; }
-        }
+        body { background: #f3f4f6; }
       `}</style>
 
-      {/* Print / Close button bar — hidden when printing */}
       <PrintTrigger invoiceNumber={data.invoice.invoiceNumber} />
 
-      {/* Invoice document */}
-      <div
-        style={{
-          paddingTop:      "56px",  /* offset for the fixed PrintTrigger bar */
-          backgroundColor: "#f3f4f6",
-          minHeight:       "100vh",
-        }}
-      >
-        <div
-          className="print:!pt-0 print:!bg-transparent"
-          style={{
-            padding:         "24px",
-            backgroundColor: "#f3f4f6",
-          }}
-        >
-          {/* White document card — screen only; removed on print */}
+      <div style={{ paddingTop: "56px", backgroundColor: "#f3f4f6", minHeight: "100vh" }}>
+        <div className="print:!pt-0 print:!bg-transparent" style={{ padding: "24px", backgroundColor: "#f3f4f6" }}>
           <div
             className="print:!shadow-none print:!rounded-none print:!p-0"
-            style={{
-              backgroundColor: "#fff",
-              borderRadius:    "8px",
-              boxShadow:       "0 2px 12px rgba(0,0,0,0.08)",
-              overflow:        "hidden",
-            }}
+            style={{ backgroundColor: "#fff", borderRadius: "8px", boxShadow: "0 2px 12px rgba(0,0,0,0.08)", overflow: "hidden" }}
           >
+            {data.invoice.orderNumber ? (
+              <div
+                style={{
+                  padding: "8px 28px",
+                  borderBottom: "1px solid #e5e7eb",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "8px",
+                  fontSize: "11px",
+                  backgroundColor: "#fafafa",
+                }}
+              >
+                <span style={{ color: "#6b7280", fontWeight: 600 }}>Order Number</span>
+                <span style={{ color: "#111827", fontFamily: "monospace", fontWeight: 700 }}>{data.invoice.orderNumber}</span>
+              </div>
+            ) : null}
+
             {layoutKey === "professional_branded_invoice" ? (
               <ProfessionalBrandedTemplate data={data} />
             ) : (
