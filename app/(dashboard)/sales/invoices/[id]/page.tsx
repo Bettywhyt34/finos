@@ -1,20 +1,21 @@
-import { auth }              from "@/lib/auth";
-import { prisma }            from "@/lib/prisma";
-import { notFound }          from "next/navigation";
-import Link                  from "next/link";
-import { ArrowLeft, Printer } from "lucide-react";
-import { buttonVariants }    from "@/components/ui/button";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft, LockKeyhole, Printer } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
 import { formatCurrency, toNGN, cn, formatDate } from "@/lib/utils";
-import { InvoiceActions }    from "./invoice-actions";
+import { InvoiceActions } from "./invoice-actions";
 import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status";
-import { prepareInvoicePdfData }   from "@/lib/pdf/invoice-data";
-import { InvoicePreview }    from "@/components/invoices/invoice-preview";
+import { prepareInvoicePdfData } from "@/lib/pdf/invoice-data";
+import { InvoicePreview } from "@/components/invoices/invoice-preview";
 
 const statusColors: Record<string, string> = {
   DRAFT:       "bg-slate-100 text-slate-600",
   SENT:        "bg-blue-100 text-blue-700",
   PARTIAL:     "bg-amber-100 text-amber-700",
   PAID:        "bg-green-100 text-green-700",
+  SETTLED:     "bg-teal-100 text-teal-700",
   OVERDUE:     "bg-red-100 text-red-700",
   WRITTEN_OFF: "bg-slate-100 text-slate-400",
   VOIDED:      "bg-red-100 text-red-500 line-through",
@@ -29,23 +30,29 @@ interface ReceiptDestinationRow {
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session  = await auth();
+  const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [pdfData, meta] = await Promise.all([
+  const [pdfData, meta, convertedQuoteRows] = await Promise.all([
     prepareInvoicePdfData(tenantId, id),
     prisma.invoice.findFirst({
-      where:  { id, tenantId },
+      where: { id, tenantId },
       select: { id: true, customerId: true, voidedReason: true, voidedAt: true },
     }),
+    prisma.$queryRaw<Array<{ quoteNumber: string }>>`
+      SELECT "quote_number" AS "quoteNumber"
+      FROM "quotes"
+      WHERE "tenant_id" = ${tenantId}::uuid
+        AND "converted_invoice_id" = ${id}
+        AND "status" = 'CONVERTED'
+      LIMIT 1
+    `,
   ]);
 
   if (!pdfData || !meta) notFound();
   const { invoice } = pdfData;
+  const convertedQuote = convertedQuoteRows[0] ?? null;
 
-  // A receipt is a single-currency settlement. Only open invoices in the same
-  // currency may be allocated together, and only mapped receiving accounts in
-  // that currency are offered to the user.
   const [openInvoices, bankAccounts] = await Promise.all([
     prisma.invoice.findMany({
       where: {
@@ -76,15 +83,15 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     `,
   ]);
 
-  const isNGN       = invoice.currency === "NGN";
-  const rate        = invoice.exchangeRate;
-  const totalNGN    = toNGN(invoice.totalAmount, rate);
-  const balance     = invoice.balanceDue;
-  const balanceNGN  = toNGN(balance, rate);
+  const isNGN = invoice.currency === "NGN";
+  const rate = invoice.exchangeRate;
+  const totalNGN = toNGN(invoice.totalAmount, rate);
+  const balance = invoice.balanceDue;
+  const balanceNGN = toNGN(balance, rate);
 
   const displayStatus = getInvoiceDisplayStatus({
-    status:     invoice.status,
-    dueDate:    invoice.dueDate,
+    status: invoice.status,
+    dueDate: invoice.dueDate,
     balanceDue: String(balance),
   });
 
@@ -97,9 +104,14 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           </Link>
           <span className="text-slate-300">/</span>
           <span className="font-mono text-sm font-semibold">{invoice.invoiceNumber}</span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[displayStatus] ?? ""}`}>
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[displayStatus] ?? "bg-slate-100 text-slate-600"}`}>
             {displayStatus}
           </span>
+          {convertedQuote && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700">
+              <LockKeyhole className="h-3 w-3" /> From {convertedQuote.quoteNumber}
+            </span>
+          )}
           {!isNGN && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">{invoice.currency}</span>}
         </div>
 
@@ -119,14 +131,21 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
               currency: invoice.currency,
               exchangeRate: invoice.exchangeRate,
             }}
-            openInvoices={openInvoices.map((item) => ({
-              ...item,
-              balanceDue: parseFloat(String(item.balanceDue)),
-            }))}
+            openInvoices={openInvoices.map((item) => ({ ...item, balanceDue: parseFloat(String(item.balanceDue)) }))}
             bankAccounts={bankAccounts}
           />
         </div>
       </div>
+
+      {convertedQuote && invoice.status === "DRAFT" && (
+        <div className="flex items-start gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-sm">
+          <LockKeyhole className="h-4 w-4 text-violet-700 mt-0.5" />
+          <div>
+            <p className="font-medium text-violet-900">Commercial terms protected by accepted quote {convertedQuote.quoteNumber}</p>
+            <p className="text-violet-700 mt-0.5">Customer, currency, amounts and invoice lines stay aligned with the accepted quote. Administrative fields may still be updated.</p>
+          </div>
+        </div>
+      )}
 
       {invoice.status === "VOIDED" && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm">
