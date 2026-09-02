@@ -1,25 +1,26 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
-import { ArrowRight, BookOpen, Loader2, LockKeyhole, Trash2 } from "lucide-react"
+import { ArrowRight, BookOpen, Loader2, LockKeyhole, Search, Trash2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
-import { cn, formatCurrency, formatDate, toNGN } from "@/lib/utils"
+import { cn, formatCurrency, formatDate } from "@/lib/utils"
 import { postInvoicesToLedger } from "./actions"
 import { bulkDeleteInvoicesSafely } from "./bulk-delete-actions"
 import { getInvoiceDisplayStatus } from "@/lib/invoices/display-status"
 
 const statusColors: Record<string, string> = {
-  DRAFT:       "bg-slate-100 text-slate-600",
-  SENT:        "bg-blue-100 text-blue-700",
-  PARTIAL:     "bg-amber-100 text-amber-700",
-  PAID:        "bg-emerald-100 text-emerald-700",
-  SETTLED:     "bg-teal-100 text-teal-700",
-  OVERDUE:     "bg-red-100 text-red-700",
+  DRAFT: "bg-slate-100 text-slate-600",
+  SENT: "bg-blue-100 text-blue-700",
+  PARTIAL: "bg-amber-100 text-amber-700",
+  PAID: "bg-emerald-100 text-emerald-700",
+  SETTLED: "bg-teal-100 text-teal-700",
+  OVERDUE: "bg-red-100 text-red-700",
   WRITTEN_OFF: "bg-slate-100 text-slate-400",
-  VOIDED:      "bg-red-50 text-red-400 line-through",
+  VOIDED: "bg-red-50 text-red-400 line-through",
 }
 
 const MS_PER_DAY = 86_400_000
@@ -33,6 +34,8 @@ function invoiceAgeDays(sentAt: Date | null, paidAt: Date | null, status: string
 type InvoiceRow = {
   id: string
   invoiceNumber: string
+  orderNumber: string | null
+  reference: string | null
   status: string
   currency: string
   exchangeRate: string | number
@@ -46,30 +49,41 @@ type InvoiceRow = {
   customer: { companyName: string }
 }
 
-export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
+export function InvoiceListClient({ invoices, baseCurrency }: { invoices: InvoiceRow[]; baseCurrency: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [pending, startTransition] = useTransition()
+  const [search, setSearch] = useState("")
 
-  const draftIds = invoices.filter((i) => i.status === "DRAFT").map((i) => i.id)
-  const deletableDraftIds = invoices.filter((i) => i.status === "DRAFT" && !i.convertedFromAcceptedQuote).map((i) => i.id)
+  const filteredInvoices = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return invoices
+    return invoices.filter((invoice) => [
+      invoice.invoiceNumber,
+      invoice.orderNumber,
+      invoice.reference,
+      invoice.customer.companyName,
+    ].some((value) => value?.toLowerCase().includes(query)))
+  }, [invoices, search])
+
+  const draftIds = filteredInvoices.filter((invoice) => invoice.status === "DRAFT").map((invoice) => invoice.id)
   const allDraftSelected = draftIds.length > 0 && draftIds.every((id) => selected.has(id))
 
   const toggleAll = () => {
     if (allDraftSelected) {
-      setSelected((prev) => {
-        const next = new Set(prev)
+      setSelected((previous) => {
+        const next = new Set(previous)
         draftIds.forEach((id) => next.delete(id))
         return next
       })
     } else {
-      setSelected((prev) => new Set(Array.from(prev).concat(draftIds)))
+      setSelected((previous) => new Set(Array.from(previous).concat(draftIds)))
     }
   }
 
   const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
+    setSelected((previous) => {
+      const next = new Set(previous)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
@@ -86,10 +100,10 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
       setDeleteOpen(false)
       if ("error" in result) { toast.error(result.error); return }
       setSelected(new Set())
-      const msg = result.deleted === 1 ? "1 draft invoice deleted" : `${result.deleted} draft invoices deleted`
-      if (result.protected > 0) toast.warning(`${msg}. ${result.protected} accepted-quote draft${result.protected === 1 ? " was" : "s were"} protected.`)
-      else if (result.skipped > 0) toast.warning(`${msg} (${result.skipped} skipped)`)
-      else toast.success(msg)
+      const message = result.deleted === 1 ? "1 draft invoice deleted" : `${result.deleted} draft invoices deleted`
+      if (result.protected > 0) toast.warning(`${message}. ${result.protected} accepted-quote draft${result.protected === 1 ? " was" : "s were"} protected.`)
+      else if (result.skipped > 0) toast.warning(`${message} (${result.skipped} skipped)`)
+      else toast.success(message)
     })
   }
 
@@ -106,6 +120,19 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="relative w-full max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search invoice, customer, order number or reference"
+            className="pl-9"
+          />
+        </div>
+        {search.trim() ? <p className="text-xs text-slate-500">{filteredInvoices.length} of {invoices.length} invoices</p> : null}
+      </div>
+
       {selected.size > 0 && (
         <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
           <span className="text-sm font-medium text-emerald-800">{selected.size} invoice{selected.size !== 1 ? "s" : ""} selected</span>
@@ -135,47 +162,51 @@ export function InvoiceListClient({ invoices }: { invoices: InvoiceRow[] }) {
         <table className="w-full text-sm">
           <thead className="bg-emerald-50 border-b border-emerald-100">
             <tr>
-              <th className="px-3 py-3 w-10">{draftIds.length > 0 && <input type="checkbox" checked={allDraftSelected} onChange={toggleAll} title="Select all DRAFT invoices" className="rounded border-slate-300 text-emerald-600 cursor-pointer" />}</th>
+              <th className="px-3 py-3 w-10">{draftIds.length > 0 && <input type="checkbox" checked={allDraftSelected} onChange={toggleAll} title="Select all visible DRAFT invoices" className="rounded border-slate-300 text-emerald-600 cursor-pointer" />}</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Number</th>
+              <th className="text-left px-4 py-3 font-medium text-emerald-700">Order No.</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Customer</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Date</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Due</th>
               <th className="text-left px-4 py-3 font-medium text-emerald-700">Status</th>
               <th className="text-right px-4 py-3 font-medium text-emerald-700">Age</th>
               <th className="text-right px-4 py-3 font-medium text-emerald-700">Total</th>
-              <th className="text-right px-4 py-3 font-medium text-emerald-700">Balance (NGN)</th>
+              <th className="text-right px-4 py-3 font-medium text-emerald-700">Balance ({baseCurrency})</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {invoices.map((inv) => {
-              const balance = parseFloat(String(inv.balanceDue))
-              const rate = parseFloat(String(inv.exchangeRate))
-              const balanceNGN = toNGN(balance, rate)
-              const totalNGN = toNGN(parseFloat(String(inv.totalAmount)), rate)
-              const isNGN = inv.currency === "NGN"
-              const statusKey = getInvoiceDisplayStatus(inv)
-              const isDraft = inv.status === "DRAFT"
-              const isChecked = selected.has(inv.id)
-              const ageDays = invoiceAgeDays(inv.sentAt, inv.paidAt, inv.status)
+            {filteredInvoices.length === 0 ? (
+              <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-500">No invoices match your search.</td></tr>
+            ) : filteredInvoices.map((invoice) => {
+              const balance = Number(invoice.balanceDue)
+              const rate = Number(invoice.exchangeRate)
+              const balanceBase = balance * rate
+              const totalBase = Number(invoice.totalAmount) * rate
+              const isBaseCurrency = invoice.currency === baseCurrency
+              const statusKey = getInvoiceDisplayStatus(invoice)
+              const isDraft = invoice.status === "DRAFT"
+              const isChecked = selected.has(invoice.id)
+              const ageDays = invoiceAgeDays(invoice.sentAt, invoice.paidAt, invoice.status)
 
               return (
-                <tr key={inv.id} className={cn("hover:bg-slate-50 transition-colors", isChecked && "bg-emerald-50/60")}>
-                  <td className="px-3 py-3 text-center">{isDraft && <input type="checkbox" checked={isChecked} onChange={() => toggle(inv.id)} className="rounded border-slate-300 text-emerald-600 cursor-pointer" />}</td>
+                <tr key={invoice.id} className={cn("hover:bg-slate-50 transition-colors", isChecked && "bg-emerald-50/60")}>
+                  <td className="px-3 py-3 text-center">{isDraft && <input type="checkbox" checked={isChecked} onChange={() => toggle(invoice.id)} className="rounded border-slate-300 text-emerald-600 cursor-pointer" />}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Link href={`/sales/invoices/${inv.id}`} className="font-mono text-xs text-blue-600 hover:underline">{inv.invoiceNumber}</Link>
-                      {inv.convertedFromAcceptedQuote && <span title="Created from an accepted quote" className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"><LockKeyhole className="h-3 w-3" /> Quote</span>}
+                      <Link href={`/sales/invoices/${invoice.id}`} className="font-mono text-xs text-blue-600 hover:underline">{invoice.invoiceNumber}</Link>
+                      {invoice.convertedFromAcceptedQuote && <span title="Created from an accepted quote" className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"><LockKeyhole className="h-3 w-3" /> Quote</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{inv.customer.companyName}</td>
-                  <td className="px-4 py-3 text-slate-500">{formatDate(inv.issueDate)}</td>
-                  <td className="px-4 py-3 text-slate-500">{formatDate(inv.dueDate)}</td>
-                  <td className="px-4 py-3"><div className="flex items-center gap-1.5"><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[statusKey] ?? "bg-slate-100 text-slate-600"}`}>{statusKey}</span>{!isNGN && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">{inv.currency}</span>}</div></td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{invoice.orderNumber || "—"}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{invoice.customer.companyName}</td>
+                  <td className="px-4 py-3 text-slate-500">{formatDate(invoice.issueDate)}</td>
+                  <td className="px-4 py-3 text-slate-500">{formatDate(invoice.dueDate)}</td>
+                  <td className="px-4 py-3"><div className="flex items-center gap-1.5"><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[statusKey] ?? "bg-slate-100 text-slate-600"}`}>{statusKey}</span>{!isBaseCurrency && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">{invoice.currency}</span>}</div></td>
                   <td className="px-4 py-3 text-right font-mono text-slate-500 text-xs">{ageDays !== null ? <span className={ageDays > 60 ? "text-red-500 font-semibold" : ageDays > 30 ? "text-amber-600" : "text-slate-600"}>{ageDays}d</span> : <span className="text-slate-300">—</span>}</td>
-                  <td className="px-4 py-3 text-right font-mono"><div>{formatCurrency(parseFloat(String(inv.totalAmount)), inv.currency)}</div>{!isNGN && <div className="text-xs text-slate-400">≈ {formatCurrency(totalNGN)}</div>}</td>
-                  <td className="px-4 py-3 text-right font-mono"><span className={balanceNGN > 0 ? "text-amber-600 font-semibold" : "text-slate-400"}>{formatCurrency(balanceNGN)}</span></td>
-                  <td className="px-4 py-3"><Link href={`/sales/invoices/${inv.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 px-2 text-xs")}><ArrowRight className="h-3.5 w-3.5" /></Link></td>
+                  <td className="px-4 py-3 text-right font-mono"><div>{formatCurrency(Number(invoice.totalAmount), invoice.currency)}</div>{!isBaseCurrency && <div className="text-xs text-slate-400">≈ {formatCurrency(totalBase, baseCurrency)}</div>}</td>
+                  <td className="px-4 py-3 text-right font-mono"><span className={balanceBase > 0 ? "text-amber-600 font-semibold" : "text-slate-400"}>{formatCurrency(balanceBase, baseCurrency)}</span></td>
+                  <td className="px-4 py-3"><Link href={`/sales/invoices/${invoice.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 px-2 text-xs")}><ArrowRight className="h-3.5 w-3.5" /></Link></td>
                 </tr>
               )
             })}
