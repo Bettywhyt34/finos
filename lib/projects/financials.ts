@@ -81,13 +81,26 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
           AND jel."project_id" = ${projectId}
           AND je."source" IS DISTINCT FROM 'year-end-close'
       ),
+      credit_effect AS (
+        SELECT
+          cnsa."invoice_line_allocation_id" AS "allocationId",
+          COALESCE(SUM(cnsa."service_base_amount"), 0) AS "serviceCredited",
+          COALESCE(SUM(cnsa."unearned_reversed"), 0) AS "unearnedReversed",
+          COALESCE(SUM(cnsa."contract_asset_restored"), 0) AS "contractAssetRestored"
+        FROM "credit_note_service_allocations" cnsa
+        INNER JOIN "credit_notes" cn ON cn."id" = cnsa."credit_note_id"
+        WHERE cn."tenant_id" = ${tenantId}::uuid
+          AND cn."status" = 'APPLIED'::"CreditNoteStatus"
+        GROUP BY cnsa."invoice_line_allocation_id"
+      ),
       billing AS (
         SELECT
-          COALESCE(SUM(ila."invoice_amount"), 0) AS "invoiced",
-          COALESCE(SUM(ila."unearned_created"), 0) AS "unearnedCreated",
-          COALESCE(SUM(ila."contract_asset_cleared"), 0) AS "contractAssetCleared"
+          COALESCE(SUM(ila."invoice_amount" - COALESCE(ce."serviceCredited", 0)), 0) AS "invoiced",
+          COALESCE(SUM(ila."unearned_created" - COALESCE(ce."unearnedReversed", 0)), 0) AS "unearnedCreated",
+          COALESCE(SUM(ila."contract_asset_cleared" - COALESCE(ce."contractAssetRestored", 0)), 0) AS "contractAssetCleared"
         FROM "invoice_line_revenue_allocations" ila
         INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
+        LEFT JOIN credit_effect ce ON ce."allocationId" = ila."id"
         WHERE ila."tenant_id" = ${tenantId}::uuid
           AND ila."project_id" = ${projectId}
           AND i."status" <> 'VOIDED'
