@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 export type SystemAccountRole =
   | "ACCOUNTS_RECEIVABLE"
   | "ACCOUNTS_PAYABLE"
+  | "CUSTOMER_CREDIT"
   | "EXPENSE_REIMBURSEMENT_PAYABLE"
   | "DEFAULT_BANK"
   | "INPUT_VAT"
@@ -19,6 +20,7 @@ export type SystemAccountRole =
 const EXPECTED_TYPES: Partial<Record<SystemAccountRole, AccountType[]>> = {
   ACCOUNTS_RECEIVABLE: ["ASSET"],
   ACCOUNTS_PAYABLE: ["LIABILITY"],
+  CUSTOMER_CREDIT: ["LIABILITY"],
   EXPENSE_REIMBURSEMENT_PAYABLE: ["LIABILITY"],
   DEFAULT_BANK: ["ASSET"],
   INPUT_VAT: ["ASSET"],
@@ -59,13 +61,6 @@ function assertExpectedType(role: SystemAccountRole, account: MappingRow) {
   }
 }
 
-/**
- * Resolve a FINOS accounting role to an active account for one tenant.
- *
- * The role mapping is the permanent identity. `legacyCode` exists only so current
- * tenants can keep posting while their mappings are configured. New/reconstructed
- * flows should pass the fallback only during the migration period.
- */
 export async function resolveSystemAccount(
   db: DbClient,
   tenantId: string,
@@ -73,15 +68,10 @@ export async function resolveSystemAccount(
   legacyCode?: string,
 ): Promise<ResolvedSystemAccount> {
   const rows = await db.$queryRaw<MappingRow[]>`
-    SELECT
-      coa."id",
-      coa."code",
-      coa."name",
-      coa."type"::text AS "type"
+    SELECT coa."id", coa."code", coa."name", coa."type"::text AS "type"
     FROM "system_account_mappings" sam
     INNER JOIN "chart_of_accounts" coa
-      ON coa."id" = sam."account_id"
-     AND coa."tenant_id" = sam."tenant_id"
+      ON coa."id" = sam."account_id" AND coa."tenant_id" = sam."tenant_id"
     WHERE sam."tenant_id" = ${tenantId}::uuid
       AND sam."role" = ${role}
       AND coa."is_active" = true
@@ -110,11 +100,6 @@ export async function resolveSystemAccount(
   );
 }
 
-/** Resolve through the default Prisma client for read-before-write workflows. */
-export function getSystemAccount(
-  tenantId: string,
-  role: SystemAccountRole,
-  legacyCode?: string,
-) {
+export function getSystemAccount(tenantId: string, role: SystemAccountRole, legacyCode?: string) {
   return resolveSystemAccount(prisma, tenantId, role, legacyCode);
 }

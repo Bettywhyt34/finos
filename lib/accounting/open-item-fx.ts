@@ -7,7 +7,7 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-interface AdjustmentRow { posted: unknown; consumed: unknown; }
+interface AdjustmentRow { posted: unknown; receiptConsumed: unknown; creditConsumed: unknown; }
 
 /** Active unrealised AR adjustment still embedded in one invoice's GL carrying value. */
 export async function getActiveArFxAdjustment(
@@ -33,9 +33,20 @@ export async function getActiveArFxAdjustment(
         WHERE cpa."invoice_id" = ${invoiceId}
           AND cp."tenant_id" = ${tenantId}::uuid
           AND cp."status" = 'POSTED'::customer_payment_status
-      ), 0) AS "consumed"
+      ), 0) AS "receiptConsumed",
+      COALESCE((
+        SELECT SUM(cca."fx_unrealized_consumed")
+        FROM "customer_credit_applications" cca
+        WHERE cca."invoice_id" = ${invoiceId}
+          AND cca."tenant_id" = ${tenantId}::uuid
+          AND cca."status" = 'POSTED'
+      ), 0) AS "creditConsumed"
   `;
-  return roundMoney(Number(rows[0]?.posted ?? 0) - Number(rows[0]?.consumed ?? 0));
+  return roundMoney(
+    Number(rows[0]?.posted ?? 0) -
+    Number(rows[0]?.receiptConsumed ?? 0) -
+    Number(rows[0]?.creditConsumed ?? 0),
+  );
 }
 
 /** Posted AP revaluation adjustment. AP settlement consumption is enabled in Money Out, not Money In. */

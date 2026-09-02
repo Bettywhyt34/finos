@@ -9,6 +9,7 @@ import type { SystemAccountRole } from "@/lib/accounting/system-accounts";
 const EXPECTED_TYPES: Record<SystemAccountRole, AccountType[]> = {
   ACCOUNTS_RECEIVABLE: ["ASSET"],
   ACCOUNTS_PAYABLE: ["LIABILITY"],
+  CUSTOMER_CREDIT: ["LIABILITY"],
   EXPENSE_REIMBURSEMENT_PAYABLE: ["LIABILITY"],
   DEFAULT_BANK: ["ASSET"],
   INPUT_VAT: ["ASSET"],
@@ -52,9 +53,7 @@ export async function saveSystemAccountMapping(formData: FormData) {
 
   const expected = EXPECTED_TYPES[roleValue];
   if (!expected.includes(account.type)) {
-    throw new Error(
-      `${roleValue} requires ${expected.join(" or ")} account, but ${account.code} — ${account.name} is ${account.type}.`,
-    );
+    throw new Error(`${roleValue} requires ${expected.join(" or ")} account, but ${account.code} — ${account.name} is ${account.type}.`);
   }
 
   await prisma.$executeRaw`

@@ -33,6 +33,7 @@ const BASE_NAV: NavSection[] = [
     { label: "Invoices", href: "/sales/invoices" },
     { label: "Receipts", href: "/sales/receipts" },
     { label: "Credit Notes", href: "/sales/credit-notes" },
+    { label: "Customer Credits", href: "/sales/customer-credits" },
   ] },
   { key: "money-out", label: "Money Out", icon: WalletCards, children: [
     { label: "Vendors", href: "/vendors" },
@@ -103,72 +104,34 @@ export function Sidebar({ userName, userRole, connectedAppCount = 0, showBettywh
       <nav className="min-h-0 flex-1 overflow-y-auto px-5 py-4 [scrollbar-width:thin]">
         <Accordion defaultValue={defaultOpen} className="space-y-1">
           {nav.map((section) => {
-            const isChildActive = section.children?.some(
-              (child) => pathname === child.href || pathname.startsWith(`${child.href}/`)
-            );
-            const isDirectActive = section.href
-              ? pathname === section.href || (section.href !== "/" && pathname.startsWith(`${section.href}/`))
-              : false;
+            const isChildActive = section.children?.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`));
+            const isDirectActive = section.href ? pathname === section.href || (section.href !== "/" && pathname.startsWith(`${section.href}/`)) : false;
             const Icon = section.icon;
 
             if (section.children) {
               return (
                 <AccordionItem key={section.key} value={section.key} className="border-none">
-                  <AccordionTrigger className={cn(
-                    "min-h-11 rounded-lg px-3 py-2.5 text-[15px] font-medium text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:no-underline",
-                    isChildActive && "bg-white/10 text-white"
-                  )}>
-                    <Icon className="h-[19px] w-[19px] shrink-0" />
-                    <span className="ml-3 flex-1 text-left">{section.label}</span>
-                    {section.badge ? <span className="mr-2 rounded-md bg-white/15 px-2 py-0.5 text-xs font-semibold text-white">{section.badge}</span> : null}
+                  <AccordionTrigger className={cn("min-h-11 rounded-lg px-3 py-2.5 text-[15px] font-medium text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:no-underline", isChildActive && "bg-white/10 text-white")}>
+                    <Icon className="h-[19px] w-[19px] shrink-0" /><span className="ml-3 flex-1 text-left">{section.label}</span>{section.badge ? <span className="mr-2 rounded-md bg-white/15 px-2 py-0.5 text-xs font-semibold text-white">{section.badge}</span> : null}
                   </AccordionTrigger>
-                  <AccordionContent className="pb-1 pt-1">
-                    <div className="ml-[21px] border-l border-white/15 pl-4">
-                      {section.children.map((child) => {
-                        const active = pathname === child.href || pathname.startsWith(`${child.href}/`);
-                        return (
-                          <Link key={child.href} href={child.href} className={cn(
-                            "relative mb-0.5 block rounded-md px-3 py-2 text-sm text-[var(--sidebar-muted)] transition-colors hover:bg-white/10 hover:text-white",
-                            active && "bg-[var(--sidebar-active)] text-white before:absolute before:-left-[17px] before:top-0 before:h-full before:w-0.5 before:bg-[#55d6b8]"
-                          )}>{child.label}</Link>
-                        );
-                      })}
-                    </div>
-                  </AccordionContent>
+                  <AccordionContent className="pb-1 pt-1"><div className="ml-[21px] border-l border-white/15 pl-4">
+                    {section.children.map((child) => {
+                      const active = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                      return <Link key={child.href} href={child.href} className={cn("relative mb-0.5 block rounded-md px-3 py-2 text-sm text-[var(--sidebar-muted)] transition-colors hover:bg-white/10 hover:text-white", active && "bg-[var(--sidebar-active)] text-white before:absolute before:-left-[17px] before:top-0 before:h-full before:w-0.5 before:bg-[#55d6b8]")}>{child.label}</Link>;
+                    })}
+                  </div></AccordionContent>
                 </AccordionItem>
               );
             }
 
-            if (section.disabled) {
-              return (
-                <div key={section.key} aria-disabled="true" className="flex min-h-11 items-center rounded-lg px-3 py-2.5 text-[15px] font-medium text-[var(--sidebar-text)] opacity-75">
-                  <Icon className="h-[19px] w-[19px]" /><span className="ml-3 flex-1">{section.label}</span><ChevronDown className="h-4 w-4" />
-                </div>
-              );
-            }
+            if (section.disabled) return <div key={section.key} aria-disabled="true" className="flex min-h-11 items-center rounded-lg px-3 py-2.5 text-[15px] font-medium text-[var(--sidebar-text)] opacity-75"><Icon className="h-[19px] w-[19px]" /><span className="ml-3 flex-1">{section.label}</span><ChevronDown className="h-4 w-4" /></div>;
 
-            return (
-              <Link key={section.key} href={section.href!} className={cn(
-                "flex min-h-11 items-center rounded-lg px-3 py-2.5 text-[15px] font-medium text-[var(--sidebar-text)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-white",
-                isDirectActive && "bg-[var(--sidebar-active)] text-white"
-              )}>
-                <Icon className="h-[19px] w-[19px]" /><span className="ml-3">{section.label}</span>
-              </Link>
-            );
+            return <Link key={section.key} href={section.href!} className={cn("flex min-h-11 items-center rounded-lg px-3 py-2.5 text-[15px] font-medium text-[var(--sidebar-text)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-white", isDirectActive && "bg-[var(--sidebar-active)] text-white")}><Icon className="h-[19px] w-[19px]" /><span className="ml-3">{section.label}</span></Link>;
           })}
         </Accordion>
       </nav>
 
-      <div className="shrink-0 border-t border-[var(--sidebar-border)] p-5">
-        <div className="flex items-center gap-3 rounded-lg px-1 py-1">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[var(--sidebar-active)] text-sm font-semibold text-white">{initials}</div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">{userName ?? "User"}</p>
-            <p className="truncate text-xs text-[var(--sidebar-muted)]">{userRole ?? "Team member"}</p>
-          </div>
-          <UserRound className="h-4 w-4 text-[var(--sidebar-muted)]" />
-        </div>
-      </div>
+      <div className="shrink-0 border-t border-[var(--sidebar-border)] p-5"><div className="flex items-center gap-3 rounded-lg px-1 py-1"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[var(--sidebar-active)] text-sm font-semibold text-white">{initials}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{userName ?? "User"}</p><p className="truncate text-xs text-[var(--sidebar-muted)]">{userRole ?? "Team member"}</p></div><UserRound className="h-4 w-4 text-[var(--sidebar-muted)]" /></div></div>
     </aside>
   );
 }
