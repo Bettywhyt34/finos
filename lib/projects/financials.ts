@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 export interface ProjectFinancialMetrics {
   revenueEarned: number;
   invoiced: number;
+  collected: number;
+  outstandingAR: number;
   costsIncurred: number;
   grossMargin: number;
   contractAsset: number;
@@ -35,6 +37,8 @@ export interface ProjectCostBreakdownRow {
 interface MetricRow {
   revenueEarned: unknown;
   invoiced: unknown;
+  collected: unknown;
+  outstandingAR: unknown;
   costsIncurred: unknown;
   contractAsset: unknown;
   unearnedIncome: unknown;
@@ -105,6 +109,36 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
           AND ila."project_id" = ${projectId}
           AND i."status" <> 'VOIDED'
       ),
+      project_invoice_share AS (
+        SELECT
+          ila."invoice_id" AS "invoiceId",
+          SUM(ila."invoice_amount") AS "projectServiceBase",
+          NULLIF((MAX(i."total_amount") - MAX(i."tax_amount")) * MAX(i."exchange_rate"), 0) AS "invoiceServiceBase",
+          MAX(i."balance_due") * MAX(i."exchange_rate") AS "outstandingHistoricalBase"
+        FROM "invoice_line_revenue_allocations" ila
+        INNER JOIN "invoices" i ON i."id" = ila."invoice_id" AND i."tenant_id" = ila."tenant_id"
+        WHERE ila."tenant_id" = ${tenantId}::uuid
+          AND ila."project_id" = ${projectId}
+          AND i."status" NOT IN ('DRAFT','VOIDED','WRITTEN_OFF')
+        GROUP BY ila."invoice_id"
+      ),
+      collection AS (
+        SELECT
+          COALESCE(SUM(
+            CASE WHEN cp."status" = 'POSTED'::customer_payment_status
+              THEN cpa."base_settlement_amount" * LEAST(1, pis."projectServiceBase" / pis."invoiceServiceBase")
+              ELSE 0 END
+          ),0) AS "collected"
+        FROM project_invoice_share pis
+        LEFT JOIN "customer_payment_allocations" cpa ON cpa."invoice_id" = pis."invoiceId"
+        LEFT JOIN "customer_payments" cp ON cp."id" = cpa."payment_id" AND cp."tenant_id" = ${tenantId}::uuid
+      ),
+      receivable AS (
+        SELECT COALESCE(SUM(
+          pis."outstandingHistoricalBase" * LEAST(1, pis."projectServiceBase" / pis."invoiceServiceBase")
+        ),0) AS "outstandingAR"
+        FROM project_invoice_share pis
+      ),
       recognition AS (
         SELECT
           COALESCE(SUM(CASE WHEN "status" = 'POSTED' THEN "unearned_used" ELSE 0 END), 0) AS "unearnedUsed",
@@ -116,10 +150,12 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
       SELECT
         gl."revenueEarned",
         billing."invoiced",
+        collection."collected",
+        receivable."outstandingAR",
         gl."costsIncurred",
         recognition."contractAssetCreated" - billing."contractAssetCleared" AS "contractAsset",
         billing."unearnedCreated" - recognition."unearnedUsed" AS "unearnedIncome"
-      FROM gl CROSS JOIN billing CROSS JOIN recognition
+      FROM gl CROSS JOIN billing CROSS JOIN collection CROSS JOIN receivable CROSS JOIN recognition
     `,
     prisma.$queryRaw<HistoryRow[]>`
       SELECT
@@ -162,6 +198,8 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
   const row = metricRows[0];
   const revenueEarned = Number(row?.revenueEarned ?? 0);
   const invoiced = Number(row?.invoiced ?? 0);
+  const collected = Number(row?.collected ?? 0);
+  const outstandingAR = Number(row?.outstandingAR ?? 0);
   const costsIncurred = Number(row?.costsIncurred ?? 0);
   const contractAsset = Number(row?.contractAsset ?? 0);
   const unearnedIncome = Number(row?.unearnedIncome ?? 0);
@@ -170,6 +208,8 @@ export async function getProjectFinancials(tenantId: string, projectId: string):
     metrics: {
       revenueEarned,
       invoiced,
+      collected,
+      outstandingAR,
       costsIncurred,
       grossMargin: revenueEarned - costsIncurred,
       contractAsset,
