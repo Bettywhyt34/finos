@@ -79,13 +79,13 @@ model Tenant {
   city                    String?
   state                   String?
   zip                     String?
-  phone                   String?
-  fax                     String?
-  website                 String?
-  companyId               String?   @map("company_id")
-  taxId                   String?   @map("tax_id")
-  additionalFields        Json?     @map("additional_fields")
-  createdAt               DateTime  @default(now()) @map("created_at")
+  phone                    String?
+  fax                      String?
+  website                  String?
+  companyId                String?   @map("company_id")
+  taxId                    String?   @map("tax_id")
+  additionalFields         Json?     @map("additional_fields")
+  createdAt                DateTime  @default(now()) @map("created_at")
 
   // Core accounting
   periods           AccountingPeriod[]
@@ -360,7 +360,7 @@ model Item {
   qtyOnline        Decimal             @default(0) @map("qty_online") @db.Decimal(18, 2)
   qtyPos           Decimal             @default(0) @map("qty_pos") @db.Decimal(18, 2)
   qtyReserved      Decimal             @default(0) @map("qty_reserved") @db.Decimal(18, 2)
-  createdAt        DateTime            @default(now()) @map("created_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
   billLines        BillLine[]
   invoiceLines     InvoiceLine[]
   movements        InventoryMovement[]
@@ -406,37 +406,38 @@ model ItemCategory {
 }
 
 model Invoice {
-  id                String                      @id @default(uuid())
-  tenantId          String                      @map("tenant_id")
-  customerId        String                      @map("customer_id")
-  invoiceNumber     String                      @map("invoice_number")
-  reference         String?
-  orderNumber       String?                     @map("order_number")
-  issueDate         DateTime                    @map("issue_date")
-  dueDate           DateTime                    @map("due_date")
-  status            InvoiceStatus               @default(DRAFT)
-  currency          String                      @default("NGN")
-  exchangeRate      Decimal                     @default(1) @map("exchange_rate") @db.Decimal(15, 6)
-  subtotal          Decimal                     @db.Decimal(15, 2)
-  discountAmount    Decimal                     @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  taxAmount         Decimal                     @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  totalAmount       Decimal                     @map("total_amount") @db.Decimal(15, 2)
-  amountPaid        Decimal                     @default(0) @map("amount_paid") @db.Decimal(15, 2)
-  balanceDue        Decimal                     @map("balance_due") @db.Decimal(15, 2)
-  recognitionPeriod String                      @map("recognition_period")
-  paymentTermsDays  Int?                        @map("payment_terms_days")
-  recogniseRevenueOnInvoiceDate Boolean         @default(false) @map("recognise_revenue_on_invoice_date")
-  notes             String?
-  externalTxnId     String?                     @map("external_txn_id")
-  sentAt            DateTime?                   @map("sent_at")
-  paidAt            DateTime?                   @map("paid_at")
-  voidedAt          DateTime?                   @map("voided_at")
-  voidedReason      String?                     @map("voided_reason")
-  createdAt         DateTime                    @default(now()) @map("created_at")
-  payments          CustomerPaymentAllocation[]
-  lines             InvoiceLine[]
-  customer          Customer                    @relation(fields: [customerId], references: [id])
-  tenant            Tenant                      @relation(fields: [tenantId], references: [id])
+  id                             String                      @id @default(uuid())
+  tenantId                       String                      @map("tenant_id")
+  customerId                     String                      @map("customer_id")
+  invoiceNumber                  String                      @map("invoice_number")
+  reference                      String?
+  orderNumber                    String?                     @map("order_number")
+  issueDate                      DateTime                    @map("issue_date")
+  dueDate                        DateTime                    @map("due_date")
+  status                         InvoiceStatus               @default(DRAFT)
+  currency                       String                      @default("NGN")
+  exchangeRate                   Decimal                     @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  subtotal                       Decimal                     @db.Decimal(15, 2)
+  discountAmount                 Decimal                     @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  taxAmount                      Decimal                     @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount                    Decimal                     @map("total_amount") @db.Decimal(15, 2)
+  amountPaid                     Decimal                     @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  balanceDue                     Decimal                     @map("balance_due") @db.Decimal(15, 2)
+  recognitionPeriod              String                      @map("recognition_period")
+  paymentTermsDays               Int?                        @map("payment_terms_days")
+  recogniseRevenueOnInvoiceDate  Boolean                     @default(false) @map("recognise_revenue_on_invoice_date")
+  issuedDocumentSnapshot         Json?                       @map("issued_document_snapshot")
+  notes                           String?
+  externalTxnId                  String?                     @map("external_txn_id")
+  sentAt                         DateTime?                   @map("sent_at")
+  paidAt                         DateTime?                   @map("paid_at")
+  voidedAt                       DateTime?                   @map("voided_at")
+  voidedReason                   String?                     @map("voided_reason")
+  createdAt                      DateTime                    @default(now()) @map("created_at")
+  payments                       CustomerPaymentAllocation[]
+  lines                          InvoiceLine[]
+  customer                       Customer                    @relation(fields: [customerId], references: [id])
+  tenant                         Tenant                      @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, invoiceNumber])
   @@unique([tenantId, externalTxnId])
@@ -546,19 +547,19 @@ model Bill {
 }
 
 model BillLine {
-  id          String  @id @default(uuid())
-  billId      String  @map("bill_id")
-  itemId      String? @map("item_id")
-  description String
-  quantity    Decimal @db.Decimal(15, 2)
-  rate        Decimal @db.Decimal(15, 2)
-  amount      Decimal @db.Decimal(15, 2)
-  accountId   String  @map("account_id")
-  projectId   String? @map("project_id")
-  reportingTags Json? @map("reporting_tags")
-  bill        Bill    @relation(fields: [billId], references: [id])
-  item        Item?   @relation(fields: [itemId], references: [id])
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id            String   @id @default(uuid())
+  billId        String   @map("bill_id")
+  itemId        String?  @map("item_id")
+  description   String
+  quantity      Decimal  @db.Decimal(15, 2)
+  rate          Decimal  @db.Decimal(15, 2)
+  amount        Decimal  @db.Decimal(15, 2)
+  accountId     String   @map("account_id")
+  projectId     String?  @map("project_id")
+  reportingTags Json?    @map("reporting_tags")
+  bill          Bill     @relation(fields: [billId], references: [id])
+  item          Item?    @relation(fields: [itemId], references: [id])
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
 
@@ -583,26 +584,26 @@ model VendorPayment {
 }
 
 model Expense {
-  id                String           @id @default(uuid())
-  tenantId          String           @map("tenant_id")
-  employeeId        String?          @map("employee_id")
-  categoryId        String           @map("category_id")
-  expenseDate       DateTime         @map("expense_date")
+  id                String          @id @default(uuid())
+  tenantId          String          @map("tenant_id")
+  employeeId        String?         @map("employee_id")
+  categoryId        String          @map("category_id")
+  expenseDate       DateTime        @map("expense_date")
   description       String
-  amount            Decimal          @db.Decimal(15, 2)
-  taxAmount         Decimal          @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  totalAmount       Decimal          @map("total_amount") @db.Decimal(15, 2)
-  status            ExpenseStatus    @default(DRAFT)
-  receiptUrl        String?          @map("receipt_url")
-  approvedBy        String?          @map("approved_by")
-  approvedAt        DateTime?        @map("approved_at")
-  projectId         String?          @map("project_id")
-  reportingTags     Json?            @map("reporting_tags")
-  externalExpenseId String?          @map("external_expense_id")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  category          ExpenseCategory  @relation(fields: [categoryId], references: [id])
-  tenant            Tenant           @relation(fields: [tenantId], references: [id])
-  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  amount            Decimal         @db.Decimal(15, 2)
+  taxAmount         Decimal         @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount       Decimal         @map("total_amount") @db.Decimal(15, 2)
+  status            ExpenseStatus   @default(DRAFT)
+  receiptUrl        String?         @map("receipt_url")
+  approvedBy        String?         @map("approved_by")
+  approvedAt        DateTime?       @map("approved_at")
+  projectId         String?         @map("project_id")
+  reportingTags     Json?           @map("reporting_tags")
+  externalExpenseId String?         @map("external_expense_id")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  category          ExpenseCategory @relation(fields: [categoryId], references: [id])
+  tenant            Tenant          @relation(fields: [tenantId], references: [id])
+  project           Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, externalExpenseId])
   @@index([projectId])
@@ -651,17 +652,17 @@ model JournalEntry {
 }
 
 model JournalEntryLine {
-  id          String          @id @default(uuid())
-  entryId     String          @map("entry_id")
-  accountId   String          @map("account_id")
-  description String?
-  debit       Decimal         @db.Decimal(15, 2)
-  credit      Decimal         @db.Decimal(15, 2)
-  projectId   String?         @map("project_id")
-  reportingTags Json?         @map("reporting_tags")
-  account     ChartOfAccounts @relation(fields: [accountId], references: [id])
-  entry       JournalEntry    @relation(fields: [entryId], references: [id])
-  project     Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id            String          @id @default(uuid())
+  entryId       String          @map("entry_id")
+  accountId     String          @map("account_id")
+  description   String?
+  debit         Decimal         @db.Decimal(15, 2)
+  credit        Decimal         @db.Decimal(15, 2)
+  projectId     String?         @map("project_id")
+  reportingTags Json?           @map("reporting_tags")
+  account       ChartOfAccounts @relation(fields: [accountId], references: [id])
+  entry         JournalEntry    @relation(fields: [entryId], references: [id])
+  project       Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
 
@@ -1126,9 +1127,9 @@ model UnifiedTransactionsCache {
   syncedAt          DateTime @default(now()) @map("synced_at")
 
   // Three-date model (Phase 2.5 B.3)
-  sourceDate      DateTime? @map("source_date") @db.Date
-  postingDate     DateTime? @map("posting_date") @db.Date
-  recognitionDate DateTime? @map("recognition_date") @db.Date
+  sourceDate       DateTime? @map("source_date") @db.Date
+  postingDate      DateTime? @map("posting_date") @db.Date
+  recognitionDate  DateTime? @map("recognition_date") @db.Date
 
   // Lifecycle / data quality fields
   dataQualityState String?   @default("clean") @map("data_quality_state")
@@ -1171,6 +1172,7 @@ model Project {
   contractAssetAccountId  String?       @map("contract_asset_account_id")
   unearnedIncomeAccountId String?       @map("unearned_income_account_id")
   billingSchedule         Json?         @map("billing_schedule")
+  paymentTermsDays        Int?          @map("payment_terms_days")
   reportingTags           Json?         @map("reporting_tags")
   notes                   String?
   createdBy               String        @map("created_by")
@@ -1198,20 +1200,20 @@ model Project {
 }
 
 model ProjectDocument {
-  id           String   @id @default(uuid())
-  tenantId     String   @map("tenant_id")
-  projectId    String   @map("project_id")
-  title        String
-  category     String
-  fileName     String   @map("file_name")
-  storagePath  String   @map("storage_path")
-  mimeType     String   @map("mime_type")
-  fileSize     Int      @map("file_size")
-  status       String   @default("ACTIVE")
-  uploadedBy   String   @map("uploaded_by")
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
-  archivedBy   String?  @map("archived_by")
-  archivedAt   DateTime? @map("archived_at")
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  projectId     String    @map("project_id")
+  title         String
+  category      String
+  fileName      String    @map("file_name")
+  storagePath   String    @map("storage_path")
+  mimeType      String    @map("mime_type")
+  fileSize      Int       @map("file_size")
+  status        String    @default("ACTIVE")
+  uploadedBy    String    @map("uploaded_by")
+  uploadedAt    DateTime  @default(now()) @map("uploaded_at")
+  archivedBy    String?   @map("archived_by")
+  archivedAt    DateTime? @map("archived_at")
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1258,8 +1260,8 @@ model RevflowInvoice {
   finosJournalId    String?   @map("finos_journal_id")
   syncedAt          DateTime  @default(now()) @map("synced_at")
 
-  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  journalEntry JournalEntry?    @relation(fields: [finosJournalId], references: [id])
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry? @relation(fields: [finosJournalId], references: [id])
 
   @@unique([tenantId, revflowId])
   @@map("revflow_invoices")
@@ -1317,15 +1319,15 @@ model Earnmark360PayrollRun {
 // ─── Phase 2.5 Week 3: Canonical journal model ────────────────────────────────
 
 model JournalLine {
-  id          String  @id @default(uuid())
-  jeId        String  @map("je_id")
-  tenantId    String  @map("tenant_id")
-  accountId   String  @map("account_id")
-  direction   String  @map("direction") // 'DR' | 'CR'
-  amountNgn   Decimal @map("amount_ngn") @db.Decimal(15, 2)
-  description String?
-  projectId   String? @map("project_id")
-  reportingTags Json? @map("reporting_tags")
+  id            String   @id @default(uuid())
+  jeId          String   @map("je_id")
+  tenantId      String   @map("tenant_id")
+  accountId     String   @map("account_id")
+  direction     String   @map("direction") // 'DR' | 'CR'
+  amountNgn     Decimal  @map("amount_ngn") @db.Decimal(15, 2)
+  description   String?
+  projectId     String?  @map("project_id")
+  reportingTags Json?    @map("reporting_tags")
 
   journalEntry JournalEntry    @relation(fields: [jeId], references: [id], onDelete: Cascade)
   tenant       Tenant          @relation(fields: [tenantId], references: [id])
@@ -1581,7 +1583,7 @@ model TransactionNumberSeries {
   nextNumber          Int                    @default(1) @map("next_number")
   padLength           Int                    @default(5) @map("pad_length")
   restartFreq         NumberRestartFrequency @default(NEVER) @map("restart_freq")
-  lastResetDate       DateTime?              @map("last_reset_date")
+  lastResetDate       DateTime?               @map("last_reset_date")
   isEnabled           Boolean                @default(true) @map("is_enabled")
   allowManualOverride Boolean                @default(true) @map("allow_manual_override")
   preventDuplicates   Boolean                @default(true) @map("prevent_duplicates")
