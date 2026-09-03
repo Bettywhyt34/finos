@@ -421,6 +421,7 @@ export async function reverseFXRevaluation(revalId: string) {
           WHERE fri."fx_revaluation_id" = ${revaluation.id}
             AND fri."item_type" = 'AP'
             AND vp."tenant_id" = ${orgId}::uuid
+            AND vp."status" = 'POSTED'
             AND ABS(vpa."fx_unrealized_consumed") > 0.005
         `,
         tx.$queryRaw<Array<{ count: bigint }>>`
