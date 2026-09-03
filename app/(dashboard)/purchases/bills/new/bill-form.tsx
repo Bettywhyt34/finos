@@ -24,12 +24,13 @@ interface LineItem {
   rate: number;
   accountId: string;
   taxRateId: string;
+  recogniseCostOnBillDate: boolean;
 }
 
 function today() { return new Date().toISOString().split("T")[0]; }
 function addDays(d: string, n: number) { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; }
 function emptyLine(): LineItem {
-  return { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, accountId: "", taxRateId: "" };
+  return { id: crypto.randomUUID(), itemId: "", description: "", quantity: 1, rate: 0, accountId: "", taxRateId: "", recogniseCostOnBillDate: true };
 }
 
 export function BillForm({
@@ -89,8 +90,15 @@ export function BillForm({
     ));
   }
 
-  function updateLine(lineId: string, field: keyof LineItem, value: string | number) {
+  function updateLine(lineId: string, field: keyof LineItem, value: string | number | boolean) {
     setLines((prev) => prev.map((l) => l.id === lineId ? { ...l, [field]: value } : l));
+  }
+
+  function handleAccountChange(lineId: string, accountId: string) {
+    const account = accounts.find((item) => item.id === accountId);
+    setLines((prev) => prev.map((line) => line.id === lineId
+      ? { ...line, accountId, recogniseCostOnBillDate: account?.type === "EXPENSE" ? line.recogniseCostOnBillDate : true }
+      : line));
   }
 
   function lineTax(line: LineItem) {
@@ -130,6 +138,7 @@ export function BillForm({
         rate: l.rate,
         accountId: l.accountId,
         taxRateId: l.taxRateId || undefined,
+        costRecognitionMode: l.recogniseCostOnBillDate ? "IMMEDIATE" : "PREPAID",
       })),
     });
     setLoading(false);
@@ -219,7 +228,10 @@ export function BillForm({
           </Button>
         </div>
         <div className="divide-y divide-slate-100">
-          {lines.map((line, idx) => (
+          {lines.map((line, idx) => {
+            const selectedAccount = accounts.find((account) => account.id === line.accountId);
+            const canDefer = selectedAccount?.type === "EXPENSE";
+            return (
             <div key={line.id} className="p-4 grid grid-cols-12 gap-3 items-start">
               <div className="col-span-2">
                 {idx === 0 && <Label className="block mb-1.5 text-xs">Item</Label>}
@@ -260,7 +272,7 @@ export function BillForm({
               </div>
               <div className="col-span-2">
                 {idx === 0 && <Label className="block mb-1.5 text-xs">Expense / Asset</Label>}
-                <Select value={line.accountId} onValueChange={(v) => updateLine(line.id, "accountId", v ?? "")}>
+                <Select value={line.accountId} onValueChange={(v) => handleAccountChange(line.id, v ?? "")}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Account" /></SelectTrigger>
                   <SelectContent>
                     {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.code} — {a.name}</SelectItem>)}
@@ -274,8 +286,14 @@ export function BillForm({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
+              {canDefer && (
+                <label className="col-span-12 flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <input type="checkbox" checked={line.recogniseCostOnBillDate} onChange={(e) => updateLine(line.id, "recogniseCostOnBillDate", e.target.checked)} />
+                  <span><span className="font-medium text-slate-800">Recognise cost on Bill date</span> — uncheck if this is a prepaid cost to recognise later.</span>
+                </label>
+              )}
             </div>
-          ))}
+          );})}
         </div>
         <div className="border-t border-slate-200 p-4 bg-slate-50">
           <div className="ml-auto max-w-sm space-y-1.5 text-sm">
