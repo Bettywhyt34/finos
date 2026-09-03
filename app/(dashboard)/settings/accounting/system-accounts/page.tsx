@@ -11,6 +11,7 @@ const ROLES: Array<{ role: SystemAccountRole; label: string; description: string
   { role: "ACCOUNTS_RECEIVABLE", label: "Accounts Receivable", description: "Customer balances owed to the business.", types: ["ASSET"] },
   { role: "ACCOUNTS_PAYABLE", label: "Accounts Payable", description: "Amounts owed to vendors and suppliers.", types: ["LIABILITY"] },
   { role: "CUSTOMER_CREDIT", label: "Customer Credit Liability", description: "Amounts owed back to customers or available to offset future invoices.", types: ["LIABILITY"] },
+  { role: "VENDOR_CREDIT", label: "Vendor Credit Asset", description: "Supplier credits available to offset future bills or be refunded to the business.", types: ["ASSET"] },
   { role: "EXPENSE_REIMBURSEMENT_PAYABLE", label: "Expense Reimbursement Payable", description: "Approved employee claims awaiting reimbursement.", types: ["LIABILITY"] },
   { role: "DEFAULT_BANK", label: "Default Bank", description: "Default cash account used when a transaction does not specify another bank account.", types: ["ASSET"] },
   { role: "INPUT_VAT", label: "Input VAT Recoverable", description: "Recoverable VAT paid on eligible purchases.", types: ["ASSET"] },
