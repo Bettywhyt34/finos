@@ -44,7 +44,11 @@ interface BillLineCreditRow {
   accountId: string;
   projectId: string | null;
   reportingTags: Prisma.JsonValue | null;
+  costRecognitionMode: string;
   alreadyCredited: Prisma.Decimal;
+  postedRecognised: Prisma.Decimal;
+  recognisedCreditReversal: Prisma.Decimal;
+  latestRecognitionDate: Date | null;
 }
 
 export async function postVendorCredit(input: {
@@ -104,12 +108,29 @@ export async function postVendorCredit(input: {
       const rows = await tx.$queryRaw<BillLineCreditRow[]>`
         SELECT bl."id", bl."description", bl."amount", bl."tax_amount" AS "taxAmount", bl."account_id" AS "accountId",
                bl."project_id" AS "projectId", bl."reporting_tags" AS "reportingTags",
+               bl."cost_recognition_mode" AS "costRecognitionMode",
                COALESCE((
                  SELECT SUM(vcl."service_amount")
                  FROM "vendor_credit_lines" vcl
                  JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
                  WHERE vcl."source_bill_line_id"=bl."id" AND vc."tenant_id"=${tenantId}::uuid AND vc."status"<>'REVERSED'
-               ),0) AS "alreadyCredited"
+               ),0) AS "alreadyCredited",
+               COALESCE((
+                 SELECT SUM(r."amount")
+                 FROM "bill_line_cost_recognitions" r
+                 WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'
+               ),0) AS "postedRecognised",
+               COALESCE((
+                 SELECT SUM(vcl."recognised_cost_reversal")
+                 FROM "vendor_credit_lines" vcl
+                 JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+                 WHERE vcl."source_bill_line_id"=bl."id" AND vc."tenant_id"=${tenantId}::uuid AND vc."status"<>'REVERSED'
+               ),0) AS "recognisedCreditReversal",
+               (
+                 SELECT MAX(r."recognition_date")
+                 FROM "bill_line_cost_recognitions" r
+                 WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'
+               ) AS "latestRecognitionDate"
         FROM "bill_lines" bl
         WHERE bl."bill_id"=${input.billId} AND bl."id" IN (${Prisma.join(lineIds)})
       `;
@@ -120,17 +141,45 @@ export async function postVendorCredit(input: {
         const row = rowMap.get(requested.billLineId)!;
         const serviceAmount = roundMoney(Number(requested.serviceAmount));
         const sourceService = Number(row.amount);
-        const available = roundMoney(sourceService - Number(row.alreadyCredited));
+        const alreadyCredited = Number(row.alreadyCredited);
+        const available = roundMoney(sourceService - alreadyCredited);
         if (!Number.isFinite(serviceAmount) || serviceAmount <= 0) throw new Error("Vendor credit line amount must be greater than zero.");
         if (serviceAmount - available > 0.01) throw new Error(`Credit for ${row.description} exceeds the uncredited amount.`);
+        if (row.latestRecognitionDate && creditDate < new Date(row.latestRecognitionDate)) {
+          throw new Error(`Vendor Credit for ${row.description} cannot be dated before an existing prepaid-cost recognition. Reverse/repost the later recognition first.`);
+        }
+
+        const postedRecognised = roundMoney(Number(row.postedRecognised));
+        const priorRecognisedCredit = roundMoney(Number(row.recognisedCreditReversal));
+        const effectiveRecognisedBefore = roundMoney(postedRecognised - priorRecognisedCredit);
+        const netServiceBefore = roundMoney(sourceService - alreadyCredited);
+        if (effectiveRecognisedBefore < -0.01 || effectiveRecognisedBefore - netServiceBefore > 0.01) {
+          throw new Error(`Prepaid recognition evidence for ${row.description} is inconsistent.`);
+        }
+
+        let recognisedCostReversal = serviceAmount;
+        let prepaidCostReversal = 0;
+        if (row.costRecognitionMode === "PREPAID") {
+          const recognisedRatio = netServiceBefore > 0.005 ? effectiveRecognisedBefore / netServiceBefore : 0;
+          recognisedCostReversal = roundMoney(Math.min(effectiveRecognisedBefore, Math.max(0, serviceAmount * recognisedRatio)));
+          prepaidCostReversal = roundMoney(serviceAmount - recognisedCostReversal);
+        }
+
         const taxRatio = sourceService > 0 ? Number(row.taxAmount) / sourceService : 0;
         const taxAmount = roundMoney(serviceAmount * taxRatio);
+        const baseRecognisedCost = roundMoney(recognisedCostReversal * sourceRate);
+        const basePrepaidCost = roundMoney(prepaidCostReversal * sourceRate);
+        const baseService = roundMoney(baseRecognisedCost + basePrepaidCost);
         return {
           ...row,
           serviceAmount,
           taxAmount,
           totalAmount: roundMoney(serviceAmount + taxAmount),
-          baseService: roundMoney(serviceAmount * sourceRate),
+          recognisedCostReversal,
+          prepaidCostReversal,
+          baseRecognisedCost,
+          basePrepaidCost,
+          baseService,
           baseTax: roundMoney(taxAmount * sourceRate),
         };
       });
@@ -155,11 +204,13 @@ export async function postVendorCredit(input: {
       const baseSourceReversal = roundMoney(prepared.reduce((sum, line) => sum + line.baseService + line.baseTax, 0));
       const debitBeforeFx = roundMoney(baseApAmount + baseOpenCreditAmount);
       const fxDifference = roundMoney(debitBeforeFx - baseSourceReversal);
+      const needsPrepaidAccount = prepared.some((line) => line.prepaidCostReversal > 0.005);
 
-      const [apAccount, vendorCreditAccount, inputVatAccount, fxGainAccount, fxLossAccount] = await Promise.all([
+      const [apAccount, vendorCreditAccount, inputVatAccount, prepaidAccount, fxGainAccount, fxLossAccount] = await Promise.all([
         appliedAmount > 0.005 ? resolveSystemAccount(tx, tenantId, "ACCOUNTS_PAYABLE", "CL-001") : Promise.resolve(null),
         openCreditAmount > 0.005 ? resolveSystemAccount(tx, tenantId, "VENDOR_CREDIT") : Promise.resolve(null),
         taxAmount > 0.005 ? resolveSystemAccount(tx, tenantId, "INPUT_VAT") : Promise.resolve(null),
+        needsPrepaidAccount ? resolveSystemAccount(tx, tenantId, "PREPAID_EXPENSE") : Promise.resolve(null),
         fxDifference > 0.01 ? resolveSystemAccount(tx, tenantId, "FX_GAIN") : Promise.resolve(null),
         fxDifference < -0.01 ? resolveSystemAccount(tx, tenantId, "FX_LOSS") : Promise.resolve(null),
       ]);
@@ -182,14 +233,26 @@ export async function postVendorCredit(input: {
         journalLines.push({ accountId: fxLossAccount.id, description: `Realised FX loss - ${creditNumber}`, debit: Math.abs(fxDifference), credit: 0 });
       }
       for (const line of prepared) {
-        journalLines.push({
-          accountId: line.accountId,
-          description: `Vendor credit cost reversal - ${creditNumber}`,
-          debit: 0,
-          credit: line.baseService,
-          projectId: line.projectId,
-          reportingTags: normaliseTags(line.reportingTags),
-        });
+        if (line.baseRecognisedCost > 0.005) {
+          journalLines.push({
+            accountId: line.accountId,
+            description: `Vendor credit recognised-cost reversal - ${creditNumber}`,
+            debit: 0,
+            credit: line.baseRecognisedCost,
+            projectId: line.projectId,
+            reportingTags: normaliseTags(line.reportingTags),
+          });
+        }
+        if (prepaidAccount && line.basePrepaidCost > 0.005) {
+          journalLines.push({
+            accountId: prepaidAccount.id,
+            description: `Vendor credit prepaid-cost reversal - ${creditNumber}`,
+            debit: 0,
+            credit: line.basePrepaidCost,
+            projectId: line.projectId,
+            reportingTags: normaliseTags(line.reportingTags),
+          });
+        }
       }
       if (inputVatAccount && prepared.some((line) => line.baseTax > 0.005)) {
         journalLines.push({
@@ -224,7 +287,7 @@ export async function postVendorCredit(input: {
           ${creditId},${tenantId}::uuid,${bill.vendorId},${bill.id},${creditNumber},${input.vendorReference?.trim() || null},${creditDate},${currency},
           ${creditRate},${sourceRate},${subtotal},${taxAmount},${totalAmount},${appliedAmount},${openCreditAmount},
           ${baseSourceReversal},${baseApAmount},${baseOpenCreditAmount},${roundMoney(fxDifference)},${journalEntryId},
-          ${openCreditAmount > 0.005 ? "OPEN" : "APPLIED"},${input.notes?.trim() || null},${userId}
+          ${openCreditAmount > 0.005 ? "OPEN" : "CLOSED"},${input.notes?.trim() || null},${userId}
         )
       `;
 
@@ -233,10 +296,12 @@ export async function postVendorCredit(input: {
         await tx.$executeRaw`
           INSERT INTO "vendor_credit_lines" (
             "tenant_id","vendor_credit_id","source_bill_line_id","description","service_amount","tax_amount","total_amount",
-            "account_id","project_id","reporting_tags","source_exchange_rate","base_service_reversal","base_tax_reversal"
+            "account_id","project_id","reporting_tags","source_exchange_rate","base_service_reversal","base_tax_reversal",
+            "recognised_cost_reversal","prepaid_cost_reversal"
           ) VALUES (
             ${tenantId}::uuid,${creditId},${line.id},${line.description},${line.serviceAmount},${line.taxAmount},${line.totalAmount},
-            ${line.accountId},${line.projectId},${reportingTagsJson}::jsonb,${sourceRate},${line.baseService},${line.baseTax}
+            ${line.accountId},${line.projectId},${reportingTagsJson}::jsonb,${sourceRate},${line.baseService},${line.baseTax},
+            ${line.recognisedCostReversal},${line.prepaidCostReversal}
           )
         `;
       }
