@@ -93,6 +93,8 @@ export async function recordBillPayment(data: {
           billNumber: true,
           totalAmount: true,
           amountPaid: true,
+          amountCredited: true,
+          dueDate: true,
           status: true,
           currency: true,
           exchangeRate: true,
@@ -110,10 +112,11 @@ export async function recordBillPayment(data: {
         if (bill.currency.trim().toUpperCase() !== currency) {
           throw new Error(`Bill ${bill.billNumber} is denominated in ${bill.currency}. One vendor payment can only settle bills in the same currency as the payment.`);
         }
-        if (["DRAFT", "PAID"].includes(bill.status)) {
+        if (["DRAFT", "PAID", "SETTLED"].includes(bill.status)) {
           throw new Error(`Bill ${bill.billNumber} cannot receive a payment while ${bill.status}.`);
         }
-        const outstanding = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid));
+        const outstanding = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid) - Number(bill.amountCredited));
+        if (outstanding <= 0.005) throw new Error(`Bill ${bill.billNumber} has no Accounts Payable balance remaining.`);
         if (amount - outstanding > 0.01) throw new Error(`Allocation to ${bill.billNumber} exceeds its outstanding balance.`);
       }
 
@@ -161,7 +164,7 @@ export async function recordBillPayment(data: {
         const amount = roundMoney(Number(allocation.amount));
         const billRate = Number(bill.exchangeRate);
         if (!Number.isFinite(billRate) || billRate <= 0) throw new Error(`Bill ${bill.billNumber} has an invalid exchange rate.`);
-        const outstanding = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid));
+        const outstanding = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid) - Number(bill.amountCredited));
         const activeAdjustment = currency === baseCurrency ? 0 : await getActiveApFxAdjustment(tx, tenantId, bill.id);
         const consumed = consumeFxAdjustment(activeAdjustment, amount, outstanding);
         const historical = roundMoney(amount * billRate);
@@ -234,8 +237,10 @@ export async function recordBillPayment(data: {
 
         const bill = billMap.get(evidence.billId)!;
         const newPaid = roundMoney(Number(bill.amountPaid) + evidence.amount);
-        const newBalance = Math.max(0, roundMoney(Number(bill.totalAmount) - newPaid));
-        const newStatus = newBalance <= 0.01 ? "PAID" : "PARTIAL";
+        const newBalance = Math.max(0, roundMoney(Number(bill.totalAmount) - newPaid - Number(bill.amountCredited)));
+        const newStatus = newBalance <= 0.01
+          ? Number(bill.amountCredited) > 0.005 ? "SETTLED" : "PAID"
+          : new Date(bill.dueDate) < new Date() ? "OVERDUE" : "PARTIAL";
         await tx.bill.update({ where: { id: evidence.billId }, data: { amountPaid: newPaid, status: newStatus } });
       }
 
