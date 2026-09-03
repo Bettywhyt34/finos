@@ -13,6 +13,7 @@ interface BillLineRow {
   reportingTags: Prisma.JsonValue | null; description: string; serviceAmount: unknown; usedAmount: unknown;
 }
 interface MovementRow { id: string; accrualId: string; kind: "SETTLEMENT" | "RELEASE"; movementDate: Date; target: string; amount: unknown; status: string; }
+interface ReportingTagRow { id: string; name: string; optionId: string; optionName: string; }
 
 function tags(value: Prisma.JsonValue | null): Record<string,string> | null {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
@@ -23,11 +24,18 @@ function tags(value: Prisma.JsonValue | null): Record<string,string> | null {
 export default async function AccrualsPage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
-  const [tenant, accounts, vendors, projects, accrualRows, billRows, movementRows] = await Promise.all([
+  const [tenant, accounts, vendors, projects, reportingTagRows, accrualRows, billRows, movementRows] = await Promise.all([
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } }),
     prisma.chartOfAccounts.findMany({ where: { tenantId, isActive: true, type: "EXPENSE" }, select: { id: true, code: true, name: true }, orderBy: { code: "asc" } }),
     prisma.vendor.findMany({ where: { tenantId, isActive: true }, select: { id: true, companyName: true }, orderBy: { companyName: "asc" } }),
     prisma.project.findMany({ where: { tenantId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.$queryRaw<ReportingTagRow[]>`
+      SELECT rt."id",rt."name",rto."id" AS "optionId",rto."name" AS "optionName"
+      FROM "reporting_tags" rt
+      INNER JOIN "reporting_tag_options" rto ON rto."tag_id"=rt."id" AND rto."tenant_id"=rt."tenant_id"
+      WHERE rt."tenant_id"=${tenantId}::uuid AND rt."is_active"=true AND rto."is_active"=true
+      ORDER BY rt."name",rto."sort_order",rto."name"
+    `,
     prisma.$queryRaw<AccrualRow[]>`
       SELECT a."id",a."accrual_number" AS "accrualNumber",a."accrual_date" AS "accrualDate",a."description",a."vendor_id" AS "vendorId",
              v."company_name" AS "vendorName",a."account_id" AS "accountId",coa."code" AS "accountCode",coa."name" AS "accountName",
@@ -48,7 +56,7 @@ export default async function AccrualsPage() {
       FROM "bill_lines" bl
       INNER JOIN "bills" b ON b."id"=bl."bill_id"
       INNER JOIN "chart_of_accounts" coa ON coa."id"=bl."account_id" AND coa."tenant_id"=b."tenant_id"
-      WHERE b."tenant_id"=${tenantId}::uuid AND b."status"<>'DRAFT'::"BillStatus" AND bl."cost_recognition_mode"='IMMEDIATE' AND coa."type"='EXPENSE'
+      WHERE b."tenant_id"=${tenantId}::uuid AND b."status"::text<>'DRAFT' AND bl."cost_recognition_mode"='IMMEDIATE' AND coa."type"::text='EXPENSE'
       ORDER BY b."bill_date" DESC,b."bill_number" DESC
     `,
     prisma.$queryRaw<MovementRow[]>`
@@ -65,6 +73,8 @@ export default async function AccrualsPage() {
     `,
   ]);
   const baseCurrency = tenant?.currency.trim().toUpperCase() ?? "NGN";
+  const reportingTags = Array.from(new Map(reportingTagRows.map((row) => [row.id, { id: row.id, name: row.name, options: [] as Array<{id:string;name:string}> }])).values());
+  for (const row of reportingTagRows) reportingTags.find((tag) => tag.id === row.id)?.options.push({ id: row.optionId, name: row.optionName });
   const accruals = accrualRows.map((a) => ({
     id: a.id, accrualNumber: a.accrualNumber, accrualDate: a.accrualDate.toISOString().slice(0,10), description: a.description,
     vendorId: a.vendorId, vendorName: a.vendorName, accountId: a.accountId, accountLabel: `${a.accountCode} — ${a.accountName}`,
@@ -85,6 +95,6 @@ export default async function AccrualsPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-400">Open balance</p><p className="mt-2 text-2xl font-semibold text-slate-900">{new Intl.NumberFormat("en-NG",{style:"currency",currency:baseCurrency}).format(accruals.reduce((s,a)=>s+(a.status==="POSTED"?a.remaining:0),0))}</p></div>
       <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-400">Accounting</p><p className="mt-2 text-sm font-semibold text-slate-900">Expense · Accrued Expenses · Bill clearing</p></div>
     </div>
-    <AccrualManager baseCurrency={baseCurrency} accounts={accounts} vendors={vendors.map((v)=>({id:v.id,name:v.companyName}))} projects={projects} billLines={billLines} accruals={accruals} movements={movements} />
+    <AccrualManager baseCurrency={baseCurrency} accounts={accounts} vendors={vendors.map((v)=>({id:v.id,name:v.companyName}))} projects={projects} reportingTagDefinitions={reportingTags} billLines={billLines} accruals={accruals} movements={movements} />
   </div>;
 }
