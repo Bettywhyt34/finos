@@ -18,11 +18,13 @@ export interface BillLineItem {
   taxRateId?: string;
   projectId?: string;
   reportingTags?: Record<string, string>;
+  costRecognitionMode?: "IMMEDIATE" | "PREPAID";
 }
 
 interface BillTaxSnapshotRow {
   id: string;
   tax_amount: Prisma.Decimal;
+  cost_recognition_mode: string;
 }
 
 function roundMoney(value: number) {
@@ -81,11 +83,14 @@ export async function createBill(data: {
       isActive: true,
       type: { in: ["ASSET", "EXPENSE"] },
     },
-    select: { id: true },
+    select: { id: true, type: true },
   });
-  const validAccountIds = new Set(accounts.map((account) => account.id));
-  if (accountIds.some((id) => !validAccountIds.has(id))) {
+  const accountTypeById = new Map(accounts.map((account) => [account.id, account.type]));
+  if (accountIds.some((id) => !accountTypeById.has(id))) {
     return { error: "One or more bill accounts are invalid, inactive, or belong to another organisation" };
+  }
+  if (data.lines.some((line) => (line.costRecognitionMode ?? "IMMEDIATE") === "PREPAID" && accountTypeById.get(line.accountId) !== "EXPENSE")) {
+    return { error: "Only Expense lines can be deferred as prepaid costs. Asset purchases are recognised as assets on the Bill date." };
   }
 
   const projectIds = Array.from(new Set(data.lines.map((line) => line.projectId?.trim() || "").filter(Boolean)));
@@ -134,7 +139,7 @@ export async function createBill(data: {
     const tax = line.taxRateId ? taxRateMap.get(line.taxRateId) : undefined;
     const taxRate = tax ? Number(tax.rate) : 0;
     const taxAmount = roundMoney(amount * taxRate / 100);
-    return { ...line, amount, tax, taxRate, taxAmount };
+    return { ...line, amount, tax, taxRate, taxAmount, costRecognitionMode: line.costRecognitionMode ?? "IMMEDIATE" };
   });
   const subtotal = roundMoney(preparedLines.reduce((sum, line) => sum + line.amount, 0));
   const taxAmount = roundMoney(preparedLines.reduce((sum, line) => sum + line.taxAmount, 0));
@@ -188,15 +193,15 @@ export async function createBill(data: {
             "tax_rate_id" = ${line.tax?.id ?? null}::uuid,
             "tax_name" = ${line.tax?.name ?? null},
             "tax_rate" = ${line.taxRate},
-            "tax_amount" = ${line.taxAmount}
-          WHERE "id" = ${created.id}::uuid
+            "tax_amount" = ${line.taxAmount},
+            "cost_recognition_mode" = ${line.costRecognitionMode}
+          WHERE "id" = ${created.id}
         `;
       }
 
       return bill.id;
     });
 
-    // DRAFT is an editable operational document and must not affect the GL.
     revalidatePath("/purchases/bills");
     return { success: true, id: billId };
   } catch (error: unknown) {
@@ -234,17 +239,22 @@ export async function postBill(id: string) {
       }
 
       const taxRows = await tx.$queryRaw<BillTaxSnapshotRow[]>`
-        SELECT "id", "tax_amount"
+        SELECT "id", "tax_amount", "cost_recognition_mode"
         FROM "bill_lines"
-        WHERE "bill_id" = ${id}::uuid
+        WHERE "bill_id" = ${id}
       `;
       const taxByLineId = new Map(taxRows.map((row) => [row.id, Number(row.tax_amount)]));
+      const modeByLineId = new Map(taxRows.map((row) => [row.id, row.cost_recognition_mode]));
       const sourceTaxTotal = roundMoney(taxRows.reduce((sum, row) => sum + Number(row.tax_amount), 0));
       if (Math.abs(sourceTaxTotal - Number(bill.taxAmount)) > 0.01) {
         throw new Error("Bill VAT snapshot no longer agrees with the bill header. Review the bill before posting.");
       }
 
-      const apAccount = await resolveSystemAccount(tx, orgId, "ACCOUNTS_PAYABLE", "CL-001");
+      const hasPrepaid = bill.lines.some((line) => modeByLineId.get(line.id) === "PREPAID" && Number(line.amount) > 0.005);
+      const [apAccount, prepaidAccount] = await Promise.all([
+        resolveSystemAccount(tx, orgId, "ACCOUNTS_PAYABLE", "CL-001"),
+        hasPrepaid ? resolveSystemAccount(tx, orgId, "PREPAID_EXPENSE") : Promise.resolve(null),
+      ]);
       const inputVatAccount = sourceTaxTotal > 0.005
         ? await resolveSystemAccount(tx, orgId, "INPUT_VAT")
         : null;
@@ -254,16 +264,19 @@ export async function postBill(id: string) {
         projectId: string | null;
         reportingTags: Record<string, string> | null;
         amount: number;
+        prepaid: boolean;
       }>();
 
       for (const line of bill.lines) {
         const projectId = line.projectId ?? null;
         const reportingTags = normaliseTags(line.reportingTags);
-        const key = lineKey(line.accountId, projectId, reportingTags);
+        const prepaid = modeByLineId.get(line.id) === "PREPAID";
+        const postingAccountId = prepaid ? prepaidAccount!.id : line.accountId;
+        const key = lineKey(postingAccountId, projectId, reportingTags);
         const amount = toNGN(Number(line.amount), rate);
         const current = groups.get(key);
         if (current) current.amount = roundMoney(current.amount + amount);
-        else groups.set(key, { accountId: line.accountId, projectId, reportingTags, amount });
+        else groups.set(key, { accountId: postingAccountId, projectId, reportingTags, amount, prepaid });
       }
 
       const inputVatNGN = inputVatAccount ? toNGN(sourceTaxTotal, rate) : 0;
@@ -284,7 +297,7 @@ export async function postBill(id: string) {
       const journalLines: JournalPostingLine[] = [
         ...Array.from(groups.values()).map((group) => ({
           accountId: group.accountId,
-          description: `Bill cost - ${bill.billNumber}${fxNote}`,
+          description: `${group.prepaid ? "Bill prepayment" : "Bill cost"} - ${bill.billNumber}${fxNote}`,
           debit: group.amount,
           credit: 0,
           projectId: group.projectId,
