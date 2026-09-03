@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { BillActions } from "./bill-actions";
+import { CostRecognitionPanel } from "./cost-recognition-panel";
 
 const statusColors: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
@@ -17,13 +18,15 @@ const statusColors: Record<string, string> = {
 };
 
 interface BillCreditAmountRow { id: string; amountCredited: unknown; }
+interface PrepaidLineRow { id: string; description: string; amount: unknown; recognisedAmount: unknown; }
+interface RecognitionRow { id: string; billLineId: string; recognitionDate: Date; amount: unknown; status: string; }
 
 export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [bill, tenant, creditedRows] = await Promise.all([
+  const [bill, tenant, creditedRows, prepaidRows, recognitionRows] = await Promise.all([
     prisma.bill.findFirst({
       where: { id, tenantId },
       include: {
@@ -35,6 +38,23 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     prisma.$queryRaw<BillCreditAmountRow[]>`
       SELECT "id", "amount_credited" AS "amountCredited"
       FROM "bills" WHERE "tenant_id"=${tenantId}::uuid
+    `,
+    prisma.$queryRaw<PrepaidLineRow[]>`
+      SELECT bl."id", bl."description", bl."amount",
+             COALESCE((SELECT SUM(r."amount") FROM "bill_line_cost_recognitions" r
+                       WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'),0) AS "recognisedAmount"
+      FROM "bill_lines" bl
+      INNER JOIN "bills" b ON b."id"=bl."bill_id"
+      WHERE b."id"=${id} AND b."tenant_id"=${tenantId}::uuid AND bl."cost_recognition_mode"='PREPAID'
+      ORDER BY bl."id"
+    `,
+    prisma.$queryRaw<RecognitionRow[]>`
+      SELECT r."id",r."bill_line_id" AS "billLineId",r."recognition_date" AS "recognitionDate",r."amount",r."status"
+      FROM "bill_line_cost_recognitions" r
+      INNER JOIN "bill_lines" bl ON bl."id"=r."bill_line_id"
+      INNER JOIN "bills" b ON b."id"=bl."bill_id"
+      WHERE b."id"=${id} AND r."tenant_id"=${tenantId}::uuid
+      ORDER BY r."recognition_date" DESC,r."created_at" DESC
     `,
   ]);
 
@@ -50,6 +70,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
   const balance = Math.max(0, parseFloat(String(bill.totalAmount)) - amountPaid - amountCredited);
   const baseTotal = Math.round(parseFloat(String(bill.totalAmount)) * rate * 100) / 100;
   const isWht = bill.vendor.isWhtEligible;
+  const prepaidLineIds = new Set(prepaidRows.map((row) => row.id));
 
   const [openBills, bankAccounts] = await Promise.all([
     prisma.bill.findMany({
@@ -129,7 +150,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           <tbody className="divide-y divide-slate-100">
             {bill.lines.map((line) => (
               <tr key={line.id}>
-                <td className="py-2.5"><p className="font-medium text-slate-900">{line.description}</p>{line.item && <p className="text-xs text-slate-400">{line.item.itemCode}</p>}</td>
+                <td className="py-2.5"><p className="font-medium text-slate-900">{line.description}</p>{line.item && <p className="text-xs text-slate-400">{line.item.itemCode}</p>}{prepaidLineIds.has(line.id) && <span className="mt-1 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">Prepaid · recognise later</span>}</td>
                 <td className="py-2.5 text-right font-mono">{parseFloat(String(line.quantity))}</td>
                 <td className="py-2.5 text-right font-mono">{formatCurrency(parseFloat(String(line.rate)), currency)}</td>
                 <td className="py-2.5 text-right font-mono font-medium">{formatCurrency(parseFloat(String(line.amount)), currency)}</td>
@@ -150,12 +171,30 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
 
         {!isBaseCurrency && (
           <div className="mt-6 pt-4 border-t border-slate-200">
-            <p className="text-xs text-slate-400">Initial recognition rate: 1 {currency} = {rate.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} {baseCurrency} · Base-currency total: {formatCurrency(baseTotal, baseCurrency)}. Payments and vendor credits use their applicable event-date FX treatment.</p>
+            <p className="text-xs text-slate-400">Initial recognition rate: 1 {currency} = {rate.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} {baseCurrency} · Base-currency total: {formatCurrency(baseTotal, baseCurrency)}. Payments and vendor credits use their applicable event-date FX treatment; prepaid-cost recognition uses this historical Bill rate.</p>
           </div>
         )}
 
         {bill.notes && <div className="mt-4 pt-4 border-t border-slate-200"><p className="text-xs text-slate-500 mb-1">Notes</p><p className="text-sm text-slate-700">{bill.notes}</p></div>}
       </div>
+
+      {bill.status !== "DRAFT" && <CostRecognitionPanel
+        lines={prepaidRows.map((line) => ({
+          id: line.id,
+          description: line.description,
+          currency,
+          totalAmount: Number(line.amount),
+          recognisedAmount: Number(line.recognisedAmount),
+          remainingAmount: Math.max(0, Number(line.amount) - Number(line.recognisedAmount)),
+        }))}
+        recognitions={recognitionRows.map((row) => ({
+          id: row.id,
+          billLineId: row.billLineId,
+          recognitionDate: new Date(row.recognitionDate).toISOString().slice(0,10),
+          amount: Number(row.amount),
+          status: row.status,
+        }))}
+      />}
     </div>
   );
 }
