@@ -64,7 +64,7 @@ export async function createAccrual(input: {
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:accrual-number:${tenantId}`}))`;
       const countRows = await tx.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM "accruals" WHERE "tenant_id"=${tenantId}::uuid`;
-      const accrualNumber = `ACCR-${String(Number(countRows[0]?.count ?? 0n) + 1).padStart(5, "0")}`;
+      const accrualNumber = `ACCR-${String(Number(countRows[0]?.count ?? 0) + 1).padStart(5, "0")}`;
       const accruedAccount = await resolveSystemAccount(tx, tenantId, "ACCRUED_EXPENSES");
       const period = getRecognitionPeriod(accrualDate);
       await assertPeriodOpenInTransaction(tx, tenantId, period);
@@ -337,7 +337,7 @@ export async function reverseAccrual(input: { accrualId: string; reversalDate: s
           + (SELECT COUNT(*) FROM "accrual_releases" WHERE "tenant_id"=${tenantId}::uuid AND "accrual_id"=${accrual.id} AND "status"='POSTED')
         )::bigint AS "count"
       `;
-      if (Number(dependencies[0]?.count ?? 0n) > 0) throw new Error("Reverse active settlements/releases before reversing this accrual.");
+      if (Number(dependencies[0]?.count ?? 0) > 0) throw new Error("Reverse active settlements/releases before reversing this accrual.");
       const reversalJournalId = await reverseJournalEvidence(tx, {
         tenantId, userId, journalEntryId: accrual.journalEntryId, source: "accrual", sourceId: accrual.id, reversalSource: "accrual_reversal",
         reversalDate, reason, reference: `REV-${accrual.accrualNumber}`, description: `Reverse ${accrual.accrualNumber}: ${reason}`,
