@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
   const account = await prisma.bankAccount.findFirst({
     where: { id: accountId, tenantId: orgId },
-    select: { id: true, currentBalance: true },
+    select: { id: true },
   });
   if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
@@ -105,7 +105,8 @@ export async function POST(req: NextRequest) {
       description: row.description,
     }), row.id]));
 
-    const batchKeys = new Set<string>();
+    const firstClientByKey = new Map<string, string>();
+    const duplicateOf = new Map<string, string>();
     const uniqueRows: typeof prepared = [];
     const results: Array<{
       clientId: string;
@@ -126,21 +127,12 @@ export async function POST(req: NextRequest) {
         results.push({ clientId: row.clientId, status: "duplicate", bankTransactionId: existingId });
         continue;
       }
-      if (batchKeys.has(key)) {
-        const first = results.find((result) => {
-          const source = prepared.find((candidate) => candidate.clientId === result.clientId);
-          return source && rowKey({
-            date: source.transactionDate,
-            amount: source.amount,
-            type: source.type,
-            reference: source.reference,
-            description: source.description,
-          }) === key;
-        });
-        if (first) results.push({ clientId: row.clientId, status: "duplicate", bankTransactionId: first.bankTransactionId });
+      const firstClientId = firstClientByKey.get(key);
+      if (firstClientId) {
+        duplicateOf.set(row.clientId, firstClientId);
         continue;
       }
-      batchKeys.add(key);
+      firstClientByKey.set(key, row.clientId);
       uniqueRows.push(row);
     }
 
@@ -168,6 +160,12 @@ export async function POST(req: NextRequest) {
           data: { currentBalance: { increment: balanceDelta } },
         });
       });
+    }
+
+    const idByClient = new Map(results.map((result) => [result.clientId, result.bankTransactionId]));
+    for (const [clientId, firstClientId] of duplicateOf) {
+      const bankTransactionId = idByClient.get(firstClientId);
+      if (bankTransactionId) results.push({ clientId, status: "duplicate", bankTransactionId });
     }
 
     revalidatePath(`/banking/${accountId}`);
