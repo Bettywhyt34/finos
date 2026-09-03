@@ -1,22 +1,24 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Upload, FileText, AlertCircle, CheckCircle2, X, ChevronDown, ChevronRight, Split, WandSparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, FileText, Split, Upload, WandSparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   postStatementAccountCoding,
   postStatementCustomerPayment,
   postStatementVendorPayment,
 } from "./actions";
+import { matchStatementExisting } from "./match-existing-actions";
+import { MatchExistingPanel } from "./match-existing-panel";
 
 type Direction = "CREDIT" | "DEBIT";
-type HandleKind = "" | "ACCOUNT" | "CUSTOMER_PAYMENT" | "VENDOR_PAYMENT" | "SPLIT";
+type HandleKind = "" | "MATCH_EXISTING" | "ACCOUNT" | "CUSTOMER_PAYMENT" | "VENDOR_PAYMENT" | "SPLIT";
 
 interface ParsedRow {
   clientId: string;
@@ -27,7 +29,12 @@ interface ParsedRow {
   reference: string;
 }
 
-interface Allocation { id: string; targetId: string; amount: number; }
+interface Allocation {
+  id: string;
+  targetId: string;
+  amount: number;
+}
+
 interface ReviewRow extends ParsedRow {
   selected: boolean;
   handleKind: HandleKind;
@@ -38,7 +45,14 @@ interface ReviewRow extends ParsedRow {
   expanded: boolean;
 }
 
-interface ColumnMap { date: string; description: string; amount: string; type: string; reference: string; }
+interface ColumnMap {
+  date: string;
+  description: string;
+  amount: string;
+  type: string;
+  reference: string;
+}
+
 interface ContextData {
   bankAccount: { id: string; accountName: string; bankName: string; currency: string; ledgerAccountId: string | null };
   accounts: { id: string; code: string; name: string; type: string; financialCategory: string | null }[];
@@ -46,6 +60,7 @@ interface ContextData {
   vendors: { id: string; companyName: string; currency: string; bills: { id: string; number: string; currency: string; outstanding: number; dueDate: string }[] }[];
   bankAccounts: { id: string; accountName: string; bankName: string; currency: string }[];
 }
+
 interface ImportResult {
   success?: boolean;
   error?: string;
@@ -115,16 +130,26 @@ export default function BankImportPage() {
   const currency = contextData?.bankAccount.currency ?? "NGN";
 
   function resetFile() {
-    setRawRows([]); setHeaders([]); setRows([]); setFileName(""); setContextData(null);
+    setRawRows([]);
+    setHeaders([]);
+    setRows([]);
+    setFileName("");
+    setContextData(null);
   }
 
   function processFile(file: File) {
-    if (!file.name.toLowerCase().endsWith(".csv")) { toast.error("Please upload a CSV file"); return; }
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      toast.error("Please upload a CSV file");
+      return;
+    }
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = (event) => {
       const parsed = parseCSV(String(event.target?.result ?? ""));
-      if (parsed.length < 2) { toast.error("CSV must have a header row and at least one transaction"); return; }
+      if (parsed.length < 2) {
+        toast.error("CSV must have a header row and at least one transaction");
+        return;
+      }
       setHeaders(parsed[0]);
       setRawRows(parsed.slice(1));
       setRows([]);
@@ -143,18 +168,29 @@ export default function BankImportPage() {
   }
 
   const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault(); setDragging(false);
-    const file = event.dataTransfer.files[0]; if (file) processFile(file);
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files[0];
+    if (file) processFile(file);
   }, []);
 
   async function buildReviewGrid() {
-    if (!accountId) { toast.error("Open Import Statement from a bank account first"); return; }
-    if (!colMap.date || !colMap.description || !colMap.amount) { toast.error("Map Date, Description and Amount"); return; }
+    if (!accountId) {
+      toast.error("Open Import Statement from a bank account first");
+      return;
+    }
+    if (!colMap.date || !colMap.description || !colMap.amount) {
+      toast.error("Map Date, Description and Amount");
+      return;
+    }
     setLoadingContext(true);
     const response = await fetch(`/api/banking/import/context?accountId=${encodeURIComponent(accountId)}`);
     const data = await response.json();
     setLoadingContext(false);
-    if (!response.ok || data?.error) { toast.error(data?.error ?? "Could not load FINOS accounts"); return; }
+    if (!response.ok || data?.error) {
+      toast.error(data?.error ?? "Could not load FINOS accounts");
+      return;
+    }
     setContextData(data);
     const defaultRate = data.bankAccount.currency === "NGN" ? 1 : 0;
     setRows(rawRows.map((raw, index) => ({
@@ -179,9 +215,12 @@ export default function BankImportPage() {
       handleKind: kind,
       targetId: "",
       allocations: kind === "SPLIT"
-        ? [{ id: `${row.clientId}-split-1`, targetId: "", amount }, { id: `${row.clientId}-split-2`, targetId: "", amount: 0 }]
+        ? [
+            { id: `${row.clientId}-split-1`, targetId: "", amount },
+            { id: `${row.clientId}-split-2`, targetId: "", amount: 0 },
+          ]
         : [],
-      expanded: kind === "CUSTOMER_PAYMENT" || kind === "VENDOR_PAYMENT" || kind === "SPLIT",
+      expanded: ["MATCH_EXISTING", "CUSTOMER_PAYMENT", "VENDOR_PAYMENT", "SPLIT"].includes(kind),
     });
   }
 
@@ -231,20 +270,37 @@ export default function BankImportPage() {
   }
 
   function applyBulkAccount() {
-    if (!bulkAccountId) { toast.error("Choose an account first"); return; }
+    if (!bulkAccountId) {
+      toast.error("Choose an account first");
+      return;
+    }
     const selected = rows.filter((row) => row.selected);
-    if (!selected.length) { toast.error("Select at least one statement row"); return; }
+    if (!selected.length) {
+      toast.error("Select at least one statement row");
+      return;
+    }
     setRows((current) => current.map((row) => row.selected ? {
-      ...row, handleKind: "ACCOUNT", targetId: bulkAccountId, allocations: [], expanded: false,
+      ...row,
+      handleKind: "ACCOUNT",
+      targetId: bulkAccountId,
+      allocations: [],
+      expanded: false,
     } : row));
     toast.success(`Account applied to ${selected.length} row${selected.length === 1 ? "" : "s"}`);
   }
 
   function rowState(row: ReviewRow) {
     const amount = Number(row.amount);
-    const rateReady = currency === "NGN" || row.exchangeRate > 0;
+    const rateReady = row.handleKind === "MATCH_EXISTING" || currency === "NGN" || row.exchangeRate > 0;
     if (!rateReady) return { ready: false, label: "Rate needed" };
-    if (row.handleKind === "ACCOUNT") return { ready: Boolean(row.targetId), label: row.targetId ? "Ready" : "Choose account" };
+    if (row.handleKind === "MATCH_EXISTING") {
+      const total = row.allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
+      const valid = row.allocations.length > 0 && row.allocations.every((allocation) => allocation.targetId && allocation.amount > 0) && Math.abs(total - amount) <= 0.01;
+      return { ready: valid, label: valid ? "Ready" : "Match existing" };
+    }
+    if (row.handleKind === "ACCOUNT") {
+      return { ready: Boolean(row.targetId), label: row.targetId ? "Ready" : "Choose account" };
+    }
     if (row.handleKind === "SPLIT") {
       const total = row.allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
       const valid = row.allocations.length > 1 && row.allocations.every((allocation) => allocation.targetId && allocation.amount > 0) && Math.abs(total - amount) <= 0.01;
@@ -262,7 +318,10 @@ export default function BankImportPage() {
   async function handlePostReady() {
     if (!accountId || !rows.length || !contextData) return;
     const readyRows = rows.filter((row) => rowState(row).ready);
-    if (!readyRows.length) { toast.error("Code at least one row before posting"); return; }
+    if (!readyRows.length) {
+      toast.error("Resolve at least one row before posting");
+      return;
+    }
     setPosting(true);
 
     try {
@@ -289,9 +348,20 @@ export default function BankImportPage() {
       const errors: string[] = [];
       for (const row of readyRows) {
         const bankTransactionId = ids.get(row.clientId);
-        if (!bankTransactionId) { errors.push(`${row.description}: imported row ID not returned`); continue; }
+        if (!bankTransactionId) {
+          errors.push(`${row.description}: imported row ID not returned`);
+          continue;
+        }
         let result: { success?: boolean; error?: string };
-        if (row.handleKind === "ACCOUNT") {
+        if (row.handleKind === "MATCH_EXISTING") {
+          result = await matchStatementExisting({
+            bankTransactionId,
+            allocations: row.allocations.map((allocation) => ({
+              journalEntryLineId: allocation.targetId,
+              amount: allocation.amount,
+            })),
+          });
+        } else if (row.handleKind === "ACCOUNT") {
           result = await postStatementAccountCoding({
             bankTransactionId,
             exchangeRate: row.exchangeRate || 1,
@@ -319,16 +389,19 @@ export default function BankImportPage() {
             whtAmount: row.whtAmount,
             billAllocations: row.allocations.filter((allocation) => allocation.amount > 0).map((allocation) => ({ billId: allocation.targetId, amount: allocation.amount })),
           });
-        } else continue;
-        if (result?.error) errors.push(`${row.description}: ${result.error}`); else posted++;
+        } else {
+          continue;
+        }
+        if (result?.error) errors.push(`${row.description}: ${result.error}`);
+        else posted++;
       }
 
       const unresolved = rows.length - readyRows.length;
       if (errors.length) {
-        toast.error(`${posted} posted; ${errors.length} coded row${errors.length === 1 ? "" : "s"} need review. Statement rows were still imported safely.`);
-        console.error("FINOS statement posting errors", errors);
+        toast.error(`${posted} resolved; ${errors.length} coded row${errors.length === 1 ? "" : "s"} need review. Statement rows were still imported safely.`);
+        console.error("FINOS statement review errors", errors);
       } else {
-        toast.success(`${posted} coded row${posted === 1 ? "" : "s"} posted${unresolved ? ` · ${unresolved} left for review` : ""}`);
+        toast.success(`${posted} row${posted === 1 ? "" : "s"} resolved${unresolved ? ` · ${unresolved} left for review` : ""}`);
       }
       router.push(`/banking/${accountId}`);
       router.refresh();
@@ -347,19 +420,40 @@ export default function BankImportPage() {
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-medium tracking-[-0.02em] text-[var(--text-primary)]">Import bank statement</h1>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">Upload once, then code the statement like a spreadsheet. FINOS handles the debit and credit logic underneath.</p>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">Upload once, then resolve the statement like a spreadsheet. FINOS handles matching and accounting underneath.</p>
         </div>
-        {contextData ? <div className="text-right text-sm"><p className="font-medium text-[var(--text-primary)]">{contextData.bankAccount.bankName} · {contextData.bankAccount.accountName}</p><p className="text-[var(--text-secondary)]">{currency}</p></div> : null}
+        {contextData ? (
+          <div className="text-right text-sm">
+            <p className="font-medium text-[var(--text-primary)]">{contextData.bankAccount.bankName} · {contextData.bankAccount.accountName}</p>
+            <p className="text-[var(--text-secondary)]">{currency}</p>
+          </div>
+        ) : null}
       </div>
 
       {!rawRows.length ? (
-        <div onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop} onClick={() => fileRef.current?.click()}
-          className={cn("grid min-h-72 cursor-pointer place-items-center rounded-xl border-2 border-dashed transition-colors", dragging ? "border-[var(--finos-accent)] bg-[var(--surface-muted)]" : "border-[var(--app-border)] bg-white hover:bg-[var(--surface-muted)]")}>
-          <div className="text-center"><Upload className="mx-auto h-9 w-9 text-[var(--text-secondary)]" /><p className="mt-4 font-medium text-[var(--text-primary)]">Drop CSV here or click to browse</p><p className="mt-1 text-sm text-[var(--text-secondary)]">Bank statement CSV · up to 10,000 rows</p></div>
+        <div
+          onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          onClick={() => fileRef.current?.click()}
+          className={cn(
+            "grid min-h-72 cursor-pointer place-items-center rounded-xl border-2 border-dashed transition-colors",
+            dragging ? "border-[var(--finos-accent)] bg-[var(--surface-muted)]" : "border-[var(--app-border)] bg-white hover:bg-[var(--surface-muted)]",
+          )}
+        >
+          <div className="text-center">
+            <Upload className="mx-auto h-9 w-9 text-[var(--text-secondary)]" />
+            <p className="mt-4 font-medium text-[var(--text-primary)]">Drop CSV here or click to browse</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Bank statement CSV · up to 10,000 rows</p>
+          </div>
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(event) => event.target.files?.[0] && processFile(event.target.files[0])} />
         </div>
       ) : (
-        <div className="flex items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white px-4 py-3"><FileText className="h-5 w-5 text-[var(--finos-accent)]" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{fileName}</p><p className="text-xs text-[var(--text-secondary)]">{rawRows.length} statement rows</p></div><Button variant="ghost" size="icon-sm" onClick={resetFile}><X className="h-4 w-4" /></Button></div>
+        <div className="flex items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white px-4 py-3">
+          <FileText className="h-5 w-5 text-[var(--finos-accent)]" />
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{fileName}</p><p className="text-xs text-[var(--text-secondary)]">{rawRows.length} statement rows</p></div>
+          <Button variant="ghost" size="icon-sm" onClick={resetFile}><X className="h-4 w-4" /></Button>
+        </div>
       )}
 
       {headers.length > 0 && rows.length === 0 ? (
@@ -367,7 +461,13 @@ export default function BankImportPage() {
           <div className="mb-4"><h2 className="font-medium text-[var(--text-primary)]">Map statement columns</h2><p className="mt-1 text-xs text-[var(--text-secondary)]">FINOS has guessed what it can. Confirm the mapping once.</p></div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
             {([ ["date", "Date *"], ["description", "Description *"], ["amount", "Amount *"], ["type", "Credit / Debit"], ["reference", "Reference"] ] as [keyof ColumnMap, string][]).map(([field, label]) => (
-              <div key={field} className="space-y-1.5"><Label className="text-xs">{label}</Label><select value={colMap[field]} onChange={(event) => setColMap((current) => ({ ...current, [field]: event.target.value }))} className="h-9 w-full rounded-md border border-[var(--app-border)] bg-white px-2 text-xs"><option value="">Select…</option>{headers.map((header, index) => <option key={`${header}-${index}`} value={String(index)}>{header}</option>)}</select></div>
+              <div key={field} className="space-y-1.5">
+                <Label className="text-xs">{label}</Label>
+                <select value={colMap[field]} onChange={(event) => setColMap((current) => ({ ...current, [field]: event.target.value }))} className="h-9 w-full rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
+                  <option value="">Select…</option>
+                  {headers.map((header, index) => <option key={`${header}-${index}`} value={String(index)}>{header}</option>)}
+                </select>
+              </div>
             ))}
           </div>
           <Button className="mt-4" size="sm" onClick={buildReviewGrid} disabled={loadingContext}>{loadingContext ? "Preparing…" : `Open review grid · ${rawRows.length} rows`}</Button>
@@ -377,9 +477,12 @@ export default function BankImportPage() {
       {rows.length > 0 && contextData ? (
         <>
           <section className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
-            <div className="mr-auto"><p className="text-sm font-medium text-[var(--text-primary)]">{readyCount} ready · {rows.length - readyCount} need review</p><p className="text-xs text-[var(--text-secondary)]">Unresolved rows are still imported as bank evidence and remain available for later review.</p></div>
+            <div className="mr-auto"><p className="text-sm font-medium text-[var(--text-primary)]">{readyCount} ready · {rows.length - readyCount} need review</p><p className="text-xs text-[var(--text-secondary)]">Match existing FINOS activity first. Only create new accounting when the transaction was never recorded.</p></div>
             <span className="text-xs text-[var(--text-secondary)]">{selectedCount} selected</span>
-            <select value={bulkAccountId} onChange={(event) => setBulkAccountId(event.target.value)} className="h-9 min-w-56 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs"><option value="">Bulk code to account…</option>{contextData.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}</select>
+            <select value={bulkAccountId} onChange={(event) => setBulkAccountId(event.target.value)} className="h-9 min-w-56 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
+              <option value="">Bulk code to account…</option>
+              {contextData.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
+            </select>
             <Button variant="outline" size="sm" onClick={applyBulkAccount}><WandSparkles className="mr-1.5 h-3.5 w-3.5" />Apply</Button>
             <Button size="sm" onClick={handlePostReady} disabled={posting || readyCount === 0}>{posting ? "Posting…" : `Review & Post ${readyCount} Ready`}</Button>
           </section>
@@ -388,7 +491,12 @@ export default function BankImportPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1180px] border-collapse text-sm">
                 <thead className="sticky top-[69px] z-10 bg-[var(--surface-muted)] text-left text-xs text-[var(--text-secondary)]">
-                  <tr><th className="w-10 px-3 py-2"><Checkbox checked={rows.every((row) => row.selected)} onCheckedChange={(checked) => setRows((current) => current.map((row) => ({ ...row, selected: Boolean(checked) })))} /></th><th className="w-28 px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Description</th><th className="w-36 px-3 py-2 text-right font-medium">Money In</th><th className="w-36 px-3 py-2 text-right font-medium">Money Out</th><th className="w-[370px] px-3 py-2 font-medium">Handle As</th><th className="w-28 px-3 py-2 font-medium">Status</th></tr>
+                  <tr>
+                    <th className="w-10 px-3 py-2"><Checkbox checked={rows.every((row) => row.selected)} onCheckedChange={(checked) => setRows((current) => current.map((row) => ({ ...row, selected: Boolean(checked) })))} /></th>
+                    <th className="w-28 px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Description</th>
+                    <th className="w-36 px-3 py-2 text-right font-medium">Money In</th><th className="w-36 px-3 py-2 text-right font-medium">Money Out</th>
+                    <th className="w-[410px] px-3 py-2 font-medium">Handle As</th><th className="w-28 px-3 py-2 font-medium">Status</th>
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--app-border)]">
                   {rows.map((row) => {
@@ -407,19 +515,46 @@ export default function BankImportPage() {
                         <td className="px-3 py-3 text-right font-financial tabular-nums text-[var(--text-primary)]">{row.type === "DEBIT" ? money(amount, currency) : "—"}</td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <select value={row.handleKind} onChange={(event) => chooseKind(row, event.target.value as HandleKind)} className="h-8 w-40 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
+                            <select value={row.handleKind} onChange={(event) => chooseKind(row, event.target.value as HandleKind)} className="h-8 w-44 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
                               <option value="">Select…</option>
+                              <option value="MATCH_EXISTING">Match existing</option>
                               {row.type === "CREDIT" ? <option value="CUSTOMER_PAYMENT">Customer payment</option> : null}
                               {row.type === "DEBIT" ? <option value="VENDOR_PAYMENT">Vendor payment</option> : null}
-                              <option value="ACCOUNT">Account</option><option value="SPLIT">Split</option>
+                              <option value="ACCOUNT">Account</option>
+                              <option value="SPLIT">Split</option>
                             </select>
-                            {row.handleKind === "ACCOUNT" ? <select value={row.targetId} onChange={(event) => patchRow(row.clientId, { targetId: event.target.value })} className="h-8 min-w-48 flex-1 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs"><option value="">Choose account…</option>{contextData.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}</select> : null}
-                            {row.handleKind === "CUSTOMER_PAYMENT" ? <select value={row.targetId} onChange={(event) => setCustomer(row, event.target.value)} className="h-8 min-w-48 flex-1 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs"><option value="">Choose customer…</option>{contextData.customers.filter((item) => item.invoices.some((invoice) => invoice.currency === currency)).map((item) => <option key={item.id} value={item.id}>{item.companyName}</option>)}</select> : null}
-                            {row.handleKind === "VENDOR_PAYMENT" ? <select value={row.targetId} onChange={(event) => setVendor(row, event.target.value)} className="h-8 min-w-48 flex-1 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs"><option value="">Choose vendor…</option>{contextData.vendors.filter((item) => item.bills.some((bill) => bill.currency === currency)).map((item) => <option key={item.id} value={item.id}>{item.companyName}</option>)}</select> : null}
+                            {row.handleKind === "ACCOUNT" ? (
+                              <select value={row.targetId} onChange={(event) => patchRow(row.clientId, { targetId: event.target.value })} className="h-8 min-w-48 flex-1 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
+                                <option value="">Choose account…</option>{contextData.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}
+                              </select>
+                            ) : null}
+                            {row.handleKind === "CUSTOMER_PAYMENT" ? (
+                              <select value={row.targetId} onChange={(event) => setCustomer(row, event.target.value)} className="h-8 min-w-48 flex-1 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
+                                <option value="">Choose customer…</option>{contextData.customers.filter((item) => item.invoices.some((invoice) => invoice.currency === currency)).map((item) => <option key={item.id} value={item.id}>{item.companyName}</option>)}
+                              </select>
+                            ) : null}
+                            {row.handleKind === "VENDOR_PAYMENT" ? (
+                              <select value={row.targetId} onChange={(event) => setVendor(row, event.target.value)} className="h-8 min-w-48 flex-1 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
+                                <option value="">Choose vendor…</option>{contextData.vendors.filter((item) => item.bills.some((bill) => bill.currency === currency)).map((item) => <option key={item.id} value={item.id}>{item.companyName}</option>)}
+                              </select>
+                            ) : null}
                             {row.handleKind && row.handleKind !== "ACCOUNT" ? <Button variant="ghost" size="icon-sm" onClick={() => patchRow(row.clientId, { expanded: !row.expanded })}>{row.expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}</Button> : null}
                           </div>
 
-                          {currency !== "NGN" ? <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-[var(--text-secondary)]">1 {currency} =</span><Input type="number" min="0.000001" step="0.000001" value={row.exchangeRate || ""} onChange={(event) => patchRow(row.clientId, { exchangeRate: Number(event.target.value) })} className="h-7 w-32 text-xs" /><span className="text-[var(--text-secondary)]">NGN</span></div> : null}
+                          {currency !== "NGN" && row.handleKind !== "MATCH_EXISTING" ? <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-[var(--text-secondary)]">1 {currency} =</span><Input type="number" min="0.000001" step="0.000001" value={row.exchangeRate || ""} onChange={(event) => patchRow(row.clientId, { exchangeRate: Number(event.target.value) })} className="h-7 w-32 text-xs" /><span className="text-[var(--text-secondary)]">NGN</span></div> : null}
+
+                          {row.expanded && row.handleKind === "MATCH_EXISTING" ? (
+                            <MatchExistingPanel
+                              bankAccountId={accountId}
+                              date={row.date}
+                              type={row.type}
+                              amount={amount}
+                              reference={row.reference}
+                              currency={currency}
+                              allocations={row.allocations}
+                              onChange={(allocations) => patchRow(row.clientId, { allocations })}
+                            />
+                          ) : null}
 
                           {row.expanded && row.handleKind === "CUSTOMER_PAYMENT" && customer ? (
                             <div className="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--surface-muted)] p-3">

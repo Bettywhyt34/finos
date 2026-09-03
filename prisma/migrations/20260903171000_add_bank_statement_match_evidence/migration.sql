@@ -1,27 +1,57 @@
 -- Statement Review Match Evidence
--- Keep transaction-level statement review independent from formal reconciliation periods.
--- These allocations are promoted into bank_reconciliation_matches when a period is completed.
+-- Match Existing must remain transaction-level review evidence rather than creating
+-- a formal reconciliation period. We reuse bank_reconciliation_matches under a
+-- hidden REVIEW session, then promote those allocations into the real OPEN session
+-- when reconciliation starts for the affected statement dates.
 
-create table if not exists public.bank_statement_matches (
-  id text primary key default gen_random_uuid()::text,
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  bank_account_id text not null references public.bank_accounts(id) on delete cascade,
-  bank_transaction_id text not null references public.bank_transactions(id) on delete cascade,
-  journal_entry_line_id text not null references public.journal_entry_lines(id) on delete restrict,
-  matched_amount numeric(15,2) not null check (matched_amount > 0),
-  created_by text null,
-  created_at timestamptz not null default now(),
-  constraint bank_statement_matches_pair_unique unique (bank_transaction_id, journal_entry_line_id)
-);
+alter table public.bank_reconciliation_sessions
+  drop constraint if exists bank_reconciliation_sessions_status_check;
 
-create index if not exists bank_statement_matches_tenant_bank_idx
-  on public.bank_statement_matches(tenant_id, bank_account_id);
+alter table public.bank_reconciliation_sessions
+  add constraint bank_reconciliation_sessions_status_check
+  check (status in ('REVIEW','OPEN','COMPLETED'));
 
-create index if not exists bank_statement_matches_statement_idx
-  on public.bank_statement_matches(bank_transaction_id);
+create or replace function public.promote_bank_review_matches()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status <> 'OPEN' then
+    return new;
+  end if;
 
-create index if not exists bank_statement_matches_journal_idx
-  on public.bank_statement_matches(journal_entry_line_id);
+  update public.bank_reconciliation_matches brm
+     set session_id = new.id
+    from public.bank_reconciliation_sessions review_session,
+         public.bank_transactions bt
+   where review_session.id = brm.session_id
+     and review_session.tenant_id = new.tenant_id
+     and review_session.bank_account_id = new.bank_account_id
+     and review_session.status = 'REVIEW'
+     and bt.id = brm.bank_transaction_id
+     and bt.bank_account_id = new.bank_account_id
+     and bt.transaction_date::date between new.statement_from and new.statement_to;
 
-alter table public.bank_statement_matches enable row level security;
-revoke all on public.bank_statement_matches from anon, authenticated;
+  delete from public.bank_reconciliation_sessions review_session
+   where review_session.tenant_id = new.tenant_id
+     and review_session.bank_account_id = new.bank_account_id
+     and review_session.status = 'REVIEW'
+     and not exists (
+       select 1
+       from public.bank_reconciliation_matches brm
+       where brm.session_id = review_session.id
+     );
+
+  return new;
+end;
+$$;
+
+drop trigger if exists bank_reconciliation_promote_review_matches
+  on public.bank_reconciliation_sessions;
+
+create trigger bank_reconciliation_promote_review_matches
+after insert on public.bank_reconciliation_sessions
+for each row
+execute function public.promote_bank_review_matches();
