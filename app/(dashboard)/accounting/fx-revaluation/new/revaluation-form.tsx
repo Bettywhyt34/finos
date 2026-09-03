@@ -87,8 +87,13 @@ export function RevaluationForm({ orgId, baseCurrency, accounts }: Props) {
     try {
       const result = await calculateFXExposure(orgId, currency, Number(closingRate));
       setExposure(result);
-      if (result.arItems.length === 0 && result.apItems.length === 0 && result.customerCreditItems.length === 0) {
-        toast.info("No open " + currency + " AR, AP or customer-credit balances found");
+      if (
+        result.arItems.length === 0
+        && result.apItems.length === 0
+        && result.customerCreditItems.length === 0
+        && result.vendorCreditItems.length === 0
+      ) {
+        toast.info("No open " + currency + " AR, AP, customer-credit or vendor-credit balances found");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Calculation failed");
@@ -190,7 +195,7 @@ export function RevaluationForm({ orgId, baseCurrency, accounts }: Props) {
         <div className="rounded-lg border p-5 space-y-4">
           <h2 className="font-semibold text-base">2. Exposure Summary — {exposure.currency}</h2>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div className="rounded-lg bg-muted/50 p-3 text-center">
               <p className="text-xs text-muted-foreground mb-1">AR Exposure ({currency})</p>
               <p className="font-semibold">{currency} {exposure.arExposure.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
@@ -200,16 +205,21 @@ export function RevaluationForm({ orgId, baseCurrency, accounts }: Props) {
               <p className="font-semibold">{currency} {exposure.apExposure.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
             </div>
             <div className="rounded-lg bg-muted/50 p-3 text-center">
-              <p className="text-xs text-muted-foreground mb-1">Customer Credit Exposure ({currency})</p>
+              <p className="text-xs text-muted-foreground mb-1">Customer Credit ({currency})</p>
               <p className="font-semibold">{currency} {exposure.customerCreditExposure.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 p-3 text-center">
+              <p className="text-xs text-muted-foreground mb-1">Vendor Credit ({currency})</p>
+              <p className="font-semibold">{currency} {exposure.vendorCreditExposure.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             {[
               ["AR Gain/Loss", exposure.arGainLoss],
               ["AP Gain/Loss", exposure.apGainLoss],
               ["Customer Credit Gain/Loss", exposure.customerCreditGainLoss],
+              ["Vendor Credit Gain/Loss", exposure.vendorCreditGainLoss],
             ].map(([label, value]) => {
               const amount = Number(value);
               return (
@@ -272,6 +282,20 @@ export function RevaluationForm({ orgId, baseCurrency, accounts }: Props) {
                     const itemGl = -item.adjustment;
                     return <tr key={item.id} className="border-t"><td className="p-2">{item.creditNumber}</td><td className="p-2">{item.customerName}</td><td className="p-2 text-right">{item.foreignBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td><td className="p-2 text-right">{item.originalRate.toFixed(4)}</td><td className="p-2 text-right">{base(item.bookedNGN)}</td><td className="p-2 text-right">{base(item.currentNGN)}</td><td className={"p-2 text-right " + (itemGl >= 0 ? "text-green-600" : "text-red-600")}>{base(itemGl)}</td></tr>;
                   })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {exposure.vendorCreditItems.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium mb-2">Vendor Credit Detail</h3>
+              <table className="w-full text-xs border rounded overflow-hidden">
+                <thead className="bg-muted/50"><tr><th className="text-left p-2">Vendor Credit</th><th className="text-left p-2">Vendor</th><th className="text-right p-2">Open Credit ({currency})</th><th className="text-right p-2">Rate</th><th className="text-right p-2">Booked {baseCurrency}</th><th className="text-right p-2">Current {baseCurrency}</th><th className="text-right p-2">Gain/Loss</th></tr></thead>
+                <tbody>
+                  {exposure.vendorCreditItems.map((item) => (
+                    <tr key={item.id} className="border-t"><td className="p-2">{item.creditNumber}</td><td className="p-2">{item.vendorName}</td><td className="p-2 text-right">{item.foreignBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</td><td className="p-2 text-right">{item.originalRate.toFixed(4)}</td><td className="p-2 text-right">{base(item.bookedNGN)}</td><td className="p-2 text-right">{base(item.currentNGN)}</td><td className={"p-2 text-right " + (item.adjustment >= 0 ? "text-green-600" : "text-red-600")}>{base(item.adjustment)}</td></tr>
+                  ))}
                 </tbody>
               </table>
             </div>
