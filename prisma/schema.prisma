@@ -534,6 +534,7 @@ model Bill {
   taxAmount           Decimal          @default(0) @map("tax_amount") @db.Decimal(15, 2)
   totalAmount         Decimal          @map("total_amount") @db.Decimal(15, 2)
   amountPaid          Decimal          @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  amountCredited      Decimal          @default(0) @map("amount_credited") @db.Decimal(15, 2)
   notes               String?
   externalBillId      String?          @map("external_bill_id")
   purchaseOrderNumber String?          @map("purchase_order_number")
@@ -637,7 +638,7 @@ model JournalEntry {
   source                 String                     @default("manual")
   sourceId               String?                    @map("source_id")
   createdBy              String                     @map("created_by")
-  createdAt              DateTime                   @default(now()) @map("created_at")
+  createdAt               DateTime                   @default(now()) @map("created_at")
   bankTransaction        BankTransaction?
   fxRevaluation          FxRevaluation?
   tenant                 Tenant                     @relation(fields: [tenantId], references: [id])
@@ -822,6 +823,7 @@ enum BillStatus {
   RECORDED
   PARTIAL
   PAID
+  SETTLED
   OVERDUE
 }
 
@@ -1778,8 +1780,6 @@ enum WebTabPlacement {
   MAIN_NAV
   SETTINGS
   QUICK_LINKS
-
-  @@map("web_tab_placement_enum")
 }
 
 model WebTab {
