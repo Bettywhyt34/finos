@@ -140,7 +140,7 @@ export async function reverseVendorPayment(input: {
       for (const allocation of allocations) {
         const bill = await tx.bill.findFirst({
           where: { id: allocation.billId, tenantId },
-          select: { id: true, billNumber: true, amountPaid: true, dueDate: true },
+          select: { id: true, billNumber: true, totalAmount: true, amountPaid: true, amountCredited: true, dueDate: true },
         });
         if (!bill) throw new Error("An allocated bill could not be found.");
         const restoredPaid = roundMoney(Number(bill.amountPaid) - Number(allocation.amount));
@@ -148,9 +148,10 @@ export async function reverseVendorPayment(input: {
           throw new Error(`Reversal would make bill ${bill.billNumber} settlement negative.`);
         }
         const amountPaid = Math.max(0, restoredPaid);
-        const status = amountPaid > 0.01
-          ? "PARTIAL"
-          : (bill.dueDate < reversalDate ? "OVERDUE" : "RECORDED");
+        const outstanding = Math.max(0, roundMoney(Number(bill.totalAmount) - amountPaid - Number(bill.amountCredited)));
+        const status = outstanding <= 0.01
+          ? Number(bill.amountCredited) > 0.005 ? "SETTLED" : "PAID"
+          : bill.dueDate < reversalDate ? "OVERDUE" : amountPaid > 0.01 || Number(bill.amountCredited) > 0.01 ? "PARTIAL" : "RECORDED";
         await tx.bill.update({ where: { id: bill.id }, data: { amountPaid, status } });
       }
 
@@ -170,6 +171,7 @@ export async function reverseVendorPayment(input: {
 
     revalidatePath("/purchases/bills");
     revalidatePath("/purchases/payments");
+    revalidatePath("/purchases/vendor-credits");
     revalidatePath("/accounting/fx-revaluation");
     revalidatePath("/accounting/balance-sheet");
     return { success: true as const };
