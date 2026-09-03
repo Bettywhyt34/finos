@@ -12,15 +12,18 @@ const statusColors: Record<string, string> = {
   RECORDED: "bg-blue-100 text-blue-700",
   PARTIAL: "bg-amber-100 text-amber-700",
   PAID: "bg-green-100 text-green-700",
+  SETTLED: "bg-teal-100 text-teal-700",
   OVERDUE: "bg-red-100 text-red-700",
 };
+
+interface BillCreditAmountRow { id: string; amountCredited: unknown; }
 
 export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [bill, tenant] = await Promise.all([
+  const [bill, tenant, creditedRows] = await Promise.all([
     prisma.bill.findFirst({
       where: { id, tenantId },
       include: {
@@ -29,15 +32,22 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       },
     }),
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } }),
+    prisma.$queryRaw<BillCreditAmountRow[]>`
+      SELECT "id", "amount_credited" AS "amountCredited"
+      FROM "bills" WHERE "tenant_id"=${tenantId}::uuid
+    `,
   ]);
 
   if (!bill || !tenant) notFound();
 
+  const creditedByBill = new Map(creditedRows.map((row) => [row.id, Number(row.amountCredited)]));
+  const amountCredited = creditedByBill.get(bill.id) ?? 0;
   const currency = bill.currency.trim().toUpperCase();
   const baseCurrency = tenant.currency.trim().toUpperCase();
   const rate = parseFloat(String(bill.exchangeRate));
   const isBaseCurrency = currency === baseCurrency;
-  const balance = parseFloat(String(bill.totalAmount)) - parseFloat(String(bill.amountPaid));
+  const amountPaid = parseFloat(String(bill.amountPaid));
+  const balance = Math.max(0, parseFloat(String(bill.totalAmount)) - amountPaid - amountCredited);
   const baseTotal = Math.round(parseFloat(String(bill.totalAmount)) * rate * 100) / 100;
   const isWht = bill.vendor.isWhtEligible;
 
@@ -76,30 +86,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
           </Link>
           <span className="text-slate-300">/</span>
           <span className="font-mono text-sm font-semibold">{bill.billNumber}</span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[bill.status] || ""}`}>
-            {bill.status}
-          </span>
-          {!isBaseCurrency && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
-              {currency}
-            </span>
-          )}
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[bill.status] || ""}`}>{bill.status}</span>
+          {!isBaseCurrency && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">{currency}</span>}
         </div>
         <BillActions
-          bill={{
-            id: bill.id,
-            status: bill.status,
-            vendorId: bill.vendorId,
-            balance,
-            isWhtEligible: isWht,
-            currency,
-            exchangeRate: rate,
-            baseCurrency,
-          }}
+          bill={{ id: bill.id, status: bill.status, vendorId: bill.vendorId, balance, isWhtEligible: isWht, currency, exchangeRate: rate, baseCurrency }}
           openBills={openBills.map((b) => ({
             id: b.id,
             billNumber: b.billNumber,
-            balance: parseFloat(String(b.totalAmount)) - parseFloat(String(b.amountPaid)),
+            balance: Math.max(0, Number(b.totalAmount) - Number(b.amountPaid) - (creditedByBill.get(b.id) ?? 0)),
           }))}
           bankAccounts={bankAccounts}
         />
@@ -130,21 +125,11 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         </div>
 
         <table className="w-full text-sm mb-4">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="text-left py-2 font-medium text-slate-500">Description</th>
-              <th className="text-right py-2 font-medium text-slate-500">Qty</th>
-              <th className="text-right py-2 font-medium text-slate-500">Rate ({currency})</th>
-              <th className="text-right py-2 font-medium text-slate-500">Amount ({currency})</th>
-            </tr>
-          </thead>
+          <thead><tr className="border-b border-slate-200"><th className="text-left py-2 font-medium text-slate-500">Description</th><th className="text-right py-2 font-medium text-slate-500">Qty</th><th className="text-right py-2 font-medium text-slate-500">Rate ({currency})</th><th className="text-right py-2 font-medium text-slate-500">Amount ({currency})</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {bill.lines.map((line) => (
               <tr key={line.id}>
-                <td className="py-2.5">
-                  <p className="font-medium text-slate-900">{line.description}</p>
-                  {line.item && <p className="text-xs text-slate-400">{line.item.itemCode}</p>}
-                </td>
+                <td className="py-2.5"><p className="font-medium text-slate-900">{line.description}</p>{line.item && <p className="text-xs text-slate-400">{line.item.itemCode}</p>}</td>
                 <td className="py-2.5 text-right font-mono">{parseFloat(String(line.quantity))}</td>
                 <td className="py-2.5 text-right font-mono">{formatCurrency(parseFloat(String(line.rate)), currency)}</td>
                 <td className="py-2.5 text-right font-mono font-medium">{formatCurrency(parseFloat(String(line.amount)), currency)}</td>
@@ -154,47 +139,22 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
         </table>
 
         <div className="flex justify-end">
-          <div className="w-64 space-y-1.5 text-sm">
-            <div className="flex justify-between pt-2 border-t border-slate-200 font-semibold">
-              <span>Total ({currency})</span>
-              <span className="font-mono">{formatCurrency(parseFloat(String(bill.totalAmount)), currency)}</span>
-            </div>
-            {!isBaseCurrency && (
-              <div className="flex justify-between text-xs text-amber-600">
-                <span>≈ {baseCurrency} equivalent</span>
-                <span className="font-mono">{formatCurrency(baseTotal, baseCurrency)}</span>
-              </div>
-            )}
-            {parseFloat(String(bill.amountPaid)) > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Settled ({currency})</span>
-                <span className="font-mono">-{formatCurrency(parseFloat(String(bill.amountPaid)), currency)}</span>
-              </div>
-            )}
-            <div className="flex justify-between pt-1 text-lg font-bold border-t border-slate-200">
-              <span>Balance</span>
-              <span className={`font-mono ${balance > 0 ? "text-red-600" : "text-green-600"}`}>
-                {formatCurrency(balance, currency)}
-              </span>
-            </div>
+          <div className="w-72 space-y-1.5 text-sm">
+            <div className="flex justify-between pt-2 border-t border-slate-200 font-semibold"><span>Total ({currency})</span><span className="font-mono">{formatCurrency(Number(bill.totalAmount), currency)}</span></div>
+            {!isBaseCurrency && <div className="flex justify-between text-xs text-amber-600"><span>≈ {baseCurrency} equivalent</span><span className="font-mono">{formatCurrency(baseTotal, baseCurrency)}</span></div>}
+            {amountPaid > 0.005 && <div className="flex justify-between text-green-600"><span>Paid</span><span className="font-mono">-{formatCurrency(amountPaid, currency)}</span></div>}
+            {amountCredited > 0.005 && <div className="flex justify-between text-teal-700"><span>Vendor Credits</span><span className="font-mono">-{formatCurrency(amountCredited, currency)}</span></div>}
+            <div className="flex justify-between pt-1 text-lg font-bold border-t border-slate-200"><span>Outstanding</span><span className={`font-mono ${balance > 0 ? "text-red-600" : "text-green-600"}`}>{formatCurrency(balance, currency)}</span></div>
           </div>
         </div>
 
         {!isBaseCurrency && (
           <div className="mt-6 pt-4 border-t border-slate-200">
-            <p className="text-xs text-slate-400">
-              Initial recognition rate: 1 {currency} = {rate.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} {baseCurrency} ·
-              Base-currency total: {formatCurrency(baseTotal, baseCurrency)}. Settlement uses the actual payment-date rate entered when recording payment.
-            </p>
+            <p className="text-xs text-slate-400">Initial recognition rate: 1 {currency} = {rate.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} {baseCurrency} · Base-currency total: {formatCurrency(baseTotal, baseCurrency)}. Payments and vendor credits use their applicable event-date FX treatment.</p>
           </div>
         )}
 
-        {bill.notes && (
-          <div className="mt-4 pt-4 border-t border-slate-200">
-            <p className="text-xs text-slate-500 mb-1">Notes</p>
-            <p className="text-sm text-slate-700">{bill.notes}</p>
-          </div>
-        )}
+        {bill.notes && <div className="mt-4 pt-4 border-t border-slate-200"><p className="text-xs text-slate-500 mb-1">Notes</p><p className="text-sm text-slate-700">{bill.notes}</p></div>}
       </div>
     </div>
   );
