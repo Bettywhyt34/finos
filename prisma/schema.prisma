@@ -638,7 +638,7 @@ model JournalEntry {
   source                 String                     @default("manual")
   sourceId               String?                    @map("source_id")
   createdBy              String                     @map("created_by")
-  createdAt               DateTime                   @default(now()) @map("created_at")
+  createdAt              DateTime                   @default(now()) @map("created_at")
   bankTransaction        BankTransaction?
   fxRevaluation          FxRevaluation?
   tenant                 Tenant                     @relation(fields: [tenantId], references: [id])
@@ -1780,6 +1780,8 @@ enum WebTabPlacement {
   MAIN_NAV
   SETTINGS
   QUICK_LINKS
+
+  @@map("web_tab_placement_enum")
 }
 
 model WebTab {
