@@ -68,7 +68,7 @@ export async function getActiveApFxAdjustment(
   tenantId: string,
   billId: string,
 ): Promise<number> {
-  const rows = await db.$queryRaw<Array<{ posted: unknown; paymentConsumed: unknown }>>`
+  const rows = await db.$queryRaw<Array<{ posted: unknown; paymentConsumed: unknown; creditConsumed: unknown }>>`
     SELECT
       COALESCE((
         SELECT SUM(fri."adjustment_base_amount")
@@ -87,9 +87,20 @@ export async function getActiveApFxAdjustment(
           AND vpa."tenant_id" = ${tenantId}::uuid
           AND vp."tenant_id" = ${tenantId}::uuid
           AND vp."status" = 'POSTED'
-      ), 0) AS "paymentConsumed"
+      ), 0) AS "paymentConsumed",
+      COALESCE((
+        SELECT SUM(vca."fx_unrealized_consumed")
+        FROM "vendor_credit_applications" vca
+        WHERE vca."bill_id" = ${billId}
+          AND vca."tenant_id" = ${tenantId}::uuid
+          AND vca."status" = 'POSTED'
+      ), 0) AS "creditConsumed"
   `;
-  return roundMoney(Number(rows[0]?.posted ?? 0) - Number(rows[0]?.paymentConsumed ?? 0));
+  return roundMoney(
+    Number(rows[0]?.posted ?? 0)
+      - Number(rows[0]?.paymentConsumed ?? 0)
+      - Number(rows[0]?.creditConsumed ?? 0),
+  );
 }
 
 /** Active unrealised FX adjustment still embedded in one open customer-credit liability. */
