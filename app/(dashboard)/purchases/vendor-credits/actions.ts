@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
@@ -26,6 +27,7 @@ interface BillCreditRow {
   vendorId: string;
   billNumber: string;
   billDate: Date;
+  dueDate: Date;
   status: string;
   currency: string;
   exchangeRate: Prisma.Decimal;
@@ -77,8 +79,9 @@ export async function postVendorCredit(input: {
 
       const billRows = await tx.$queryRaw<BillCreditRow[]>`
         SELECT b."id", b."vendor_id" AS "vendorId", b."bill_number" AS "billNumber", b."bill_date" AS "billDate",
-               b."status"::text AS "status", upper(b."currency") AS "currency", b."exchange_rate" AS "exchangeRate",
-               b."total_amount" AS "totalAmount", b."amount_paid" AS "amountPaid", b."amount_credited" AS "amountCredited"
+               b."due_date" AS "dueDate", b."status"::text AS "status", upper(b."currency") AS "currency",
+               b."exchange_rate" AS "exchangeRate", b."total_amount" AS "totalAmount",
+               b."amount_paid" AS "amountPaid", b."amount_credited" AS "amountCredited"
         FROM "bills" b
         WHERE b."id"=${input.billId} AND b."tenant_id"=${tenantId}::uuid
         LIMIT 1
@@ -86,6 +89,7 @@ export async function postVendorCredit(input: {
       const bill = billRows[0];
       if (!bill) throw new Error("Bill not found in this organisation.");
       if (["DRAFT", "SETTLED"].includes(bill.status)) throw new Error(`A ${bill.status.toLowerCase()} bill cannot receive a vendor credit.`);
+      if (creditDate < new Date(bill.billDate)) throw new Error("Vendor credit date cannot be before the source bill date.");
 
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } });
       if (!tenant) throw new Error("Organisation not found.");
@@ -137,7 +141,7 @@ export async function postVendorCredit(input: {
       const outstandingBefore = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid) - Number(bill.amountCredited));
       if (outstandingBefore < -0.01) throw new Error("Bill settlement evidence is inconsistent.");
 
-      const appliedAmount = Math.min(totalAmount, Math.max(0, outstandingBefore));
+      const appliedAmount = roundMoney(Math.min(totalAmount, Math.max(0, outstandingBefore)));
       const openCreditAmount = roundMoney(totalAmount - appliedAmount);
       const activeApFx = currency === baseCurrency || appliedAmount <= 0.005
         ? 0
@@ -165,6 +169,7 @@ export async function postVendorCredit(input: {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:vendor-credit:${tenantId}`}))`;
       const countRows = await tx.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS "count" FROM "vendor_credits" WHERE "tenant_id"=${tenantId}::uuid`;
       const creditNumber = `VCR-${String(Number(countRows[0]?.count ?? 0) + 1).padStart(5, "0")}`;
+      const creditId = randomUUID();
 
       const journalLines: JournalPostingLine[] = [];
       if (apAccount && baseApAmount > 0.005) {
@@ -206,32 +211,32 @@ export async function postVendorCredit(input: {
         description: `Vendor credit ${creditNumber} against ${bill.billNumber}${currency !== baseCurrency ? ` (${currency} @ ${creditRate})` : ""}`,
         recognitionPeriod: period,
         source: "vendor_credit",
-        sourceId: creditNumber,
+        sourceId: creditId,
         lines: journalLines,
       });
 
-      const creditRows = await tx.$queryRaw<Array<{ id: string }>>`
+      await tx.$executeRaw`
         INSERT INTO "vendor_credits" (
-          "tenant_id","vendor_id","source_bill_id","credit_number","vendor_reference","credit_date","currency",
+          "id","tenant_id","vendor_id","source_bill_id","credit_number","vendor_reference","credit_date","currency",
           "exchange_rate","source_exchange_rate","subtotal","tax_amount","total_amount","applied_amount","remaining_amount",
           "base_source_reversal_amount","base_ap_amount","base_open_credit_amount","fx_gain_loss","journal_entry_id","status","notes","posted_by"
         ) VALUES (
-          ${tenantId}::uuid,${bill.vendorId},${bill.id},${creditNumber},${input.vendorReference?.trim() || null},${creditDate},${currency},
+          ${creditId},${tenantId}::uuid,${bill.vendorId},${bill.id},${creditNumber},${input.vendorReference?.trim() || null},${creditDate},${currency},
           ${creditRate},${sourceRate},${subtotal},${taxAmount},${totalAmount},${appliedAmount},${openCreditAmount},
           ${baseSourceReversal},${baseApAmount},${baseOpenCreditAmount},${roundMoney(fxDifference)},${journalEntryId},
           ${openCreditAmount > 0.005 ? "OPEN" : "APPLIED"},${input.notes?.trim() || null},${userId}
-        ) RETURNING "id"
+        )
       `;
-      const creditId = creditRows[0]!.id;
 
       for (const line of prepared) {
+        const reportingTagsJson = line.reportingTags ? JSON.stringify(line.reportingTags) : null;
         await tx.$executeRaw`
           INSERT INTO "vendor_credit_lines" (
             "tenant_id","vendor_credit_id","source_bill_line_id","description","service_amount","tax_amount","total_amount",
             "account_id","project_id","reporting_tags","source_exchange_rate","base_service_reversal","base_tax_reversal"
           ) VALUES (
             ${tenantId}::uuid,${creditId},${line.id},${line.description},${line.serviceAmount},${line.taxAmount},${line.totalAmount},
-            ${line.accountId},${line.projectId},${line.reportingTags ?? Prisma.DbNull},${sourceRate},${line.baseService},${line.baseTax}
+            ${line.accountId},${line.projectId},${reportingTagsJson}::jsonb,${sourceRate},${line.baseService},${line.baseTax}
           )
         `;
       }
@@ -246,16 +251,21 @@ export async function postVendorCredit(input: {
             ${baseHistoricalAp},${consumedApFx},${baseApAmount},${roundMoney(appliedAmount * creditRate)},0,'POSTED'
           )
         `;
-      }
 
-      const newCredited = roundMoney(Number(bill.amountCredited) + appliedAmount);
-      const remainingBill = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid) - newCredited);
-      const newStatus = remainingBill <= 0.01 ? "SETTLED" : "PARTIAL";
-      await tx.$executeRaw`
-        UPDATE "bills"
-        SET "amount_credited"=${newCredited}, "status"=${newStatus}::"BillStatus"
-        WHERE "id"=${bill.id} AND "tenant_id"=${tenantId}::uuid
-      `;
+        const newCredited = roundMoney(Number(bill.amountCredited) + appliedAmount);
+        const remainingBill = roundMoney(Number(bill.totalAmount) - Number(bill.amountPaid) - newCredited);
+        const today = new Date();
+        const newStatus = remainingBill <= 0.01
+          ? "SETTLED"
+          : new Date(bill.dueDate) < today
+            ? "OVERDUE"
+            : "PARTIAL";
+        await tx.$executeRaw`
+          UPDATE "bills"
+          SET "amount_credited"=${newCredited}, "status"=${newStatus}::"BillStatus"
+          WHERE "id"=${bill.id} AND "tenant_id"=${tenantId}::uuid
+        `;
+      }
 
       return creditId;
     });
