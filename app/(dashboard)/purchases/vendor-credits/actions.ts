@@ -88,7 +88,7 @@ export async function postVendorCredit(input: {
       `;
       const bill = billRows[0];
       if (!bill) throw new Error("Bill not found in this organisation.");
-      if (["DRAFT", "SETTLED"].includes(bill.status)) throw new Error(`A ${bill.status.toLowerCase()} bill cannot receive a vendor credit.`);
+      if (bill.status === "DRAFT") throw new Error("A draft bill cannot receive a vendor credit.");
       if (creditDate < new Date(bill.billDate)) throw new Error("Vendor credit date cannot be before the source bill date.");
 
       const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } });
