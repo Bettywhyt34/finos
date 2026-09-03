@@ -18,7 +18,14 @@ const statusColors: Record<string, string> = {
 };
 
 interface BillCreditAmountRow { id: string; amountCredited: unknown; }
-interface PrepaidLineRow { id: string; description: string; amount: unknown; recognisedAmount: unknown; }
+interface PrepaidLineRow {
+  id: string;
+  description: string;
+  amount: unknown;
+  recognisedAmount: unknown;
+  creditedAmount: unknown;
+  recognisedCreditReversal: unknown;
+}
 interface RecognitionRow { id: string; billLineId: string; recognitionDate: Date; amount: unknown; status: string; }
 
 export default async function BillDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -42,7 +49,15 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     prisma.$queryRaw<PrepaidLineRow[]>`
       SELECT bl."id", bl."description", bl."amount",
              COALESCE((SELECT SUM(r."amount") FROM "bill_line_cost_recognitions" r
-                       WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'),0) AS "recognisedAmount"
+                       WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'),0) AS "recognisedAmount",
+             COALESCE((SELECT SUM(vcl."service_amount")
+                       FROM "vendor_credit_lines" vcl
+                       INNER JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+                       WHERE vcl."tenant_id"=${tenantId}::uuid AND vcl."source_bill_line_id"=bl."id" AND vc."status"<>'REVERSED'),0) AS "creditedAmount",
+             COALESCE((SELECT SUM(vcl."recognised_cost_reversal")
+                       FROM "vendor_credit_lines" vcl
+                       INNER JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+                       WHERE vcl."tenant_id"=${tenantId}::uuid AND vcl."source_bill_line_id"=bl."id" AND vc."status"<>'REVERSED'),0) AS "recognisedCreditReversal"
       FROM "bill_lines" bl
       INNER JOIN "bills" b ON b."id"=bl."bill_id"
       WHERE b."id"=${id} AND b."tenant_id"=${tenantId}::uuid AND bl."cost_recognition_mode"='PREPAID'
@@ -179,14 +194,18 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       {bill.status !== "DRAFT" && <CostRecognitionPanel
-        lines={prepaidRows.map((line) => ({
-          id: line.id,
-          description: line.description,
-          currency,
-          totalAmount: Number(line.amount),
-          recognisedAmount: Number(line.recognisedAmount),
-          remainingAmount: Math.max(0, Number(line.amount) - Number(line.recognisedAmount)),
-        }))}
+        lines={prepaidRows.map((line) => {
+          const netAmount = Math.max(0, Number(line.amount) - Number(line.creditedAmount));
+          const effectiveRecognised = Math.max(0, Number(line.recognisedAmount) - Number(line.recognisedCreditReversal));
+          return {
+            id: line.id,
+            description: line.description,
+            currency,
+            totalAmount: netAmount,
+            recognisedAmount: effectiveRecognised,
+            remainingAmount: Math.max(0, netAmount - effectiveRecognised),
+          };
+        })}
         recognitions={recognitionRows.map((row) => ({
           id: row.id,
           billLineId: row.billLineId,
