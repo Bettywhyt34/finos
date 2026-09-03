@@ -39,6 +39,7 @@ const BASE_NAV: NavSection[] = [
     { label: "Vendors", href: "/vendors" },
     { label: "Bills", href: "/purchases/bills" },
     { label: "Payments Made", href: "/purchases/payments" },
+    { label: "Accruals", href: "/purchases/accruals" },
     { label: "Expenses", href: "/expenses" },
   ] },
   { key: "banking", label: "Banking", icon: Landmark, children: [
