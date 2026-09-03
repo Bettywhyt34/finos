@@ -147,6 +147,38 @@ export async function getActiveCustomerCreditFxAdjustment(
   );
 }
 
+/** Active unrealised FX adjustment still embedded in an open vendor-credit asset. */
+export async function getActiveVendorCreditFxAdjustment(
+  db: DbClient,
+  tenantId: string,
+  vendorCreditId: string,
+): Promise<number> {
+  const rows = await db.$queryRaw<Array<{ posted: unknown; applicationConsumed: unknown }>>`
+    SELECT
+      COALESCE((
+        SELECT SUM(fri."adjustment_base_amount")
+        FROM "fx_revaluation_items" fri
+        INNER JOIN "fx_revaluations" fr ON fr."id" = fri."fx_revaluation_id"
+        WHERE fri."tenant_id" = ${tenantId}::uuid
+          AND fri."item_type" = 'VENDOR_CREDIT'
+          AND fri."vendor_credit_id" = ${vendorCreditId}
+          AND fr."status" = 'POSTED'::fx_revaluation_status
+      ), 0) AS "posted",
+      COALESCE((
+        SELECT SUM(vca."fx_unrealized_consumed")
+        FROM "vendor_credit_applications" vca
+        WHERE vca."vendor_credit_id" = ${vendorCreditId}
+          AND vca."tenant_id" = ${tenantId}::uuid
+          AND vca."application_type" = 'LATER'
+          AND vca."status" = 'POSTED'
+      ), 0) AS "applicationConsumed"
+  `;
+
+  return roundMoney(
+    Number(rows[0]?.posted ?? 0) - Number(rows[0]?.applicationConsumed ?? 0),
+  );
+}
+
 export function consumeFxAdjustment(activeAdjustment: number, allocation: number, preAllocationBalance: number) {
   if (preAllocationBalance <= 0) throw new Error("Open-item balance must be positive before FX settlement.");
   if (allocation <= 0) throw new Error("Settlement allocation must be positive.");
