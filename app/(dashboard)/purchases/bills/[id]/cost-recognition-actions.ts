@@ -46,6 +46,9 @@ interface PrepaidLineRow {
   projectId: string | null;
   reportingTags: Prisma.JsonValue | null;
   recognisedAmount: unknown;
+  creditedAmount: unknown;
+  recognisedCreditReversal: unknown;
+  latestVendorCreditDate: Date | null;
 }
 
 async function getPrepaidLine(tx: Prisma.TransactionClient, tenantId: string, billLineId: string) {
@@ -54,7 +57,19 @@ async function getPrepaidLine(tx: Prisma.TransactionClient, tenantId: string, bi
            b."status"::text AS "billStatus", b."exchange_rate" AS "exchangeRate", bl."amount", bl."description",
            bl."account_id" AS "accountId", bl."project_id" AS "projectId", bl."reporting_tags" AS "reportingTags",
            COALESCE((SELECT SUM(r."amount") FROM "bill_line_cost_recognitions" r
-                     WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'),0) AS "recognisedAmount"
+                     WHERE r."tenant_id"=${tenantId}::uuid AND r."bill_line_id"=bl."id" AND r."status"='POSTED'),0) AS "recognisedAmount",
+           COALESCE((SELECT SUM(vcl."service_amount")
+                     FROM "vendor_credit_lines" vcl
+                     INNER JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+                     WHERE vcl."tenant_id"=${tenantId}::uuid AND vcl."source_bill_line_id"=bl."id" AND vc."status"<>'REVERSED'),0) AS "creditedAmount",
+           COALESCE((SELECT SUM(vcl."recognised_cost_reversal")
+                     FROM "vendor_credit_lines" vcl
+                     INNER JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+                     WHERE vcl."tenant_id"=${tenantId}::uuid AND vcl."source_bill_line_id"=bl."id" AND vc."status"<>'REVERSED'),0) AS "recognisedCreditReversal",
+           (SELECT MAX(vc."credit_date")
+            FROM "vendor_credit_lines" vcl
+            INNER JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+            WHERE vcl."tenant_id"=${tenantId}::uuid AND vcl."source_bill_line_id"=bl."id" AND vc."status"<>'REVERSED') AS "latestVendorCreditDate"
     FROM "bill_lines" bl
     INNER JOIN "bills" b ON b."id"=bl."bill_id"
     WHERE bl."id"=${billLineId} AND b."tenant_id"=${tenantId}::uuid AND bl."cost_recognition_mode"='PREPAID'
@@ -83,9 +98,18 @@ export async function recognisePrepaidCost(input: {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:prepaid-line:${tenantId}:${input.billLineId}`}))`;
       const line = await getPrepaidLine(tx, tenantId, input.billLineId);
       if (recognitionDate < new Date(line.billDate)) throw new Error("Recognition date cannot be before the Bill date.");
-      const remaining = roundMoney(Number(line.amount) - Number(line.recognisedAmount));
+      if (line.latestVendorCreditDate && recognitionDate < new Date(line.latestVendorCreditDate)) {
+        throw new Error("Recognition date cannot be before an existing Vendor Credit on this prepaid line. Reverse/repost that credit first if the historical order is wrong.");
+      }
+
+      const netAmount = roundMoney(Number(line.amount) - Number(line.creditedAmount));
+      const effectiveRecognised = roundMoney(Number(line.recognisedAmount) - Number(line.recognisedCreditReversal));
+      if (netAmount < -0.01 || effectiveRecognised < -0.01 || effectiveRecognised - netAmount > 0.01) {
+        throw new Error("Prepaid cost evidence is inconsistent after Vendor Credits. Review the Bill before recognising more cost.");
+      }
+      const remaining = roundMoney(netAmount - effectiveRecognised);
       if (remaining <= 0.005) throw new Error("This prepaid cost has already been fully recognised.");
-      if (amount - remaining > 0.01) throw new Error("Recognition exceeds the remaining prepaid amount.");
+      if (amount - remaining > 0.01) throw new Error("Recognition exceeds the remaining prepaid amount after Vendor Credits.");
 
       const rate = Number(line.exchangeRate);
       if (!Number.isFinite(rate) || rate <= 0) throw new Error("Original Bill exchange rate is invalid.");
@@ -180,6 +204,21 @@ export async function reversePrepaidCostRecognition(input: {
         ORDER BY "recognition_date" DESC,"created_at" DESC LIMIT 1
       `;
       if (later[0]) throw new Error("Reverse the later prepaid-cost recognition first.");
+
+      const dependentCredit = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT vc."id"
+        FROM "vendor_credit_lines" vcl
+        INNER JOIN "vendor_credits" vc ON vc."id"=vcl."vendor_credit_id"
+        WHERE vcl."tenant_id"=${tenantId}::uuid
+          AND vcl."source_bill_line_id"=${recognition.billLineId}
+          AND vc."status"<>'REVERSED'
+          AND vcl."recognised_cost_reversal">0.005
+          AND (vc."credit_date">${recognition.recognitionDate}
+               OR (vc."credit_date"=${recognition.recognitionDate} AND vc."created_at">${recognition.createdAt}))
+        ORDER BY vc."credit_date" DESC,vc."created_at" DESC
+        LIMIT 1
+      `;
+      if (dependentCredit[0]) throw new Error("Reverse the later Vendor Credit first because its prepaid/recognised split depends on this recognition.");
 
       const journal = await tx.journalEntry.findFirst({
         where: { id: recognition.journalEntryId, tenantId, source: "prepaid_cost_recognition", sourceId: recognition.id, isLocked: true },
