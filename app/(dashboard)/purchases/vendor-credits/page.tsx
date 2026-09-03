@@ -4,6 +4,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { VendorCreditForm } from "./vendor-credit-form";
 import { VendorCreditActions } from "./vendor-credit-actions";
 import { VendorCreditMovementReversalButton } from "./movement-reversal-button";
+import { SourceVendorCreditReversalButton } from "./source-reversal-button";
 
 interface CreditRow {
   id: string;
@@ -222,14 +223,17 @@ export default async function VendorCreditsPage() {
                   <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-700">{formatCurrency(Number(credit.remainingAmount), credit.currency)}</td>
                   <td className="px-4 py-3 text-right"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${credit.status === "OPEN" ? "bg-emerald-50 text-emerald-700" : credit.status === "REVERSED" ? "bg-slate-100 text-slate-500" : "bg-blue-50 text-blue-700"}`}>{credit.status}</span></td>
                   <td className="px-4 py-3 text-right">
-                    {credit.status === "OPEN" && Number(credit.remainingAmount) > 0.005 ? (
-                      <VendorCreditActions
-                        credit={{ id: credit.id, vendorId: credit.vendorId, creditNumber: credit.creditNumber, currency: credit.currency, exchangeRate: Number(credit.exchangeRate), remainingAmount: Number(credit.remainingAmount) }}
-                        bills={settlementBills}
-                        bankAccounts={bankAccounts}
-                        baseCurrency={baseCurrency}
-                      />
-                    ) : <span className="text-xs text-slate-400">—</span>}
+                    {credit.status !== "REVERSED" ? <div className="flex justify-end gap-1">
+                      {credit.status === "OPEN" && Number(credit.remainingAmount) > 0.005 ? (
+                        <VendorCreditActions
+                          credit={{ id: credit.id, vendorId: credit.vendorId, creditNumber: credit.creditNumber, currency: credit.currency, exchangeRate: Number(credit.exchangeRate), remainingAmount: Number(credit.remainingAmount) }}
+                          bills={settlementBills}
+                          bankAccounts={bankAccounts}
+                          baseCurrency={baseCurrency}
+                        />
+                      ) : null}
+                      <SourceVendorCreditReversalButton creditId={credit.id} creditNumber={credit.creditNumber} />
+                    </div> : <span className="text-xs text-slate-400">—</span>}
                   </td>
                 </tr>
               ))}
