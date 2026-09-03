@@ -6,15 +6,20 @@ import { createAccrual, releaseAccrual, reverseAccrual, reverseAccrualMovement, 
 type Account = { id: string; code: string; name: string };
 type Vendor = { id: string; name: string };
 type Project = { id: string; name: string };
+type ReportingTagDefinition = { id: string; name: string; options: Array<{ id: string; name: string }> };
 type BillLine = { id: string; billNumber: string; vendorId: string; billDate: string; accountId: string; projectId: string | null; reportingTags: Record<string,string> | null; description: string; baseAmount: number; usedAmount: number };
 type Movement = { id: string; accrualId: string; kind: "SETTLEMENT" | "RELEASE"; date: string; target: string; amount: number; status: string };
 type Accrual = { id: string; accrualNumber: string; accrualDate: string; description: string; vendorId: string | null; vendorName: string | null; accountId: string; accountLabel: string; projectId: string | null; projectName: string | null; reportingTags: Record<string,string> | null; currency: string; amount: number; settled: number; released: number; remaining: number; status: string };
 
-function today() { return new Date().toISOString().slice(0,10); }
+function today() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0,10);
+}
 function money(value: number, currency: string) { return new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(value); }
 
-export function AccrualManager({ baseCurrency, accounts, vendors, projects, billLines, accruals, movements }: {
-  baseCurrency: string; accounts: Account[]; vendors: Vendor[]; projects: Project[]; billLines: BillLine[]; accruals: Accrual[]; movements: Movement[];
+export function AccrualManager({ baseCurrency, accounts, vendors, projects, reportingTagDefinitions, billLines, accruals, movements }: {
+  baseCurrency: string; accounts: Account[]; vendors: Vendor[]; projects: Project[]; reportingTagDefinitions: ReportingTagDefinition[]; billLines: BillLine[]; accruals: Accrual[]; movements: Movement[];
 }) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -45,7 +50,8 @@ export function AccrualManager({ baseCurrency, accounts, vendors, projects, bill
       <div className="mb-4"><h2 className="text-base font-semibold text-slate-900">Record accrued cost</h2><p className="mt-1 text-sm text-slate-500">Use this when the cost has been incurred but the supplier Bill has not arrived yet. Accruals are recorded in {baseCurrency}.</p></div>
       <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" onSubmit={(e) => {
         e.preventDefault(); const f = new FormData(e.currentTarget);
-        run(() => createAccrual({ accrualDate: String(f.get("date")), description: String(f.get("description")), amount: Number(f.get("amount")), accountId: String(f.get("account")), vendorId: String(f.get("vendor") || "") || null, projectId: String(f.get("project") || "") || null }));
+        const reportingTags = Object.fromEntries(reportingTagDefinitions.map((tag) => [tag.id, String(f.get(`tag:${tag.id}`) ?? "")]).filter(([, optionId]) => optionId));
+        run(() => createAccrual({ accrualDate: String(f.get("date")), description: String(f.get("description")), amount: Number(f.get("amount")), accountId: String(f.get("account")), vendorId: String(f.get("vendor") || "") || null, projectId: String(f.get("project") || "") || null, reportingTags: Object.keys(reportingTags).length ? reportingTags : null }));
       }}>
         <label className="text-sm font-medium text-slate-700">Date<input name="date" type="date" defaultValue={today()} required className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3" /></label>
         <label className="text-sm font-medium text-slate-700">Expense account<select name="account" required className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3"><option value="">Select account</option>{accounts.map((a)=><option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}</select></label>
@@ -53,6 +59,7 @@ export function AccrualManager({ baseCurrency, accounts, vendors, projects, bill
         <label className="text-sm font-medium text-slate-700">Vendor <span className="font-normal text-slate-400">optional</span><select name="vendor" className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3"><option value="">Not specified</option>{vendors.map((v)=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
         <label className="text-sm font-medium text-slate-700">Project <span className="font-normal text-slate-400">optional</span><select name="project" className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3"><option value="">No Project</option>{projects.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         <label className="text-sm font-medium text-slate-700">Description<input name="description" required placeholder="e.g. August legal services" className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3" /></label>
+        {reportingTagDefinitions.map((tag) => <label key={tag.id} className="text-sm font-medium text-slate-700">{tag.name} <span className="font-normal text-slate-400">optional</span><select name={`tag:${tag.id}`} className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3"><option value="">Not set</option>{tag.options.map((option)=><option key={option.id} value={option.id}>{option.name}</option>)}</select></label>)}
         <div className="md:col-span-2 xl:col-span-3"><button disabled={pending} className="rounded-md bg-[var(--finos-accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Record accrual</button></div>
       </form>
     </section>
