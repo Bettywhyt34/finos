@@ -86,6 +86,7 @@ export async function getActiveApFxAdjustment(
         WHERE vpa."bill_id" = ${billId}
           AND vpa."tenant_id" = ${tenantId}::uuid
           AND vp."tenant_id" = ${tenantId}::uuid
+          AND vp."status" = 'POSTED'
       ), 0) AS "paymentConsumed"
   `;
   return roundMoney(Number(rows[0]?.posted ?? 0) - Number(rows[0]?.paymentConsumed ?? 0));
