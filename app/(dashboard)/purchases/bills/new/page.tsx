@@ -6,7 +6,11 @@ export default async function NewBillPage() {
   const session = await auth();
   const tenantId = session!.user.tenantId!;
 
-  const [vendors, items, accounts, taxRates] = await Promise.all([
+  const [tenant, vendors, items, accounts, taxRates] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { currency: true },
+    }),
     prisma.vendor.findMany({
       where: { tenantId, isActive: true },
       select: { id: true, companyName: true, vendorCode: true, paymentTerms: true },
@@ -29,10 +33,13 @@ export default async function NewBillPage() {
     }),
   ]);
 
+  const baseCurrency = tenant?.currency.trim().toUpperCase() ?? "NGN";
+
   return (
     <div className="max-w-5xl">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-6">New Bill</h1>
       <BillForm
+        baseCurrency={baseCurrency}
         vendors={vendors}
         items={items.map((i) => ({ ...i, costPrice: i.costPrice ? parseFloat(String(i.costPrice)) : null }))}
         accounts={accounts}
