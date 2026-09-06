@@ -15,14 +15,17 @@ export async function GET(req: NextRequest) {
     accountName: string;
     bankName: string;
     currency: string;
+    baseCurrency: string;
     ledgerAccountId: string | null;
   }>>`
     SELECT ba."id",
            ba."account_name" AS "accountName",
            ba."bank_name" AS "bankName",
-           ba."currency",
+           UPPER(ba."currency") AS "currency",
+           UPPER(t."currency") AS "baseCurrency",
            ba."ledger_account_id" AS "ledgerAccountId"
     FROM "bank_accounts" ba
+    INNER JOIN "tenants" t ON t."id" = ba."tenant_id"
     WHERE ba."id" = ${accountId}
       AND ba."tenant_id" = ${tenantId}::uuid
       AND ba."is_active" = true
