@@ -14,7 +14,7 @@ alter table public.bank_reconciliation_sessions
 create or replace function public.promote_bank_review_matches()
 returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = public
 as $$
 begin
@@ -47,6 +47,8 @@ begin
   return new;
 end;
 $$;
+
+revoke execute on function public.promote_bank_review_matches() from public, anon, authenticated;
 
 drop trigger if exists bank_reconciliation_promote_review_matches
   on public.bank_reconciliation_sessions;
