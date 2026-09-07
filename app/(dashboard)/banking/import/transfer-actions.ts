@@ -303,7 +303,7 @@ export async function postStatementBankTransfer(input: {
           FROM "bank_transfers"
           WHERE "tenant_id" = ${tenantId}::uuid
         `;
-        transferNumber = `BTR-${String(Number(countRows[0]?.count ?? 0n) + 1).padStart(5, "0")}`;
+        transferNumber = `BTR-${String(Number(countRows[0]?.count ?? BigInt(0)) + 1).padStart(5, "0")}`;
 
         journalEntryId = await postJournalEntryInTransaction(tx, {
           tenantId,
