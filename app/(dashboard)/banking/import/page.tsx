@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, FileText, Split, Upload, WandSparkles, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, FileText, Upload, WandSparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,6 +18,8 @@ import { matchStatementExisting } from "./match-existing-actions";
 import { MatchExistingPanel } from "./match-existing-panel";
 import { postStatementBankTransfer } from "./transfer-actions";
 import { BankTransferPanel } from "./bank-transfer-panel";
+import { postStatementMixedSplit } from "./split-actions";
+import { MixedSplitPanel, type SplitAllocationKind, type StatementSplitLine } from "./mixed-split-panel";
 
 type Direction = "CREDIT" | "DEBIT";
 type HandleKind = "" | "MATCH_EXISTING" | "BANK_TRANSFER" | "ACCOUNT" | "CUSTOMER_PAYMENT" | "VENDOR_PAYMENT" | "SPLIT";
@@ -31,11 +33,7 @@ interface ParsedRow {
   reference: string;
 }
 
-interface Allocation {
-  id: string;
-  targetId: string;
-  amount: number;
-}
+interface Allocation extends StatementSplitLine {}
 
 interface ReviewRow extends ParsedRow {
   selected: boolean;
@@ -225,8 +223,8 @@ export default function BankImportPage() {
       targetId: "",
       allocations: kind === "SPLIT"
         ? [
-            { id: `${row.clientId}-split-1`, targetId: "", amount },
-            { id: `${row.clientId}-split-2`, targetId: "", amount: 0 },
+            { id: `${row.clientId}-split-1`, kind: "ACCOUNT", entityId: "", targetId: "", amount, whtAmount: 0 },
+            { id: `${row.clientId}-split-2`, kind: "ACCOUNT", entityId: "", targetId: "", amount: 0, whtAmount: 0 },
           ]
         : [],
       expanded: ["MATCH_EXISTING", "BANK_TRANSFER", "CUSTOMER_PAYMENT", "VENDOR_PAYMENT", "SPLIT"].includes(kind),
@@ -264,20 +262,6 @@ export default function BankImportPage() {
     else patchRow(row.clientId, { whtAmount });
   }
 
-  function updateAllocation(row: ReviewRow, allocationId: string, amount: number, targetId?: string) {
-    patchRow(row.clientId, {
-      allocations: row.allocations.map((allocation) => allocation.id === allocationId
-        ? { ...allocation, amount, ...(targetId !== undefined ? { targetId } : {}) }
-        : allocation),
-    });
-  }
-
-  function addSplitLine(row: ReviewRow) {
-    patchRow(row.clientId, {
-      allocations: [...row.allocations, { id: `${row.clientId}-split-${Date.now()}`, targetId: "", amount: 0 }],
-    });
-  }
-
   function applyBulkAccount() {
     if (!bulkAccountId) {
       toast.error("Choose an account first");
@@ -301,7 +285,12 @@ export default function BankImportPage() {
   function rowState(row: ReviewRow) {
     const amount = Number(row.amount);
     const baseCurrency = contextData?.bankAccount.baseCurrency ?? currency;
-    const rateReady = row.handleKind === "MATCH_EXISTING" || row.handleKind === "BANK_TRANSFER" || currency === "NGN" || row.exchangeRate > 0;
+    const splitHasSubledger = row.handleKind === "SPLIT" && row.allocations.some((allocation) => (allocation.kind ?? "ACCOUNT") !== "ACCOUNT");
+    const rateReady = row.handleKind === "MATCH_EXISTING"
+      || row.handleKind === "BANK_TRANSFER"
+      || (row.handleKind === "SPLIT" && splitHasSubledger)
+      || currency === "NGN"
+      || row.exchangeRate > 0;
     if (!rateReady) return { ready: false, label: "Rate needed" };
 
     if (row.handleKind === "MATCH_EXISTING") {
@@ -320,11 +309,26 @@ export default function BankImportPage() {
     if (row.handleKind === "ACCOUNT") {
       return { ready: Boolean(row.targetId), label: row.targetId ? "Ready" : "Choose account" };
     }
+
     if (row.handleKind === "SPLIT") {
+      if (splitHasSubledger && currency.toUpperCase() !== baseCurrency.toUpperCase()) {
+        return { ready: false, label: "FX split later" };
+      }
       const total = row.allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
-      const valid = row.allocations.length > 1 && row.allocations.every((allocation) => allocation.targetId && allocation.amount > 0) && Math.abs(total - amount) <= 0.01;
+      const valid = row.allocations.length > 1
+        && row.allocations.every((allocation) => {
+          const kind = allocation.kind ?? "ACCOUNT";
+          const baseValid = allocation.amount > 0 && Number(allocation.whtAmount ?? 0) >= 0;
+          if (!baseValid) return false;
+          if (kind === "ACCOUNT") return Boolean(allocation.targetId);
+          if (kind === "CUSTOMER") return row.type === "CREDIT" && Boolean(allocation.entityId && allocation.targetId);
+          if (kind === "VENDOR") return row.type === "DEBIT" && Boolean(allocation.entityId && allocation.targetId);
+          return false;
+        })
+        && Math.abs(total - amount) <= 0.01;
       return { ready: valid, label: valid ? "Ready" : "Finish split" };
     }
+
     if (row.handleKind === "CUSTOMER_PAYMENT" || row.handleKind === "VENDOR_PAYMENT") {
       const gross = amount + Number(row.whtAmount || 0);
       const allocated = row.allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
@@ -393,11 +397,40 @@ export default function BankImportPage() {
             allocations: [{ accountId: row.targetId, amount: Number(row.amount) }],
           });
         } else if (row.handleKind === "SPLIT") {
-          result = await postStatementAccountCoding({
-            bankTransactionId,
-            exchangeRate: row.exchangeRate || 1,
-            allocations: row.allocations.map((allocation) => ({ accountId: allocation.targetId, amount: allocation.amount })),
-          });
+          const hasSubledger = row.allocations.some((allocation) => (allocation.kind ?? "ACCOUNT") !== "ACCOUNT");
+          if (!hasSubledger) {
+            result = await postStatementAccountCoding({
+              bankTransactionId,
+              exchangeRate: row.exchangeRate || 1,
+              allocations: row.allocations.map((allocation) => ({ accountId: allocation.targetId, amount: allocation.amount })),
+            });
+          } else {
+            result = await postStatementMixedSplit({
+              bankTransactionId,
+              allocations: row.allocations.map((allocation) => {
+                const kind = (allocation.kind ?? "ACCOUNT") as SplitAllocationKind;
+                if (kind === "CUSTOMER") {
+                  return {
+                    kind,
+                    customerId: allocation.entityId ?? "",
+                    invoiceId: allocation.targetId,
+                    amount: allocation.amount,
+                    whtAmount: Number(allocation.whtAmount ?? 0),
+                  };
+                }
+                if (kind === "VENDOR") {
+                  return {
+                    kind,
+                    vendorId: allocation.entityId ?? "",
+                    billId: allocation.targetId,
+                    amount: allocation.amount,
+                    whtAmount: Number(allocation.whtAmount ?? 0),
+                  };
+                }
+                return { kind: "ACCOUNT" as const, accountId: allocation.targetId, amount: allocation.amount };
+              }),
+            });
+          }
         } else if (row.handleKind === "CUSTOMER_PAYMENT") {
           result = await postStatementCustomerPayment({
             bankTransactionId,
@@ -503,7 +536,7 @@ export default function BankImportPage() {
       {rows.length > 0 && contextData ? (
         <>
           <section className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
-            <div className="mr-auto"><p className="text-sm font-medium text-[var(--text-primary)]">{readyCount} ready · {rows.length - readyCount} need review</p><p className="text-xs text-[var(--text-secondary)]">Match existing FINOS activity first. Use Bank transfer when the movement is between your own FINOS bank accounts.</p></div>
+            <div className="mr-auto"><p className="text-sm font-medium text-[var(--text-primary)]">{readyCount} ready · {rows.length - readyCount} need review</p><p className="text-xs text-[var(--text-secondary)]">Match existing FINOS activity first. Use Bank transfer for movements between your own accounts; use Split when one bank row belongs to several invoices, bills, or accounts.</p></div>
             <span className="text-xs text-[var(--text-secondary)]">{selectedCount} selected</span>
             <select value={bulkAccountId} onChange={(event) => setBulkAccountId(event.target.value)} className="h-9 min-w-56 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
               <option value="">Bulk code to account…</option>
@@ -532,6 +565,7 @@ export default function BankImportPage() {
                     const vendor = contextData.vendors.find((item) => item.id === row.targetId);
                     const allocated = row.allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
                     const gross = amount + Number(row.whtAmount || 0);
+                    const splitHasSubledger = row.handleKind === "SPLIT" && row.allocations.some((allocation) => (allocation.kind ?? "ACCOUNT") !== "ACCOUNT");
                     return (
                       <tr key={row.clientId} className="align-top hover:bg-[var(--app-bg)]">
                         <td className="px-3 py-3"><Checkbox checked={row.selected} onCheckedChange={(checked) => patchRow(row.clientId, { selected: Boolean(checked) })} /></td>
@@ -568,7 +602,7 @@ export default function BankImportPage() {
                             {row.handleKind && row.handleKind !== "ACCOUNT" ? <Button variant="ghost" size="icon-sm" onClick={() => patchRow(row.clientId, { expanded: !row.expanded })}>{row.expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}</Button> : null}
                           </div>
 
-                          {currency !== "NGN" && !["MATCH_EXISTING", "BANK_TRANSFER"].includes(row.handleKind) ? <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-[var(--text-secondary)]">1 {currency} =</span><Input type="number" min="0.000001" step="0.000001" value={row.exchangeRate || ""} onChange={(event) => patchRow(row.clientId, { exchangeRate: Number(event.target.value) })} className="h-7 w-32 text-xs" /><span className="text-[var(--text-secondary)]">NGN</span></div> : null}
+                          {currency !== "NGN" && !["MATCH_EXISTING", "BANK_TRANSFER"].includes(row.handleKind) && !(row.handleKind === "SPLIT" && splitHasSubledger) ? <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-[var(--text-secondary)]">1 {currency} =</span><Input type="number" min="0.000001" step="0.000001" value={row.exchangeRate || ""} onChange={(event) => patchRow(row.clientId, { exchangeRate: Number(event.target.value) })} className="h-7 w-32 text-xs" /><span className="text-[var(--text-secondary)]">NGN</span></div> : null}
 
                           {row.expanded && row.handleKind === "MATCH_EXISTING" ? (
                             <MatchExistingPanel
@@ -612,11 +646,16 @@ export default function BankImportPage() {
                           ) : null}
 
                           {row.expanded && row.handleKind === "SPLIT" ? (
-                            <div className="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--surface-muted)] p-3">
-                              <div className="mb-2 flex items-center justify-between"><div><p className="flex items-center gap-1.5 text-xs font-medium"><Split className="h-3.5 w-3.5" />Split {money(amount, currency)}</p><p className="text-[11px] text-[var(--text-secondary)]">Allocate this bank row across multiple ledger accounts.</p></div><Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => addSplitLine(row)}>Add line</Button></div>
-                              <div className="space-y-1.5">{row.allocations.map((allocation) => <div key={allocation.id} className="grid grid-cols-[1fr_130px_28px] gap-2"><select value={allocation.targetId} onChange={(event) => updateAllocation(row, allocation.id, allocation.amount, event.target.value)} className="h-8 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs"><option value="">Choose account…</option>{contextData.accounts.map((account) => <option key={account.id} value={account.id}>{account.code} · {account.name}</option>)}</select><Input type="number" min="0" step="0.01" value={allocation.amount} onChange={(event) => updateAllocation(row, allocation.id, Number(event.target.value))} className="h-8 text-right text-xs" /><Button variant="ghost" size="icon-sm" onClick={() => patchRow(row.clientId, { allocations: row.allocations.filter((item) => item.id !== allocation.id) })}><X className="h-3.5 w-3.5" /></Button></div>)}</div>
-                              <p className={cn("mt-2 text-right text-[11px]", Math.abs(allocated - amount) <= 0.01 ? "text-emerald-700" : "text-amber-700")}>Split {money(allocated, currency)} / {money(amount, currency)}</p>
-                            </div>
+                            <MixedSplitPanel
+                              direction={row.type}
+                              amount={amount}
+                              currency={currency}
+                              allocations={row.allocations}
+                              accounts={contextData.accounts}
+                              customers={contextData.customers}
+                              vendors={contextData.vendors}
+                              onChange={(allocations) => patchRow(row.clientId, { allocations })}
+                            />
                           ) : null}
                         </td>
                         <td className="px-3 py-3"><span className={cn("whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-medium", state.ready ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>{state.ready ? <CheckCircle2 className="mr-1 inline h-3 w-3" /> : <AlertCircle className="mr-1 inline h-3 w-3" />}{state.label}</span></td>
