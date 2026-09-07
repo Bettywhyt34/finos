@@ -16,9 +16,11 @@ import {
 } from "./actions";
 import { matchStatementExisting } from "./match-existing-actions";
 import { MatchExistingPanel } from "./match-existing-panel";
+import { postStatementBankTransfer } from "./transfer-actions";
+import { BankTransferPanel } from "./bank-transfer-panel";
 
 type Direction = "CREDIT" | "DEBIT";
-type HandleKind = "" | "MATCH_EXISTING" | "ACCOUNT" | "CUSTOMER_PAYMENT" | "VENDOR_PAYMENT" | "SPLIT";
+type HandleKind = "" | "MATCH_EXISTING" | "BANK_TRANSFER" | "ACCOUNT" | "CUSTOMER_PAYMENT" | "VENDOR_PAYMENT" | "SPLIT";
 
 interface ParsedRow {
   clientId: string;
@@ -54,7 +56,14 @@ interface ColumnMap {
 }
 
 interface ContextData {
-  bankAccount: { id: string; accountName: string; bankName: string; currency: string; ledgerAccountId: string | null };
+  bankAccount: {
+    id: string;
+    accountName: string;
+    bankName: string;
+    currency: string;
+    baseCurrency: string;
+    ledgerAccountId: string | null;
+  };
   accounts: { id: string; code: string; name: string; type: string; financialCategory: string | null }[];
   customers: { id: string; companyName: string; currency: string; invoices: { id: string; number: string; currency: string; outstanding: number; dueDate: string }[] }[];
   vendors: { id: string; companyName: string; currency: string; bills: { id: string; number: string; currency: string; outstanding: number; dueDate: string }[] }[];
@@ -220,7 +229,7 @@ export default function BankImportPage() {
             { id: `${row.clientId}-split-2`, targetId: "", amount: 0 },
           ]
         : [],
-      expanded: ["MATCH_EXISTING", "CUSTOMER_PAYMENT", "VENDOR_PAYMENT", "SPLIT"].includes(kind),
+      expanded: ["MATCH_EXISTING", "BANK_TRANSFER", "CUSTOMER_PAYMENT", "VENDOR_PAYMENT", "SPLIT"].includes(kind),
     });
   }
 
@@ -291,13 +300,23 @@ export default function BankImportPage() {
 
   function rowState(row: ReviewRow) {
     const amount = Number(row.amount);
-    const rateReady = row.handleKind === "MATCH_EXISTING" || currency === "NGN" || row.exchangeRate > 0;
+    const baseCurrency = contextData?.bankAccount.baseCurrency ?? currency;
+    const rateReady = row.handleKind === "MATCH_EXISTING" || row.handleKind === "BANK_TRANSFER" || currency === "NGN" || row.exchangeRate > 0;
     if (!rateReady) return { ready: false, label: "Rate needed" };
+
     if (row.handleKind === "MATCH_EXISTING") {
       const total = row.allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
       const valid = row.allocations.length > 0 && row.allocations.every((allocation) => allocation.targetId && allocation.amount > 0) && Math.abs(total - amount) <= 0.01;
       return { ready: valid, label: valid ? "Ready" : "Match existing" };
     }
+
+    if (row.handleKind === "BANK_TRANSFER") {
+      if (currency.toUpperCase() !== baseCurrency.toUpperCase()) {
+        return { ready: false, label: "FX transfer later" };
+      }
+      return { ready: Boolean(row.targetId), label: row.targetId ? "Ready" : "Choose bank" };
+    }
+
     if (row.handleKind === "ACCOUNT") {
       return { ready: Boolean(row.targetId), label: row.targetId ? "Ready" : "Choose account" };
     }
@@ -352,6 +371,7 @@ export default function BankImportPage() {
           errors.push(`${row.description}: imported row ID not returned`);
           continue;
         }
+
         let result: { success?: boolean; error?: string };
         if (row.handleKind === "MATCH_EXISTING") {
           result = await matchStatementExisting({
@@ -360,6 +380,11 @@ export default function BankImportPage() {
               journalEntryLineId: allocation.targetId,
               amount: allocation.amount,
             })),
+          });
+        } else if (row.handleKind === "BANK_TRANSFER") {
+          result = await postStatementBankTransfer({
+            bankTransactionId,
+            otherBankAccountId: row.targetId,
           });
         } else if (row.handleKind === "ACCOUNT") {
           result = await postStatementAccountCoding({
@@ -392,6 +417,7 @@ export default function BankImportPage() {
         } else {
           continue;
         }
+
         if (result?.error) errors.push(`${row.description}: ${result.error}`);
         else posted++;
       }
@@ -477,7 +503,7 @@ export default function BankImportPage() {
       {rows.length > 0 && contextData ? (
         <>
           <section className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
-            <div className="mr-auto"><p className="text-sm font-medium text-[var(--text-primary)]">{readyCount} ready · {rows.length - readyCount} need review</p><p className="text-xs text-[var(--text-secondary)]">Match existing FINOS activity first. Only create new accounting when the transaction was never recorded.</p></div>
+            <div className="mr-auto"><p className="text-sm font-medium text-[var(--text-primary)]">{readyCount} ready · {rows.length - readyCount} need review</p><p className="text-xs text-[var(--text-secondary)]">Match existing FINOS activity first. Use Bank transfer when the movement is between your own FINOS bank accounts.</p></div>
             <span className="text-xs text-[var(--text-secondary)]">{selectedCount} selected</span>
             <select value={bulkAccountId} onChange={(event) => setBulkAccountId(event.target.value)} className="h-9 min-w-56 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
               <option value="">Bulk code to account…</option>
@@ -495,7 +521,7 @@ export default function BankImportPage() {
                     <th className="w-10 px-3 py-2"><Checkbox checked={rows.every((row) => row.selected)} onCheckedChange={(checked) => setRows((current) => current.map((row) => ({ ...row, selected: Boolean(checked) })))} /></th>
                     <th className="w-28 px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Description</th>
                     <th className="w-36 px-3 py-2 text-right font-medium">Money In</th><th className="w-36 px-3 py-2 text-right font-medium">Money Out</th>
-                    <th className="w-[410px] px-3 py-2 font-medium">Handle As</th><th className="w-28 px-3 py-2 font-medium">Status</th>
+                    <th className="w-[430px] px-3 py-2 font-medium">Handle As</th><th className="w-28 px-3 py-2 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--app-border)]">
@@ -518,6 +544,7 @@ export default function BankImportPage() {
                             <select value={row.handleKind} onChange={(event) => chooseKind(row, event.target.value as HandleKind)} className="h-8 w-44 rounded-md border border-[var(--app-border)] bg-white px-2 text-xs">
                               <option value="">Select…</option>
                               <option value="MATCH_EXISTING">Match existing</option>
+                              <option value="BANK_TRANSFER">Bank transfer</option>
                               {row.type === "CREDIT" ? <option value="CUSTOMER_PAYMENT">Customer payment</option> : null}
                               {row.type === "DEBIT" ? <option value="VENDOR_PAYMENT">Vendor payment</option> : null}
                               <option value="ACCOUNT">Account</option>
@@ -541,7 +568,7 @@ export default function BankImportPage() {
                             {row.handleKind && row.handleKind !== "ACCOUNT" ? <Button variant="ghost" size="icon-sm" onClick={() => patchRow(row.clientId, { expanded: !row.expanded })}>{row.expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}</Button> : null}
                           </div>
 
-                          {currency !== "NGN" && row.handleKind !== "MATCH_EXISTING" ? <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-[var(--text-secondary)]">1 {currency} =</span><Input type="number" min="0.000001" step="0.000001" value={row.exchangeRate || ""} onChange={(event) => patchRow(row.clientId, { exchangeRate: Number(event.target.value) })} className="h-7 w-32 text-xs" /><span className="text-[var(--text-secondary)]">NGN</span></div> : null}
+                          {currency !== "NGN" && !["MATCH_EXISTING", "BANK_TRANSFER"].includes(row.handleKind) ? <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-[var(--text-secondary)]">1 {currency} =</span><Input type="number" min="0.000001" step="0.000001" value={row.exchangeRate || ""} onChange={(event) => patchRow(row.clientId, { exchangeRate: Number(event.target.value) })} className="h-7 w-32 text-xs" /><span className="text-[var(--text-secondary)]">NGN</span></div> : null}
 
                           {row.expanded && row.handleKind === "MATCH_EXISTING" ? (
                             <MatchExistingPanel
@@ -553,6 +580,18 @@ export default function BankImportPage() {
                               currency={currency}
                               allocations={row.allocations}
                               onChange={(allocations) => patchRow(row.clientId, { allocations })}
+                            />
+                          ) : null}
+
+                          {row.expanded && row.handleKind === "BANK_TRANSFER" ? (
+                            <BankTransferPanel
+                              amount={amount}
+                              currency={currency}
+                              baseCurrency={contextData.bankAccount.baseCurrency}
+                              direction={row.type}
+                              value={row.targetId}
+                              bankAccounts={contextData.bankAccounts}
+                              onChange={(bankAccountId) => patchRow(row.clientId, { targetId: bankAccountId })}
                             />
                           ) : null}
 

@@ -161,23 +161,6 @@ async function getTargetSession(
   return created[0].id;
 }
 
-async function matchedOnLedger(
-  tx: Prisma.TransactionClient,
-  tenantId: string,
-  bankAccountId: string,
-  journalEntryLineId: string,
-) {
-  const rows = await tx.$queryRaw<Array<{ matchedAmount: unknown }>>`
-    SELECT COALESCE(SUM(brm."matched_amount"), 0) AS "matchedAmount"
-    FROM "bank_reconciliation_matches" brm
-    INNER JOIN "bank_reconciliation_sessions" brs ON brs."id" = brm."session_id"
-    WHERE brs."tenant_id" = ${tenantId}::uuid
-      AND brs."bank_account_id" = ${bankAccountId}
-      AND brm."journal_entry_line_id" = ${journalEntryLineId}
-  `;
-  return Number(rows[0]?.matchedAmount ?? 0);
-}
-
 async function attachStatementToTransferLine(
   tx: Prisma.TransactionClient,
   tenantId: string,
@@ -201,20 +184,39 @@ async function attachStatementToTransferLine(
     throw new Error("The transfer journal side does not agree with this statement row.");
   }
 
-  const alreadyMatched = await matchedOnLedger(tx, tenantId, statement.bankAccountId, line.id);
-  const remaining = Math.max(0, roundMoney(lineAmount - alreadyMatched));
+  const sessionId = await getTargetSession(tx, tenantId, userId, statement);
+  const existing = await tx.$queryRaw<Array<{ id: string; matchedAmount: unknown }>>`
+    SELECT brm."id", brm."matched_amount" AS "matchedAmount"
+    FROM "bank_reconciliation_matches" brm
+    WHERE brm."session_id" = ${sessionId}
+      AND brm."bank_transaction_id" = ${statement.id}
+      AND brm."journal_entry_line_id" = ${line.id}
+    LIMIT 1
+  `;
+  if (existing[0]) {
+    if (Math.abs(Number(existing[0].matchedAmount) - statementAmount) <= 0.01) return;
+    throw new Error("This statement row already has a different transfer match allocation.");
+  }
+
+  const otherMatches = await tx.$queryRaw<Array<{ matchedAmount: unknown }>>`
+    SELECT COALESCE(SUM(brm."matched_amount"), 0) AS "matchedAmount"
+    FROM "bank_reconciliation_matches" brm
+    INNER JOIN "bank_reconciliation_sessions" brs ON brs."id" = brm."session_id"
+    WHERE brs."tenant_id" = ${tenantId}::uuid
+      AND brs."bank_account_id" = ${statement.bankAccountId}
+      AND brm."journal_entry_line_id" = ${line.id}
+      AND brm."bank_transaction_id" <> ${statement.id}
+  `;
+  const remaining = Math.max(0, roundMoney(lineAmount - Number(otherMatches[0]?.matchedAmount ?? 0)));
   if (statementAmount - remaining > 0.01) {
     throw new Error("This transfer side has already been matched to another statement row.");
   }
 
-  const sessionId = await getTargetSession(tx, tenantId, userId, statement);
   await tx.$executeRaw`
     INSERT INTO "bank_reconciliation_matches"
       ("session_id", "bank_transaction_id", "journal_entry_line_id", "matched_amount")
     VALUES
       (${sessionId}, ${statement.id}, ${line.id}, ${statementAmount})
-    ON CONFLICT ("session_id", "bank_transaction_id", "journal_entry_line_id")
-    DO UPDATE SET "matched_amount" = EXCLUDED."matched_amount"
   `;
 }
 
@@ -256,14 +258,12 @@ export async function postStatementBankTransfer(input: {
         journalEntryId: string;
         transferNumber: string;
         reference: string | null;
-        transferDate: Date | string;
       }>>`
         SELECT
           bt."id",
           bt."journal_entry_id" AS "journalEntryId",
           bt."transfer_number" AS "transferNumber",
-          bt."reference",
-          bt."transfer_date" AS "transferDate"
+          bt."reference"
         FROM "bank_transfers" bt
         WHERE bt."tenant_id" = ${tenantId}::uuid
           AND bt."source_bank_account_id" = ${sourceBankAccountId}
