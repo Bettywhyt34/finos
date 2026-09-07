@@ -27,8 +27,10 @@ export interface ReconciliationData {
   bankAccountId: string;
   accountName: string;
   currency: string;
+  baseCurrency: string;
   ledgerAccountId: string;
   ledgerClosingBalance: number;
+  matchingBlockedReason: string | null;
   completed: boolean;
   completedAt: string | null;
   statementClosingBalance: number | null;
@@ -39,7 +41,20 @@ export interface ReconciliationData {
     reference: string | null;
     amount: number;
     type: "CREDIT" | "DEBIT";
-    matchedJournalLineId: string | null;
+    matchedAmount: number;
+    remainingAmount: number;
+    isFullyMatched: boolean;
+    matches: Array<{
+      id: string;
+      journalEntryLineId: string;
+      matchedAmount: number;
+      entryNumber: string;
+      entryDate: string;
+      reference: string | null;
+      description: string | null;
+      status: string;
+      canRemove: boolean;
+    }>;
   }>;
   ledgerLines: Array<{
     id: string;
@@ -51,7 +66,11 @@ export interface ReconciliationData {
     source: string | null;
     debit: number;
     credit: number;
-    matchedBankTransactionId: string | null;
+    statementType: "CREDIT" | "DEBIT" | null;
+    eligibleAmount: number;
+    matchedAmount: number;
+    remainingAmount: number;
+    isFullyMatched: boolean;
   }>;
 }
 
@@ -83,12 +102,21 @@ export default function ReconciliationPage() {
   }
 
   async function handleLoad() {
-    if (!selectedAccount) { toast.error("Select a bank account"); return; }
-    if (!fromDate || !toDate) { toast.error("Select a date range"); return; }
+    if (!selectedAccount) {
+      toast.error("Select a bank account");
+      return;
+    }
+    if (!fromDate || !toDate) {
+      toast.error("Select a date range");
+      return;
+    }
     setLoading(true);
     const result = await fetchReconciliationData(selectedAccount, fromDate, toDate);
     setLoading(false);
-    if ("error" in result) { toast.error(result.error); return; }
+    if ("error" in result) {
+      toast.error(result.error);
+      return;
+    }
     setData(result as ReconciliationData);
   }
 
@@ -96,7 +124,9 @@ export default function ReconciliationPage() {
     <div className="space-y-6 max-w-6xl">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Bank Reconciliation</h1>
-        <p className="text-sm text-slate-500 mt-1">Match imported bank-statement transactions to posted FINOS bank-ledger entries.</p>
+        <p className="text-sm text-slate-500 mt-1">
+          Match imported bank-statement activity to posted FINOS bank-ledger evidence.
+        </p>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg p-4">
@@ -105,32 +135,60 @@ export default function ReconciliationPage() {
             <Label className="text-xs">Bank Account</Label>
             <Select
               value={selectedAccount}
-              onValueChange={(v) => { setSelectedAccount(v ?? ""); setData(null); }}
+              onValueChange={(value) => {
+                setSelectedAccount(value ?? "");
+                setData(null);
+              }}
               onOpenChange={(open) => open && loadAccounts()}
             >
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select account…" /></SelectTrigger>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select account…" />
+              </SelectTrigger>
               <SelectContent>
                 {accounts.length === 0 ? (
-                  <SelectItem value="__loading__" disabled>{accountsLoaded ? "No accounts found" : "Loading…"}</SelectItem>
-                ) : accounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>{account.accountName} ({account.bankName})</SelectItem>
-                ))}
+                  <SelectItem value="__loading__" disabled>
+                    {accountsLoaded ? "No accounts found" : "Loading…"}
+                  </SelectItem>
+                ) : (
+                  accounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.accountName} ({account.bankName})
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">Statement From</Label>
-            <Input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setData(null); }} className="h-9 text-sm" />
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(event) => {
+                setFromDate(event.target.value);
+                setData(null);
+              }}
+              className="h-9 text-sm"
+            />
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">Statement To</Label>
-            <Input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setData(null); }} className="h-9 text-sm" />
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(event) => {
+                setToDate(event.target.value);
+                setData(null);
+              }}
+              className="h-9 text-sm"
+            />
           </div>
 
           <Button onClick={handleLoad} disabled={loading || !selectedAccount}>
-            <Search className="h-4 w-4 mr-1.5" /> {loading ? "Loading…" : "Start Reconciliation"}
+            <Search className="h-4 w-4 mr-1.5" />
+            {loading ? "Loading…" : "Start Reconciliation"}
           </Button>
         </div>
       </div>
