@@ -7,10 +7,13 @@
     "deploymentEnabled": {
       "finos-dev": false,
       "dev": false,
-      "development": false
+      "development": false,
+      "codex/finos-review-20260922": false
     }
   },
-  "regions": ["lhr1"],
+  "regions": [
+    "lhr1"
+  ],
   "functions": {
     "app/api/**": {
       "maxDuration": 30

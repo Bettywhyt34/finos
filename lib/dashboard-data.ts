@@ -106,7 +106,10 @@ export async function getFinancialOverview(tenantId: string): Promise<FinancialO
       },
       select: { totalAmount: true, amountPaid: true },
     }),
-    getAccountBalances(tenantId, currentPeriod, yearStart),
+    // Match the P&L report: closing transfers must not erase trading results.
+    getAccountBalances(tenantId, currentPeriod, yearStart, {
+      excludeSources: ["year-end-close"],
+    }),
   ]);
 
   const totalIncome = sumByType(balances, "INCOME");

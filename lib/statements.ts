@@ -30,7 +30,9 @@ export async function getAccountBalances(
   options?: AccountBalanceOptions,
 ): Promise<AccountBalance[]> {
   const accounts = await prisma.chartOfAccounts.findMany({
-    where: { tenantId: orgId, isActive: true },
+    // Inactive accounts cannot receive new postings, but their historical
+    // balances must remain in financial statements.
+    where: { tenantId: orgId },
     select: { id: true, code: true, name: true, type: true, subtype: true, financialCategory: true },
     orderBy: { code: "asc" },
   });
