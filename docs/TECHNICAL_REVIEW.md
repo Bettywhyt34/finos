@@ -1,6 +1,6 @@
 # FINOS technical review
 
-Review date: 22 September 2026. Baseline: `6afa9440f2b40a3def9a5a7f96a549f3ac052fb9` (`main`, 7 September). Scope: repository inventory; targeted frontend, server action, integration and schema review; connected deployment metadata; attempted read-only database inspection. This is not a complete security audit or production certification.
+Review date: 22 September 2026. Baseline: `6afa9440f2b40a3def9a5a7f96a549f3ac052fb9` (`main`, 7 September). Scope: repository inventory; targeted frontend, server action, integration and schema review; connected deployment metadata; completed read-only database inspection. This is not a complete security audit or production certification.
 
 ## Conclusion
 
@@ -102,7 +102,10 @@ Add isolated integration tests, CI gates, a reproducible schema setup, dependenc
 - Default-branch inventory and targeted source inspection; production deployment SHA matches reviewed SHA.
 - Public login HTTP 200; no authenticated browser workflow exercised.
 - Four local reporting regression tests execute actual TypeScript modules with database doubles: two failed before the patch; all four pass after it.
-- Full install, lint, typecheck, build, live integrity audits, concurrency and end-to-end flows have NOT been run in this review workspace. It holds a targeted source snapshot, not a full verified build checkout.
-- No production deployment, database resume, migration, data deletion, email sending or financial transaction occurred.
+- Full install, lint, typecheck, build, concurrency and end-to-end flows have NOT been run in this review workspace. It holds a targeted source snapshot, not a full verified build checkout.
+- The owner resumed Supabase. Read-only review confirmed ACTIVE_HEALTHY, 93 public tables, 2 tenants, and zero journal entries, customer payments or vendor payments. All 46 queries from the four existing accounting, Money In, invoice settlement and Project audit scripts returned zero violations; empty transaction tables limit behavioral assurance. Receipt atomicity/allocation constraint triggers and the named allocation unique index exist.
+- Security catalog: RLS enabled on 85 of 93 public tables; neither anon nor authenticated has SELECT on any of the 93. The advisor returned 36 informational RLS-without-policy findings, consistent with a server-only access design; no full security certification is implied. Remediation reference: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy
+- Prisma migration history contains one completed record and zero unfinished records; complete migration reconciliation remains pending. Live vendor_payment_allocations exists: C03 must reuse and validate it rather than assume the table is absent.
+- No production deployment, migration, data deletion, email sending or financial transaction was performed by this review.
 
 See `DEVELOPMENT_PLAN.md` for sequencing and acceptance criteria.

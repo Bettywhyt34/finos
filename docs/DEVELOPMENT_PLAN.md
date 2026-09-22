@@ -15,7 +15,7 @@ Owner: Codex development, coordinated in the FINOS conversation. Finance accepta
 
 | ID | Priority | Deliverable | Dependencies | Indicative size |
 | --- | --- | --- | --- | --- |
-| C00 | P0 | Read-only live baseline and isolated development environment | Database access or approved resumption | 1–2 development days plus access |
+| C00 | P0 | Read-only live baseline and isolated development environment | Read-only baseline done; isolated setup pending | 1–2 development days plus access |
 | C01 | P0 | Reporting history and closing-entry regression patch | None | Prepared in this PR |
 | C02 | P0 | Financial mutation authorization matrix and guards | C00 for integration tests | 2–3 days |
 | C03 | P0 | Vendor payment atomicity, idempotency and allocation evidence | C00, C02 | 3–5 days plus migration review |
@@ -30,7 +30,7 @@ These estimates require a full runnable checkout and accessible isolated databas
 
 ## C00 — Establish the factual baseline
 
-- Confirm the production connection target through authorized configuration metadata without exposing secrets. The connected FINOS Supabase project is inactive; obtain approval before resuming it, or inspect the correct replacement database if one exists.
+- Confirm the production connection target through authorized configuration metadata without exposing secrets. The owner resumed FINOS; status is ACTIVE_HEALTHY. Read-only schema and 46 existing audit queries completed with zero violations, but journals and both payment tables are empty. Confirm deployment connection identity and build representative isolated fixtures.
 - Read applied migration history, tables, indexes, triggers, role grants, tenant counts and reconciliation totals. Run the existing audit scripts with read-only credentials and aggregate results. Do not repair data during discovery.
 - Reconcile Prisma, raw SQL and both migration directories. Build an explicitly disposable fixture database only after reviewing every migration. Document backup/restore ownership and recovery evidence.
 - Obtain full source checkout at the reviewed SHA, lockfile install, generated Prisma client, lint, typecheck and build results. Keep required environment names documented without values.
@@ -50,7 +50,7 @@ Acceptance: `npm run test:reporting` passes all four tests. Historical inactive-
 
 ## C03 — Repair vendor settlement
 
-- Implement stable request idempotency and locked, fresh bill balances. Acquire multi-bill locks in deterministic order and persist payment-allocation evidence in the same transaction as bills, journal and bank impact.
+- Implement stable request idempotency and locked, fresh bill balances. Acquire multi-bill locks in deterministic order and reuse the existing live vendor_payment_allocations table and persist payment-allocation evidence in the same transaction as bills, journal and bank impact.
 - Support selected bank/cash account, payment currency/rate, WHT and carrying values. Proposal must explain non-destructive backfill options for historical payments; never invent allocations that cannot be evidenced.
 - Acceptance: concurrent attempts to settle the same remaining balance cannot overpay; retry of identical request returns one payment/journal; different payload with same key is rejected; injected failure leaves no partial writes; partial/multiple-bill/WHT/FX and reversal fixtures reconcile AP and cash exactly.
 
@@ -99,6 +99,6 @@ Acceptance: `npm run test:reporting` passes all four tests. Historical inactive-
 ## Immediate Codex handoff
 
 1. Review and validate this draft reporting patch against a full checkout.
-2. Complete C00 once database access is resolved; report blockers truthfully.
+2. Finish C00 isolated setup and full-build verification; live read-only baseline is complete.
 3. Implement C02, then C03 as separate bounded PRs with the acceptance tests above.
 4. Update this queue and the living strategy after verified milestones. Do not mark a task complete merely because code exists or Vercel built it.
