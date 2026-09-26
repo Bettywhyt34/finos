@@ -9,16 +9,16 @@ import vm from 'node:vm';
 async function loadModule(path, imports) {
   const source = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
   const context = vm.createContext({ Date, Intl });
-  const module = new vm.SourceTextModule(stripTypeScriptTypes(source), { context });
-  await module.link((specifier) => {
+  const loadedModule = new vm.SourceTextModule(stripTypeScriptTypes(source), { context });
+  await loadedModule.link((specifier) => {
     assert.ok(Object.hasOwn(imports, specifier), `Unexpected dependency: ${specifier}`);
     const values = imports[specifier];
     return new vm.SyntheticModule(Object.keys(values), function () {
       for (const [name, value] of Object.entries(values)) this.setExport(name, value);
     }, { context });
   });
-  await module.evaluate();
-  return module.namespace;
+  await loadedModule.evaluate();
+  return loadedModule.namespace;
 }
 
 function statementDb() {
@@ -78,6 +78,7 @@ for (const closed of [false, true]) {
       ] : []),
     ];
     const prisma = {
+      $queryRaw: async () => [],
       tenant: { findUnique: async () => ({ currency: 'NGN' }) },
       bankAccount: { findMany: async () => [] },
       invoice: { findMany: async () => [] },

@@ -14,14 +14,18 @@ import { formatCurrency } from "@/lib/utils";
 
 interface OpenBill { id: string; billNumber: string; balance: number; }
 interface Props {
+  tenantId: string;
+  bankAccounts: {id: string; accountName: string}[];
   bill: { id: string; status: string; vendorId: string; balance: number; isWhtEligible: boolean; };
   openBills: OpenBill[];
 }
 
 interface Allocation { billId: string; billNumber: string; maxAmount: number; amount: number; }
 
-export function BillActions({ bill, openBills }: Props) {
+export function BillActions({ bill, openBills, tenantId, bankAccounts }: Props) {
   const router = useRouter();
+  const [requestId, setRequestId] = useState("");
+  const [bankAccountId, setBankAccountId] = useState(bankAccounts[0]?.id ?? "");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -72,6 +76,7 @@ export function BillActions({ bill, openBills }: Props) {
     setLoading(true);
     const fd = new FormData(e.currentTarget);
     const result = await recordBillPayment({
+      requestId, tenantId, bankAccountId,
       vendorId: bill.vendorId,
       paymentDate,
       amount,
@@ -100,7 +105,7 @@ export function BillActions({ bill, openBills }: Props) {
           </Button>
         )}
         {canPay && (
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" onClick={() => { setRequestId(crypto.randomUUID()); setOpen(true); }}>
             <CreditCard className="h-3.5 w-3.5 mr-1.5" />
             Record Payment
           </Button>
@@ -111,13 +116,18 @@ export function BillActions({ bill, openBills }: Props) {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Record Vendor Payment</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 py-2">
+            <Label htmlFor="pay-bank">Paying account (NGN)</Label>
+            <select id="pay-bank" required value={bankAccountId} onChange={e => setBankAccountId(e.target.value)} className="w-full rounded border p-2">
+              <option value="">Select bank / cash account</option>
+              {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.accountName}</option>)}
+            </select>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Payment Date</Label>
                 <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
               </div>
               <div className="space-y-1.5">
-                <Label>Amount</Label>
+                <Label>Gross AP settled (NGN)</Label>
                 <Input type="number" min="0.01" step="0.01" value={amount}
                   onChange={(e) => { const v = parseFloat(e.target.value) || 0; setAmount(v); autoAllocate(v); }} required />
               </div>

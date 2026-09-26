@@ -67,14 +67,14 @@ export interface FinancialOverviewData {
   }[];
 }
 
-export async function getFinancialOverview(tenantId: string): Promise<FinancialOverviewData> {
+export async function getFinancialOverview(tenantId: string, periodTo?: string, periodFrom?: string): Promise<FinancialOverviewData> {
   const now = new Date();
-  const currentPeriod = getRecognitionPeriod(now);
-  const yearStart = `${now.getFullYear()}-01`;
+  const currentPeriod = periodTo && /^\d{4}-(0[1-9]|1[0-2])$/.test(periodTo) ? periodTo : getRecognitionPeriod(now);
+  const yearStart = periodFrom && /^\d{4}-(0[1-9]|1[0-2])$/.test(periodFrom) && periodFrom <= currentPeriod ? periodFrom : `${currentPeriod.slice(0,4)}-01`;
   const inSevenDays = new Date(now);
   inSevenDays.setDate(inSevenDays.getDate() + 7);
 
-  const [tenant, bankAccounts, overdueInvoices, billsDue, balances] = await Promise.all([
+  const [tenant, bankAccounts, overdueInvoices, billsDue, balances, cashRows]  = await Promise.all([
     prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } }),
     prisma.bankAccount.findMany({
       where: { tenantId, isActive: true },
@@ -93,6 +93,7 @@ export async function getFinancialOverview(tenantId: string): Promise<FinancialO
         invoiceNumber: true,
         dueDate: true,
         balanceDue: true,
+        exchangeRate: true,
         status: true,
         customer: { select: { companyName: true } },
       },
@@ -101,17 +102,26 @@ export async function getFinancialOverview(tenantId: string): Promise<FinancialO
     prisma.bill.findMany({
       where: {
         tenantId,
-        dueDate: { gte: now, lte: inSevenDays },
+        dueDate: { lte: inSevenDays },
         status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
       },
-      select: { totalAmount: true, amountPaid: true },
+      select: { totalAmount: true, amountPaid: true, amountCredited: true, exchangeRate: true },
     }),
     // Match the P&L report: closing transfers must not erase trading results.
     getAccountBalances(tenantId, currentPeriod, yearStart, {
       excludeSources: ["year-end-close"],
     }),
+    prisma.$queryRaw<Array<{id: string; name: string; bank: string; amount: unknown}>>`
+      SELECT coa.id, coa.name, 'Posted ledger · NGN' AS bank, COALESCE(SUM(l.debit-l.credit),0) AS amount
+      FROM chart_of_accounts coa
+      LEFT JOIN journal_entry_lines l ON l.account_id = coa.id
+        AND l.entry_id IN (SELECT id FROM journal_entries WHERE tenant_id = ${tenantId}::uuid AND is_locked = true AND entry_date <= ${now})
+      WHERE coa.tenant_id = ${tenantId}::uuid AND coa.id IN
+        (SELECT ledger_account_id FROM bank_accounts WHERE tenant_id = ${tenantId}::uuid AND ledger_account_id IS NOT NULL)
+      GROUP BY coa.id, coa.name ORDER BY coa.name`,
   ]);
 
+  void tenant; void bankAccounts; // Book cash is sourced from mapped posted ledger accounts.
   const totalIncome = sumByType(balances, "INCOME");
   const totalExpenses = sumByType(balances, "EXPENSE");
   const otherIncome = balances
@@ -130,22 +140,17 @@ export async function getFinancialOverview(tenantId: string): Promise<FinancialO
   const netProfit = totalIncome - totalExpenses;
 
   return {
-    currency: tenant?.currency ?? "NGN",
+    currency: "NGN",
     cash: {
-      total: bankAccounts.reduce((sum, account) => sum + toNum(account.currentBalance), 0),
-      accounts: bankAccounts.slice(0, 3).map((account) => ({
-        id: account.id,
-        name: account.accountName,
-        bank: account.bankName,
-        amount: toNum(account.currentBalance),
-      })),
+      total: cashRows.reduce((sum, row) => sum + toNum(row.amount), 0),
+      accounts: cashRows.map(row => ({ ...row, amount: toNum(row.amount) })),
     },
     attention: {
       overdueInvoiceCount: overdueInvoices.length,
-      overdueInvoiceAmount: overdueInvoices.reduce((sum, invoice) => sum + toNum(invoice.balanceDue), 0),
+      overdueInvoiceAmount: overdueInvoices.reduce((sum, invoice) => sum + toNum(invoice.balanceDue) * toNum(invoice.exchangeRate), 0),
       billsDueCount: billsDue.length,
       billsDueAmount: billsDue.reduce(
-        (sum, bill) => sum + toNum(bill.totalAmount) - toNum(bill.amountPaid),
+        (sum, bill) => sum + (toNum(bill.totalAmount) - toNum(bill.amountPaid) - toNum(bill.amountCredited)) * toNum(bill.exchangeRate),
         0
       ),
     },
@@ -155,7 +160,7 @@ export async function getFinancialOverview(tenantId: string): Promise<FinancialO
       invoiceNumber: invoice.invoiceNumber,
       customerName: invoice.customer.companyName,
       dueDate: invoice.dueDate,
-      amount: toNum(invoice.balanceDue),
+      amount: toNum(invoice.balanceDue) * toNum(invoice.exchangeRate),
       daysOverdue: Math.max(0, Math.floor((now.getTime() - invoice.dueDate.getTime()) / 86_400_000)),
       status: invoice.status,
     })),

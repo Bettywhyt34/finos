@@ -18,6 +18,7 @@ interface OpenInvoice { id: string; invoiceNumber: string; balanceDue: number; d
 interface BankAccount { id: string; accountName: string; bankName: string; currency: string; }
 
 interface Props {
+  tenantId: string;
   invoice: {
     id: string;
     status: string;
@@ -39,8 +40,9 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
+export function InvoiceActions({ invoice, openInvoices, bankAccounts, tenantId }: Props) {
   const router = useRouter();
+  const [requestId, setRequestId] = useState("");
   const [loading, setLoading] = useState(false);
 
   const [sentOpen, setSentOpen] = useState(false);
@@ -145,6 +147,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
     setLoading(true);
     const fd = new FormData(e.currentTarget);
     const result = await recordCustomerPayment({
+      tenantId, requestId,
       customerId: invoice.customerId,
       paymentDate,
       amount: cashAmount,
@@ -179,7 +182,7 @@ export function InvoiceActions({ invoice, openInvoices, bankAccounts }: Props) {
       {canFullEdit && <Button variant="outline" size="sm" onClick={() => router.push(`/sales/invoices/${invoice.id}/edit`)}><Pencil className="h-3.5 w-3.5 mr-1.5" />Edit Draft</Button>}
       {canLimitedEdit && <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}><Pencil className="h-3.5 w-3.5 mr-1.5" />Edit</Button>}
       {canSend && <Button variant="outline" size="sm" onClick={() => setSentOpen(true)} disabled={loading}><Send className="h-3.5 w-3.5 mr-1.5" />Mark as Sent</Button>}
-      {canPay && <Button size="sm" onClick={() => setPayOpen(true)}><CreditCard className="h-3.5 w-3.5 mr-1.5" />Record Payment</Button>}
+      {canPay && <Button size="sm" onClick={() => { setRequestId(crypto.randomUUID()); setPayOpen(true); }}><CreditCard className="h-3.5 w-3.5 mr-1.5" />Record Payment</Button>}
       {canVoid && <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300" onClick={() => setVoidOpen(true)}><Ban className="h-3.5 w-3.5 mr-1.5" />Void</Button>}
 
       <Dialog open={sentOpen} onOpenChange={setSentOpen}>

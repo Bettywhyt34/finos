@@ -12,9 +12,9 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
   /**
    * JWT callback: runs when a token is created or refreshed.
    * With database strategy this still fires for the initial OAuth exchange.
-   * We store tenant data in the token so the session callback is pure read.
+   * Tenant claims are routing hints; the session callback revalidates membership.
    */
-  async jwt({ token, user, trigger }) {
+  async jwt({ token, user, trigger, session }) {
     // Initial sign-in: `user` is the DB record
     if (user?.id) {
       token.id = user.id;
@@ -78,7 +78,7 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
       // ─────────────────────────────────────────────────────────────────────
 
       const membership = await prisma.tenantMembership.findFirst({
-        where:   { userId: user.id, status: "ACTIVE" },
+        where:   { userId: user.id, status: "ACTIVE", tenant: { status: "active" } },
         include: { tenant: { select: { id: true, name: true } } },
         orderBy: { createdAt: "asc" },
       });
@@ -91,7 +91,8 @@ export const authCallbacks: NextAuthConfig["callbacks"] = {
     // Re-hydrate on `update()` call (e.g. after tenant creation / switching)
     if (trigger === "update" && token.id) {
       const membership = await prisma.tenantMembership.findFirst({
-        where:   { userId: token.id as string, status: "ACTIVE" },
+        where: { userId: token.id as string, status: "ACTIVE", tenant: { status: "active" },
+          ...(typeof session?.tenantId === "string" ? { tenantId: session.tenantId } : token.tenantId ? { tenantId: token.tenantId as string } : {}) },
         include: { tenant: { select: { id: true, name: true } } },
         orderBy: { createdAt: "asc" },
       });

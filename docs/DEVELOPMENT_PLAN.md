@@ -6,27 +6,45 @@ Owner: Codex development, coordinated in the FINOS conversation. Finance accepta
 
 1. Preserve implemented workflows and the canonical JournalEntry/JournalEntryLine ledger. No wholesale rewrite or infrastructure migration during stabilisation.
 2. Develop in isolated branches. Draft PRs require review and must not auto-merge or release. Production deployment, data deletion and destructive database changes require explicit owner approval.
-3. Use synthetic data in a separate local/test database. Never run migrations, seeds or write tests against production. Existing repository restrictions on database commands remain in force.
+3. Owner-authorised demo writes are confined to the two Cedarstone fictional entities in the connected FINOS database. Preserve all existing records. QVT MEDIA LTD is no longer an authorised test tenant. Use isolated test doubles or a test database for failure/concurrency tests. No database deletion or destructive migration is authorised.
 4. Before preview execution, verify its database, email, queues, integrations and secrets are isolated. Disable external side effects in tests.
 5. Every financial change needs a failing behavioral regression first, the smallest correction, reconciliation evidence, and a rollback approach. Correct posted transactions with auditable reversals/adjustments.
 6. Keep current strategy sections revised in place. Move superseded decisions to the version log; distinguish source-implemented, isolated-tested, staging-verified and production-verified states.
 
-## Work queue
+## MVP completion queue
 
-| ID | Priority | Deliverable | Dependencies | Indicative size |
-| --- | --- | --- | --- | --- |
-| C00 | P0 | Read-only live baseline and isolated development environment | Read-only baseline done; isolated setup pending | 1–2 development days plus access |
-| C01 | P0 | Reporting history and closing-entry regression patch | None | Prepared in this PR |
-| C02 | P0 | Financial mutation authorization matrix and guards | C00 for integration tests | 2–3 days |
-| C03 | P0 | Vendor payment atomicity, idempotency and allocation evidence | C00, C02 | 3–5 days plus migration review |
-| C04 | P0 | Native and integration tax, FX and recognition reconciliation | C03 | 3–5 days |
-| C05 | P0 | Ledger-backed dashboard and reconciled cash-flow reporting | C01, C04 | 3–5 days |
-| C06 | P1 | Secure multi-entity switching | C00, C02 | 2–3 days |
-| C07 | P1 | Bounded consolidation and intercompany reporting | C04–C06 | 5–8 days |
-| C08 | P1 | First Financial Brain cash/collections workflow | C04–C06; group insights also require C07 | 4–6 days |
-| C09 | P0 ongoing | CI, migration reproducibility, operational and security gates | Starts C00; gates all releases | Across every work item |
+Priority is a usable MVP, with accounting controls verified inside the selected journeys. Infrastructure migration, a broad AI layer and advanced consolidation are not prerequisites.
 
-These estimates require a full runnable checkout and accessible isolated database. Sequence is dependency-led. The entire queue is not a promise to finish before the YC application target. Prefer a verified single-entity insight and honest scope over rushed consolidation.
+| Step | Deliverable | Current evidence | Remaining acceptance |
+| --- | --- | --- | --- |
+| M1 | Private fictional demo company and subsidiary | Cedarstone entities created 26 September; owner access; eight matching accounts, bank, customer, vendor and two drafts per entity | Banner and switching checked in authenticated preview |
+| M2 | Invoice to receipt and bill to payment | Draft branch has role checks, settlement request IDs, locked vendor balances, selected bank and allocations | Post drafts, record partial and final settlements, retry, reverse where supported, reconcile AR/AP/cash |
+| M3 | Dashboard controls and drill-downs | Selected performance periods, CSV, posted ledger cash, invoice and vendor-payment links implemented | Browser checks and ledger reconciliation |
+| M4 | First Financial Brain | 13-week deterministic scenario, 0/14/30-day collection delay, evidence and decision capture implemented | Verify displayed sources and persisted responses on demo activity |
+| M5 | Entity switching and basic consolidation | Membership-validated selection; same-NGN compatible-account aggregation, balanced worksheet eliminations and evidence export | Two-entity isolation and intercompany walkthrough |
+| M6 | Review and release preparation | Typecheck, build and 15 isolated tests passed during implementation | Current build, changed-file lint, database concurrency and authenticated acceptance; owner production approval |
+
+### Demo scope and records
+
+Use **Cedarstone Media & Services — FINOS Demo** and its fictional wholly-owned **Cedarstone Studio — FINOS Demo** subsidiary. Both use NGN. Existing QVT and Bettywhyt tenants are excluded from testing and seeding. No real customer contacts, bank details or integration connections are copied. Demo membership uses the existing FINOS owner account; no passwords or public access are created.
+
+`additional_fields.finosDemo` and `syntheticData` mark both entities. Their parent/group metadata describes the demo scenario, not verified legal ownership. A persistent banner identifies synthetic data. `scripts/fixtures/cedarstone-demo.sql` is additive and rerunnable; it contains no cleanup operation. The prior QVT seed was never executed and has been replaced.
+
+### Walkthrough and expected results
+
+1. In the parent, post SYNTH-MVP-INV-001 for NGN 100,000 with immediate recognition. Expected: AR 100,000 and revenue 100,000.
+2. Receive gross 40,000 consisting of cash 38,000 and WHT 2,000. Expected: AR 60,000; bank 38,000; WHT receivable 2,000. Retry returns the same receipt.
+3. Post SYNTH-MVP-BILL-001 for NGN 60,000. Pay gross 30,000 consisting of bank 28,500 and WHT payable 1,500. Expected: AP 30,000; bank net 9,500; profit 40,000. Retry returns the same payment.
+4. Before final settlement, compare the remaining receivable/payment dates in the 13-week forecast. Delay collection 14 or 30 days; explain any shortfall from the linked documents.
+5. Settle the remaining invoice and bill balances, then reconcile the subledgers, posted journals and dashboard. Do not mark this step complete from preinserted ledger fixtures.
+6. Switch to Studio; parent records must be inaccessible through Studio-scoped routes. Attempt viewer writes and stale-tab settlement; both must fail.
+7. Add an explicitly labelled intercompany sale and reciprocal bill for NGN 10,000 through the application. Eliminate internal revenue/cost and AR/AP only in the worksheet. Source books must not change; group trial balance must reconcile.
+
+### Current boundaries
+
+The vendor payment form is deliberately NGN-only; FX vendor settlement and full payment reversal remain separate accounting work. Financial Brain v1 provides deterministic explanations rather than a model-backed chat experience. Consolidation is a report worksheet with export, not a persisted group management system. Shared database is accessible through the connector, but this workspace has no runtime DATABASE_URL or authenticated preview session. This blocks direct application-to-database browser validation until configured; it is not a request to deploy production.
+
+The detailed control backlog below remains applicable to release readiness without replacing the MVP sequence above.
 
 ## C00 — Establish the factual baseline
 
@@ -96,9 +114,9 @@ Acceptance: `npm run test:reporting` passes all four tests. Historical inactive-
 - Review the existing dependency PRs together to avoid incompatible Prisma/client/auth upgrades; do not equate an available update with a verified vulnerability fix.
 - Release evidence: reviewed diff, passing gates, accepted migration/rollback proposal, backup confirmation where relevant, staged walkthrough and finance sign-off. Production deployment still requires explicit user approval.
 
-## Immediate Codex handoff
+## Immediate implementation handoff
 
-1. Review and validate this draft reporting patch against a full checkout.
-2. Finish C00 isolated setup and full-build verification; live read-only baseline is complete.
-3. Implement C02, then C03 as separate bounded PRs with the acceptance tests above.
-4. Update this queue and the living strategy after verified milestones. Do not mark a task complete merely because code exists or Vercel built it.
+1. Preserve the Cedarstone setup and current draft branch; do not rerun any former QVT seed.
+2. Configure a non-production runtime using authorised demo access, with outbound email/integrations disabled, then execute the walkthrough above.
+3. Close remaining accounting and browser issues before calling the MVP accepted. Full repository lint has existing errors; record them separately from changed-file findings.
+4. Update this plan and the existing strategy in place after verified milestones. Production deployment and deletion remain separate owner approvals.

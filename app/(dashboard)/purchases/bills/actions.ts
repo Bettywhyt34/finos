@@ -1,5 +1,6 @@
 "use server";
 
+import { settlementRequest, checkSettlementRetry } from "@/lib/mvp/settlement-request";
 import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
@@ -58,6 +59,7 @@ export async function createBill(data: {
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   if (data.lines.length === 0) return { error: "At least one line item is required" };
   if (data.lines.some((line) => !line.accountId)) {
@@ -189,7 +191,7 @@ export async function createBill(data: {
             "tax_name" = ${line.tax?.name ?? null},
             "tax_rate" = ${line.taxRate},
             "tax_amount" = ${line.taxAmount}
-          WHERE "id" = ${created.id}::uuid
+          WHERE "id" = ${created.id}
         `;
       }
 
@@ -210,6 +212,7 @@ export async function postBill(id: string) {
   const orgId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   const bill = await prisma.bill.findFirst({
     where: { id, tenantId: orgId },
@@ -236,9 +239,8 @@ export async function postBill(id: string) {
       const taxRows = await tx.$queryRaw<BillTaxSnapshotRow[]>`
         SELECT "id", "tax_amount"
         FROM "bill_lines"
-        WHERE "bill_id" = ${id}::uuid
+        WHERE "bill_id" = ${id}
       `;
-      const taxByLineId = new Map(taxRows.map((row) => [row.id, Number(row.tax_amount)]));
       const sourceTaxTotal = roundMoney(taxRows.reduce((sum, row) => sum + Number(row.tax_amount), 0));
       if (Math.abs(sourceTaxTotal - Number(bill.taxAmount)) > 0.01) {
         throw new Error("Bill VAT snapshot no longer agrees with the bill header. Review the bill before posting.");
@@ -346,6 +348,9 @@ export async function postBill(id: string) {
 }
 
 export async function recordBillPayment(data: {
+  requestId: string;
+  tenantId: string;
+  bankAccountId: string;
   vendorId: string;
   paymentDate: string;
   amount: number;
@@ -358,23 +363,37 @@ export async function recordBillPayment(data: {
   const orgId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
+  if (data.tenantId !== orgId) return { error: "Entity changed. Reload this form before paying." };
+  if (!["BANK_TRANSFER", "CHECK", "CASH", "CARD"].includes(data.method)) return { error: "Invalid payment method" };
+  const tenant = await prisma.tenant.findUnique({ where: { id: orgId }, select: { currency: true } });
+  if (tenant?.currency !== "NGN") return { error: "MVP vendor settlement currently supports NGN functional currency only." };
   if (!Number.isFinite(data.amount) || data.amount <= 0) return { error: "Payment amount must be greater than zero" };
   if (!Number.isFinite(data.whtAmount) || data.whtAmount < 0 || data.whtAmount > data.amount) {
     return { error: "WHT amount must be between zero and the payment amount" };
   }
   const totalAllocated = data.billAllocations.reduce((sum, alloc) => sum + alloc.amount, 0);
-  if (Math.abs(totalAllocated - data.amount) > 0.01) {
+  if (Math.round(totalAllocated * 100) !== Math.round(data.amount * 100)) {
     return { error: "Allocated amount must equal payment amount" };
   }
   if (!data.billAllocations.length) return { error: "Allocate the payment to at least one bill" };
 
   const paymentDate = new Date(data.paymentDate);
   if (Number.isNaN(paymentDate.getTime())) return { error: "A valid payment date is required" };
+  if (paymentDate > new Date()) return { error: "Payment date cannot be in the future" };
   const netAmount = roundMoney(data.amount - data.whtAmount);
 
   try {
+    const request = settlementRequest(orgId, data.requestId, { ...data, billAllocations: [...data.billAllocations].sort((a,b) => a.billId.localeCompare(b.billId)) });
     const paymentId = await prisma.$transaction(async (tx) => {
+      if (await checkSettlementRetry(tx, orgId, "vendor_payment", request)) return request.id;
+      // Serialize before reading balances, including allocations from concurrent requests.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`finos:vendor-payment:${orgId}`}))`;
+      for (const id of [...new Set(data.billAllocations.map(a => a.billId))].sort()) {
+        await tx.$queryRaw`SELECT "id" FROM "bills" WHERE "id" = ${id} AND "tenant_id" = ${orgId}::uuid FOR UPDATE`;
+      }
+
       const vendor = await tx.vendor.findFirst({
         where: { id: data.vendorId, tenantId: orgId },
         select: { id: true },
@@ -386,7 +405,7 @@ export async function recordBillPayment(data: {
 
       const bills = await tx.bill.findMany({
         where: { tenantId: orgId, vendorId: data.vendorId, id: { in: billIds } },
-        select: { id: true, totalAmount: true, amountPaid: true, status: true },
+        select: { id: true, totalAmount: true, amountPaid: true, status: true, currency: true, exchangeRate: true, amountCredited: true },
       });
       if (bills.length !== billIds.length) {
         throw new Error("One or more allocated bills are invalid or belong to another organisation/vendor");
@@ -396,16 +415,22 @@ export async function recordBillPayment(data: {
       for (const alloc of data.billAllocations) {
         if (!Number.isFinite(alloc.amount) || alloc.amount <= 0) throw new Error("Bill allocation must be greater than zero");
         const bill = billMap.get(alloc.billId)!;
+        if (bill.currency !== "NGN" || Number(bill.exchangeRate) !== 1) throw new Error("Foreign-currency vendor settlements require the FX workflow; this MVP form supports NGN bills only.");
         if (bill.status === "DRAFT") throw new Error("Draft bills must be posted before payment can be recorded");
         if (bill.status === "PAID") throw new Error("A paid bill cannot receive another allocation");
-        const outstanding = Number(bill.totalAmount) - Number(bill.amountPaid);
-        if (alloc.amount - outstanding > 0.01) {
+        const outstanding = Number(bill.totalAmount) - Number(bill.amountPaid) - Number(bill.amountCredited);
+        if (Math.round(alloc.amount * 100) > Math.round(outstanding * 100)) {
           throw new Error("A bill allocation exceeds its outstanding balance");
         }
       }
 
       const apAccount = await resolveSystemAccount(tx, orgId, "ACCOUNTS_PAYABLE", "CL-001");
-      const bankAccount = await resolveSystemAccount(tx, orgId, "DEFAULT_BANK", "CA-003");
+      const banks = await tx.$queryRaw<Array<{id: string}>>`
+        SELECT coa.id FROM bank_accounts ba JOIN chart_of_accounts coa ON coa.id = ba.ledger_account_id AND coa.tenant_id = ba.tenant_id
+        WHERE ba.id = ${data.bankAccountId} AND ba.tenant_id = ${orgId}::uuid AND ba.is_active = true
+          AND ba.currency = 'NGN' AND coa.is_active = true AND coa.type = 'ASSET'`;
+      const bankAccount = banks[0];
+      if (!bankAccount) throw new Error("Select an active NGN bank account mapped to an active asset ledger.");
       const whtAccount = data.whtAmount > 0
         ? await resolveSystemAccount(tx, orgId, "WHT_PAYABLE", "CL-002")
         : null;
@@ -418,6 +443,7 @@ export async function recordBillPayment(data: {
         data: {
           tenantId: orgId,
           vendorId: data.vendorId,
+          id: request.id,
           paymentNumber,
           paymentDate,
           amount: data.amount,
@@ -428,11 +454,17 @@ export async function recordBillPayment(data: {
         select: { id: true },
       });
 
+      await tx.$executeRaw`UPDATE vendor_payments SET bank_account_id = ${data.bankAccountId}, currency = 'NGN', exchange_rate = 1,
+        base_settlement_amount = ${data.amount}, base_ap_amount = ${data.amount}, fx_gain_loss = 0
+        WHERE id = ${payment.id} AND tenant_id = ${orgId}::uuid`;
       for (const alloc of data.billAllocations) {
+        await tx.$executeRaw`INSERT INTO vendor_payment_allocations
+          (id, tenant_id, payment_id, bill_id, amount, base_historical_ap_amount, fx_unrealized_consumed, base_ap_amount, base_settlement_amount)
+          VALUES (gen_random_uuid()::text, ${orgId}::uuid, ${payment.id}, ${alloc.billId}, ${alloc.amount}, ${alloc.amount}, 0, ${alloc.amount}, ${alloc.amount})`;
         const bill = billMap.get(alloc.billId)!;
         const newPaid = roundMoney(Number(bill.amountPaid) + alloc.amount);
-        const newBalance = roundMoney(Number(bill.totalAmount) - newPaid);
-        const newStatus = newBalance <= 0.01 ? "PAID" : "PARTIAL";
+        const newBalance = roundMoney(Number(bill.totalAmount) - Number(bill.amountCredited) - newPaid);
+        const newStatus = newBalance === 0 ? "PAID" : "PARTIAL";
         await tx.bill.update({
           where: { id: alloc.billId },
           data: { amountPaid: newPaid, status: newStatus },
@@ -457,7 +489,7 @@ export async function recordBillPayment(data: {
         createdBy: userId,
         entryDate: paymentDate,
         reference: paymentNumber,
-        description: `Vendor payment ${paymentNumber}`,
+        description: `Vendor payment ${paymentNumber} ${request.marker}`,
         recognitionPeriod: getRecognitionPeriod(paymentDate),
         source: "vendor_payment",
         sourceId: payment.id,
@@ -469,6 +501,8 @@ export async function recordBillPayment(data: {
 
     revalidatePath("/purchases/bills");
     revalidatePath("/purchases/payments");
+    revalidatePath("/");
+    for (const allocation of data.billAllocations) revalidatePath(`/purchases/bills/${allocation.billId}`);
     return { success: true, id: paymentId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };

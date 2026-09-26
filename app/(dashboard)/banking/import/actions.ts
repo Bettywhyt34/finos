@@ -174,6 +174,7 @@ export async function postStatementCustomerPayment(input: {
     const cash = roundMoney(Number(statement.amount));
     const whtAmount = roundMoney(Number(input.whtAmount ?? 0));
     const result = await recordCustomerPayment({
+      tenantId, requestId: `bank-receipt:${input.bankTransactionId}`,
       customerId: input.customerId,
       paymentDate: statement.transactionDate.toISOString().slice(0, 10),
       amount: cash,

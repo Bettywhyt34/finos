@@ -96,7 +96,6 @@ export function InvoiceForm({
     }
   }, []);
 
-  useEffect(() => { fetchRate(currency); }, [currency, fetchRate]);
 
   useEffect(() => {
     async function load() {
@@ -116,8 +115,9 @@ export function InvoiceForm({
 
   function handleCurrencyChange(val: string) {
     setCurrency(val);
-    setExchangeRate(1);
+    setExchangeRate(val === "NGN" ? 1 : 0);
     setRateFetched(false);
+    void fetchRate(val);
   }
 
   function handleCustomerChange(id: string) {

@@ -533,6 +533,8 @@ model Bill {
   taxAmount           Decimal          @default(0) @map("tax_amount") @db.Decimal(15, 2)
   totalAmount         Decimal          @map("total_amount") @db.Decimal(15, 2)
   amountPaid          Decimal          @default(0) @map("amount_paid") @db.Decimal(15, 2)
+  amountCredited      Decimal          @default(0) @map("amount_credited") @db.Decimal(15, 2)
+  paymentAllocations  VendorPaymentAllocation[]
   notes               String?
   externalBillId      String?          @map("external_bill_id")
   purchaseOrderNumber String?          @map("purchase_order_number")
@@ -573,6 +575,11 @@ model VendorPayment {
   paymentDate   DateTime      @map("payment_date")
   amount        Decimal       @db.Decimal(15, 2)
   method        PaymentMethod
+  currency      String        @default("NGN")
+  bankAccountId String?       @map("bank_account_id")
+  exchangeRate  Decimal       @default(1) @map("exchange_rate") @db.Decimal(15, 6)
+  status        String        @default("POSTED")
+  allocations   VendorPaymentAllocation[]
   reference     String?
   whtAmount     Decimal       @default(0) @map("wht_amount") @db.Decimal(15, 2)
   createdAt     DateTime      @default(now()) @map("created_at")
@@ -580,6 +587,22 @@ model VendorPayment {
   tenant        Tenant        @relation(fields: [tenantId], references: [id])
 
   @@map("vendor_payments")
+}
+
+model VendorPaymentAllocation {
+  id                       String @id @default(uuid())
+  tenantId                 String @map("tenant_id") @db.Uuid
+  paymentId                String @map("payment_id")
+  billId                   String @map("bill_id")
+  amount                   Decimal @db.Decimal(15, 2)
+  baseHistoricalApAmount   Decimal @map("base_historical_ap_amount") @db.Decimal(15, 2)
+  fxUnrealizedConsumed      Decimal @map("fx_unrealized_consumed") @db.Decimal(15, 2)
+  baseApAmount             Decimal @map("base_ap_amount") @db.Decimal(15, 2)
+  baseSettlementAmount     Decimal @map("base_settlement_amount") @db.Decimal(15, 2)
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz
+  payment                  VendorPayment @relation(fields: [paymentId], references: [id])
+  bill                     Bill @relation(fields: [billId], references: [id])
+  @@map("vendor_payment_allocations")
 }
 
 model Expense {

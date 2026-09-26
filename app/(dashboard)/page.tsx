@@ -8,10 +8,13 @@ function money(amount: number, currency: string) {
   return formatCurrency(amount, currency);
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{periodFrom?: string; periodTo?: string}> }) {
+  const query = await searchParams;
+  const periodTo = /^\d{4}-(0[1-9]|1[0-2])$/.test(query.periodTo ?? "") ? query.periodTo! : new Date().toISOString().slice(0,7);
+  const periodFrom = /^\d{4}-(0[1-9]|1[0-2])$/.test(query.periodFrom ?? "") && query.periodFrom! <= periodTo ? query.periodFrom! : `${periodTo.slice(0,4)}-01`;
   const session = await auth();
   const tenantId = session!.user.tenantId!;
-  const overview = await getFinancialOverview(tenantId);
+  const overview = await getFinancialOverview(tenantId, periodTo, periodFrom);
   const { currency } = overview;
 
   const highValueTotal = overview.receivables
@@ -35,6 +38,13 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      <form className="flex flex-wrap items-end gap-3" method="GET">
+        <label className="text-sm">Performance from <input className="block rounded border p-2" type="month" name="periodFrom" defaultValue={periodFrom} required /></label>
+        <label className="text-sm">To <input className="block rounded border p-2" type="month" name="periodTo" defaultValue={periodTo} required /></label>
+        <button className="rounded border px-4 py-2">Apply</button>
+        <a className="rounded border px-4 py-2" href={`/api/dashboard/export?periodFrom=${periodFrom}&periodTo=${periodTo}`}>Export CSV</a>
+      </form>
+      <p className="text-xs text-slate-500">Cash and obligations are current; performance uses the selected recognition periods. All totals in NGN. Cash includes mapped posted ledger accounts, including inactive account history.</p>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
         <section className="rounded-xl border border-[var(--app-border)] bg-white xl:col-span-4">
           <div className="flex items-center justify-between border-b border-[var(--app-border)] px-6 py-5">
@@ -97,7 +107,7 @@ export default async function DashboardPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-[var(--text-primary)]">
-                  {overview.attention.billsDueCount} bill{overview.attention.billsDueCount === 1 ? "" : "s"} due within 7 days
+                  {overview.attention.billsDueCount} bill{overview.attention.billsDueCount === 1 ? "" : "s"} overdue or due within 7 days
                 </p>
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">Amount requiring planning</p>
               </div>
@@ -115,7 +125,7 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between border-b border-[var(--app-border)] px-6 py-5">
             <div>
               <h2 className="text-base font-semibold text-[var(--text-primary)]">Performance</h2>
-              <p className="text-xs text-[var(--text-secondary)]">Year to date · recognised journals</p>
+              <p className="text-xs text-[var(--text-secondary)]">{periodFrom} to {periodTo} · recognised journals</p>
             </div>
             <FileText className="h-4 w-4 text-[var(--text-secondary)]" />
           </div>
@@ -134,7 +144,7 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
-          <Link href="/reports/profit-loss" className="flex items-center gap-2 border-t border-[var(--app-border)] px-6 py-4 text-sm font-semibold text-[var(--finos-accent)] hover:text-[var(--finos-accent-hover)]">
+          <Link href={`/reports/profit-loss?periodFrom=${periodFrom}&periodTo=${periodTo}`} className="flex items-center gap-2 border-t border-[var(--app-border)] px-6 py-4 text-sm font-semibold text-[var(--finos-accent)] hover:text-[var(--finos-accent-hover)]">
             View full performance <ArrowRight className="h-4 w-4" />
           </Link>
         </section>
@@ -167,8 +177,8 @@ export default async function DashboardPage() {
               </div>
             </div>
           </div>
-          <Link href="/sales/invoices" className="mx-6 mb-6 flex h-11 items-center justify-center rounded-lg bg-[var(--finos-accent)] text-sm font-semibold text-white hover:bg-[var(--finos-accent-hover)]">
-            View collection priorities
+          <Link href="/financial-brain" className="mx-6 mb-6 flex h-11 items-center justify-center rounded-lg bg-[var(--finos-accent)] text-sm font-semibold text-white hover:bg-[var(--finos-accent-hover)]">
+            Open Financial Brain
           </Link>
         </section>
 
@@ -196,7 +206,7 @@ export default async function DashboardPage() {
                 {overview.receivables.length > 0 ? overview.receivables.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-[var(--app-bg)]">
                     <td className="px-5 py-3 font-medium text-[var(--text-primary)]">{invoice.customerName}</td>
-                    <td className="font-code px-5 py-3 text-xs text-[var(--text-primary)]">{invoice.invoiceNumber}</td>
+                    <td className="font-code px-5 py-3 text-xs text-[var(--text-primary)]"><Link href={`/sales/invoices/${invoice.id}`} className="underline">{invoice.invoiceNumber}</Link></td>
                     <td className="px-5 py-3 text-[var(--text-secondary)]">{formatDate(invoice.dueDate)}</td>
                     <td className="tabular-nums px-5 py-3 text-right font-medium text-[var(--text-primary)]">{money(invoice.amount, currency)}</td>
                     <td className="tabular-nums px-5 py-3 text-right text-[var(--text-primary)]">{invoice.daysOverdue}</td>

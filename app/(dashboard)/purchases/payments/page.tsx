@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DollarSign } from "lucide-react";
@@ -15,14 +16,14 @@ export default async function VendorPaymentsPage() {
     orderBy: { paymentDate: "desc" },
   });
 
-  const totalPaid = payments.reduce((s, p) => s + parseFloat(String(p.amount)), 0);
+  const totalPaid = payments.filter(p => p.status !== "REVERSED").reduce((s, p) => s + (Number(p.amount)-Number(p.whtAmount))*Number(p.exchangeRate), 0);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Vendor Payments</h1>
         <p className="text-sm text-slate-500 mt-1">
-          {payments.length} payment{payments.length !== 1 ? "s" : ""} · Total: {formatCurrency(totalPaid)}
+          {payments.length} payment{payments.length !== 1 ? "s" : ""} · Net paid in NGN: {formatCurrency(totalPaid)}
         </p>
       </div>
 
@@ -52,13 +53,13 @@ export default async function VendorPaymentsPage() {
                 const net = parseFloat(String(p.amount)) - wht;
                 return (
                   <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-mono text-xs text-blue-600">{p.paymentNumber}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-600"><Link href={`/purchases/payments/${p.id}`} className="underline">{p.paymentNumber}</Link> · {p.status}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{p.vendor.companyName}</td>
                     <td className="px-4 py-3 text-slate-500">{formatDate(p.paymentDate)}</td>
                     <td className="px-4 py-3 text-slate-500">{p.method.replace("_", " ")}</td>
-                    <td className="px-4 py-3 text-right font-mono">{formatCurrency(parseFloat(String(p.amount)))}</td>
-                    <td className="px-4 py-3 text-right font-mono text-amber-600">{wht > 0 ? formatCurrency(wht) : "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold text-red-600">{formatCurrency(net)}</td>
+                    <td className="px-4 py-3 text-right font-mono">{formatCurrency(Number(p.amount), p.currency)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-amber-600">{wht > 0 ? formatCurrency(wht, p.currency) : "—"}</td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold text-red-600">{formatCurrency(net, p.currency)}</td>
                   </tr>
                 );
               })}
