@@ -1,80 +1,53 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { CalendarDays, ChevronDown, Download, Menu } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import Link from "next/link";
+import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 interface HeaderProps {
   orgName: string | null | undefined;
   currency: string;
+  tenantId: string;
+  entities: { id: string; name: string; currency: string }[];
 }
 
-export function Header({ orgName, currency }: HeaderProps) {
+export function Header({ orgName, currency, tenantId, entities }: HeaderProps) {
+  const { update } = useSession();
   const router = useRouter();
-  const now = new Date();
-  const period = new Intl.DateTimeFormat("en", {
-    month: "short",
-    year: "numeric",
-  }).format(now);
-
+  const pathname = usePathname();
+  const [switching, setSwitching] = useState(false);
+  async function switchEntity(id: string) {
+    setSwitching(true);
+    try {
+      const session = await update({ tenantId: id });
+      if (session?.user.tenantId !== id) throw new Error("Entity access is no longer available.");
+      // Full navigation discards in-memory queries and unsaved forms from the old entity.
+      window.location.assign("/");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not switch entity");
+      setSwitching(false);
+    }
+  }
   return (
-    <header className="flex h-[88px] shrink-0 items-center justify-between border-b border-[var(--topbar-border)] bg-[var(--topbar-bg)] px-8">
-      <div className="flex items-center gap-5">
-        <button type="button" aria-label="Collapse navigation" className="grid h-10 w-10 place-items-center rounded-lg text-[var(--topbar-text)] hover:bg-[var(--surface-muted)]">
-          <Menu className="h-5 w-5" />
-        </button>
-        <div className="h-8 w-px bg-[var(--topbar-border)]" />
-
-        <DropdownMenu>
-          <DropdownMenuTrigger className="flex min-w-[220px] items-center gap-4 rounded-lg px-3 py-2 text-left hover:bg-[var(--surface-muted)] focus:outline-none">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-[var(--topbar-text)]">{orgName ?? "Your company"}</p>
-              <p className="mt-0.5 text-xs text-[var(--topbar-org)]">Company · {currency}</p>
-            </div>
-            <ChevronDown className="h-4 w-4 text-[var(--topbar-org)]" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-80 border-[var(--app-border)] bg-white p-2">
-            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Group overview</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Companies</DropdownMenuLabel>
-            <DropdownMenuItem className="rounded-md bg-[var(--surface-muted)] px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">{orgName ?? "Your company"}</p>
-                <p className="text-xs text-[var(--text-muted)]">Company · {currency}</p>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuLabel className="mt-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Investment / holding entities</DropdownMenuLabel>
-            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Personal workspaces</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => router.push("/settings/organization")}
-              className="cursor-pointer rounded-md px-3 py-2 text-sm font-medium text-[var(--finos-accent)]"
-            >
-              Entity management
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <header className="flex min-h-[88px] flex-wrap items-center justify-between gap-4 border-b bg-white px-6 py-4">
+      <div className="flex items-center gap-3">
+        <button type="button" aria-label="Toggle navigation" className="rounded border px-3 py-2" onClick={() => document.querySelector("aside")?.classList.toggle("hidden")}>☰</button>
+        <label className="text-sm">
+          <span className="sr-only">Active company</span>
+          <select aria-label="Active company" value={tenantId} disabled={switching} onChange={e => void switchEntity(e.target.value)} className="max-w-72 rounded border p-2 font-semibold">
+            {entities.map(entity => <option key={entity.id} value={entity.id}>{entity.name} · {entity.currency}</option>)}
+          </select>
+          <span className="sr-only">{orgName} {currency}</span>
+        </label>
       </div>
-
-      <div className="flex items-center gap-4">
-        <p className="hidden text-xs text-[var(--text-muted)] xl:block">Last updated: Today</p>
-        <button type="button" className="flex h-10 items-center gap-2 rounded-lg border border-[var(--app-border)] bg-white px-4 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--surface-muted)]">
-          <CalendarDays className="h-4 w-4" />
-          {period}
-          <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
-        </button>
-        <button type="button" className="flex h-10 items-center gap-2 rounded-lg bg-[var(--finos-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--finos-accent-hover)]">
-          <Download className="h-4 w-4" />
-          Export
-        </button>
-      </div>
+      <nav className="flex flex-wrap items-center gap-4 text-sm">
+        <Link href="/financial-brain">Financial Brain</Link>
+        <Link href="/reports/consolidation">Consolidation</Link>
+        {pathname !== "/" && <button onClick={() => router.push("/")}>Financial overview</button>}
+        <Link href="/settings/organization">Entity settings</Link>
+      </nav>
     </header>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -73,7 +73,6 @@ export function BillForm({
     }
   }, []);
 
-  useEffect(() => { fetchRate(currency); }, [currency, fetchRate]);
 
   function handleVendorChange(id: string) {
     setVendorId(id);
@@ -167,7 +166,7 @@ export function BillForm({
           </div>
           <div className="space-y-1.5">
             <Label>Currency</Label>
-            <Select value={currency} onValueChange={(v) => setCurrency(v ?? "NGN")}>
+            <Select value={currency} onValueChange={(v) => { setCurrency(v ?? "NGN"); void fetchRate(v ?? "NGN"); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {SUPPORTED_CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}

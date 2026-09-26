@@ -34,16 +34,18 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
     where: {
       tenantId,
       vendorId: bill.vendorId,
+      currency: bill.currency,
       status: { in: ["RECORDED", "PARTIAL", "OVERDUE"] },
     },
-    select: { id: true, billNumber: true, totalAmount: true, amountPaid: true, dueDate: true },
+    select: { id: true, billNumber: true, totalAmount: true, amountPaid: true, amountCredited: true, dueDate: true },
     orderBy: { dueDate: "asc" },
   });
 
+  const bankAccounts = await prisma.bankAccount.findMany({ where: { tenantId, isActive: true, currency: "NGN" }, select: { id: true, accountName: true } });
   const currency = bill.currency;
   const rate = parseFloat(String(bill.exchangeRate));
   const isNGN = currency === "NGN";
-  const balance = parseFloat(String(bill.totalAmount)) - parseFloat(String(bill.amountPaid));
+  const balance = Number(bill.totalAmount) - Number(bill.amountPaid) - Number(bill.amountCredited);
   const totalNGN = toNGN(parseFloat(String(bill.totalAmount)), rate);
   const isWht = bill.vendor.isWhtEligible;
 
@@ -65,12 +67,12 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
             </span>
           )}
         </div>
-        <BillActions
+        <BillActions tenantId={tenantId} bankAccounts={bankAccounts}
           bill={{ id: bill.id, status: bill.status, vendorId: bill.vendorId, balance, isWhtEligible: isWht }}
           openBills={openBills.map((b) => ({
             id: b.id,
             billNumber: b.billNumber,
-            balance: parseFloat(String(b.totalAmount)) - parseFloat(String(b.amountPaid)),
+            balance: Number(b.totalAmount) - Number(b.amountPaid) - Number(b.amountCredited),
           }))}
         />
       </div>

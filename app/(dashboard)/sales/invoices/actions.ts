@@ -210,6 +210,7 @@ export async function createInvoice(data: {
   const orgId   = session?.user?.tenantId;
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   if (data.lines.length === 0) return { error: "At least one line item is required" };
   const fxRate = data.exchangeRate || 1;
@@ -375,6 +376,7 @@ export async function sendInvoice(id: string, dateSent?: string) {
   const orgId   = session?.user?.tenantId;
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   const sentAt = dateSent ? new Date(dateSent) : new Date();
 
@@ -400,6 +402,7 @@ export async function updateInvoice(id: string, data: {
   const session = await auth();
   const orgId = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   const invoice = await prisma.invoice.findFirst({ where: { id, tenantId: orgId } });
   if (!invoice) return { error: "Invoice not found" };
@@ -439,6 +442,7 @@ export async function updateDraftInvoice(
   const orgId   = session?.user?.tenantId;
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   if (data.lines.length === 0) return { error: "At least one line item is required" };
   const fxRate = data.exchangeRate || 1;
@@ -542,6 +546,7 @@ export async function voidInvoice(id: string, reason: string, convertToDraft: bo
   const orgId   = session?.user?.tenantId;
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   // ── 1. Fetch invoice ─────────────────────────────────────────────────────────
   const invoice = await prisma.invoice.findFirst({
@@ -803,6 +808,7 @@ export async function postInvoicesToLedger(ids: string[]) {
   const orgId   = session?.user?.tenantId;
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   let posted = 0;
   let skipped = 0;
@@ -839,6 +845,7 @@ export async function bulkDeleteInvoices(ids: string[]) {
   const session = await auth();
   const orgId   = session?.user?.tenantId;
   if (!orgId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
   if (ids.length === 0) return { deleted: 0, skipped: 0 };
 
   // Fetch all requested invoices that belong to this tenant
@@ -875,6 +882,7 @@ export async function recordPayment(data: {
   const orgId   = session?.user?.tenantId;
   const userId  = session?.user?.id;
   if (!orgId || !userId) return { error: "Unauthorized" };
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(session.user.role ?? "")) return { error: "Permission denied" };
 
   const totalAllocated = data.invoiceAllocations.reduce((s, a) => s + a.amount, 0);
   if (Math.abs(totalAllocated - data.amount) > 0.01) {

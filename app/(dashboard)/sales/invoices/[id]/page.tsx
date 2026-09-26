@@ -133,7 +133,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             <Printer className="h-3.5 w-3.5" /> Print / PDF
           </Link>
           {canRecogniseRevenue ? <RecogniseRevenueButton invoiceId={meta.id} currency={invoice.currency} /> : null}
-          <InvoiceActions
+          <InvoiceActions tenantId={tenantId}
             invoice={{
               id: meta.id,
               status: invoice.status,

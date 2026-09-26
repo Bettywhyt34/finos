@@ -1,5 +1,6 @@
 "use server";
 
+import { settlementRequest, checkSettlementRetry } from "@/lib/mvp/settlement-request";
 import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
@@ -35,6 +36,8 @@ async function lockInvoices(
 }
 
 export async function recordCustomerPayment(data: {
+  requestId: string;
+  tenantId: string;
   customerId: string;
   paymentDate: string;
   /** Cash actually received, in receipt currency. */
@@ -62,6 +65,8 @@ export async function recordCustomerPayment(data: {
     return { error: "You do not have permission to record customer receipts." };
   }
 
+  if (data.tenantId !== tenantId) return { error: "Entity changed. Reload before recording a receipt." };
+  if (!["BANK_TRANSFER", "CHECK", "CASH", "CARD"].includes(data.method)) return { error: "Invalid payment method" };
   const cashAmount = roundMoney(Number(data.amount));
   const whtAmount = roundMoney(Number(data.whtAmount ?? 0));
   const grossSettled = roundMoney(cashAmount + whtAmount);
@@ -80,7 +85,7 @@ export async function recordCustomerPayment(data: {
   if (!data.invoiceAllocations.length) return { error: "Allocate the receipt to at least one invoice" };
 
   const totalAllocated = roundMoney(data.invoiceAllocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0));
-  if (Math.abs(totalAllocated - grossSettled) > 0.01) {
+  if (Math.round(totalAllocated * 100) !== Math.round(grossSettled * 100)) {
     return { error: `Allocated amount must equal gross AR settled (${grossSettled.toFixed(2)} ${currency})` };
   }
 
@@ -89,7 +94,9 @@ export async function recordCustomerPayment(data: {
   if (paymentDate > new Date()) return { error: "Payment date cannot be in the future." };
 
   try {
+    const request = settlementRequest(tenantId, data.requestId, { ...data, invoiceAllocations: [...data.invoiceAllocations].sort((a,b) => a.invoiceId.localeCompare(b.invoiceId)) });
     const paymentId = await prisma.$transaction(async (tx) => {
+      if (await checkSettlementRetry(tx, tenantId, "customer_payment", request)) return request.id;
       const customer = await tx.customer.findFirst({
         where: { id: data.customerId, tenantId },
         select: { id: true },
@@ -127,7 +134,7 @@ export async function recordCustomerPayment(data: {
         if (["DRAFT", "VOIDED", "PAID", "WRITTEN_OFF"].includes(invoice.status)) {
           throw new Error(`Invoice ${invoice.invoiceNumber} cannot receive a payment while ${invoice.status}`);
         }
-        if (allocationAmount - Number(invoice.balanceDue) > 0.01) {
+        if (Math.round(allocationAmount * 100) > Math.round(Number(invoice.balanceDue) * 100)) {
           throw new Error(`Allocation to ${invoice.invoiceNumber} exceeds its outstanding balance.`);
         }
       }
@@ -200,6 +207,7 @@ export async function recordCustomerPayment(data: {
         data: {
           tenantId,
           customerId: data.customerId,
+          id: request.id,
           paymentNumber,
           paymentDate,
           amount: cashAmount,
@@ -236,7 +244,7 @@ export async function recordCustomerPayment(data: {
         const invoice = invoiceMap.get(allocation.invoiceId)!;
         const newPaid = roundMoney(Number(invoice.amountPaid) + allocation.amount);
         const newBalance = Math.max(0, roundMoney(Number(invoice.balanceDue) - allocation.amount));
-        const newStatus = newBalance <= 0.01 ? "PAID" : "PARTIAL";
+        const newStatus = newBalance === 0 ? "PAID" : "PARTIAL";
         await tx.invoice.update({
           where: { id: allocation.invoiceId },
           data: { amountPaid: newPaid, balanceDue: newBalance, status: newStatus, paidAt: newStatus === "PAID" ? paymentDate : null },
@@ -263,7 +271,7 @@ export async function recordCustomerPayment(data: {
         createdBy: userId,
         entryDate: paymentDate,
         reference: paymentNumber,
-        description: `Customer receipt ${paymentNumber}${currency !== "NGN" ? ` (${currency} @ ${exchangeRate})` : ""}`,
+        description: `Customer receipt ${paymentNumber}${currency !== "NGN" ? ` (${currency} @ ${exchangeRate})` : ""} ${request.marker}`,
         recognitionPeriod: getRecognitionPeriod(paymentDate),
         source: "customer_payment",
         sourceId: payment.id,
@@ -275,6 +283,7 @@ export async function recordCustomerPayment(data: {
 
     revalidatePath("/sales/invoices");
     revalidatePath("/sales/receipts");
+    revalidatePath("/");
     return { success: true, id: paymentId };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
